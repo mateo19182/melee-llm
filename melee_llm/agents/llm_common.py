@@ -52,12 +52,17 @@ def parse_spec(arg: str | None) -> dict:
 
 
 class DecisionLog:
-    """One JSONL per game; renamed next to the .slp on game end (<replay>.p<port>.llm.jsonl)."""
+    """One JSONL per game, next to the .slp: <replay>.p<port>.<suffix>.jsonl.
 
-    def __init__(self, directory: Path, tag: str):
+    If the replay is known up front, write there directly; otherwise write to a temp name in `directory`
+    and rename on close to the newest .slp under it (Slippi writes into a dated subfolder).
+    """
+
+    def __init__(self, directory: Path, tag: str, replay: Path | None = None, port: int = 0, suffix: str = "llm"):
         directory.mkdir(parents=True, exist_ok=True)
-        self.dir, self.t0 = directory, time.time()
-        self.path = directory / f"llm-{time.strftime('%Y%m%dT%H%M%S')}-{tag}.jsonl"
+        self.dir, self.t0, self.suffix, self.fixed = directory, time.time(), suffix, replay is not None
+        self.path = (replay.with_suffix(f".p{port}.{suffix}.jsonl") if replay
+                     else directory / f"{suffix}-{time.strftime('%Y%m%dT%H%M%S')}-{tag}.jsonl")
         self.f = self.path.open("a")
 
     def write(self, rec: dict) -> None:
@@ -66,9 +71,11 @@ class DecisionLog:
 
     def close(self, port: int) -> Path:
         self.f.close()
-        slps = [p for p in self.dir.glob("*.slp") if p.stat().st_mtime >= self.t0 - 5]
+        if self.fixed:
+            return self.path
+        slps = [p for p in self.dir.rglob("*.slp") if p.stat().st_mtime >= self.t0 - 5]
         if slps:
-            target = max(slps, key=lambda p: p.stat().st_mtime).with_suffix(f".p{port}.llm.jsonl")
+            target = max(slps, key=lambda p: p.stat().st_mtime).with_suffix(f".p{port}.{self.suffix}.jsonl")
             self.path = self.path.rename(target)
         return self.path
 

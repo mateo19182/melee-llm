@@ -1,6 +1,6 @@
 """CLI: run Melee games between two players and save .slp replays to replays/.
 
-Players: cpu:N (in-game CPU level 1-9), shine, idle, llm_paused:<model>, llm_live:<model> (see AGENTS).
+Players: cpu:N (in-game CPU level 1-9), shine, idle, llm_paused:<model>, llm_live:<model>, learned bots\n(hal, phillip, mimic, faynt, reyn[:command]) and coach:<model> (see AGENTS).
 """
 import argparse
 import json
@@ -22,7 +22,11 @@ AGENTS |= {"llm_paused": PausedLLM, "llm_live": LiveLLM}  # llm_paused:<model>[,
 
 from melee_llm.bots import BOTS  # noqa: E402
 
-AGENTS |= BOTS  # hal[:identity], phillip[:model], mimic[:checkpoint], faynt[:variant]; see docs/bots.md
+AGENTS |= BOTS  # hal[:identity], phillip[:model], mimic[:checkpoint], faynt[:variant], reyn[:command]; see docs/bots.md
+
+from melee_llm.agents.coach import CoachedBot  # noqa: E402
+
+AGENTS["coach"] = CoachedBot  # coach:<model|random>[,body=reyn|hal,interval=60]; see docs/coach.md
 
 
 def make(spec: str, character: str):
