@@ -1,6 +1,6 @@
-# Learned bots (HAL, Phillip, MIMIC, Faynt)
+# Learned bots (HAL, Phillip, MIMIC, Faynt, Reyn)
 
-`melee_llm/bots/` wraps four published Melee policies as `Agent`s, so they can play on the ladder and a coach can steer them.
+`melee_llm/bots/` wraps five published Melee policies as `Agent`s, so they can play on the ladder and a coach can steer them.
 
 ```sh
 uv run match.py --iso ~/melee.iso --p1 hal:MASTER --char1 FOX --p2 phillip:gm --char2 MARTH --mode fast
@@ -14,6 +14,7 @@ The spec after the colon picks the style or model. Leave it out to use the defau
 | `phillip[:model]` | ONNX model in `vendor/slippi-ai/models/` | `gm` |
 | `mimic[:checkpoint]` | Directory in `vendor/MIMIC/hf_checkpoints/` | Picked from the character |
 | `faynt[:variant]` | `10M-Arena`, `10M-Expert`, `10M-Base`, `75M-Arena` or `75M-Expert` | `10M-Arena` |
+| `reyn[:command]` | Initial language command, e.g. `reyn:Be more aggressive.` | No command (unsteered) |
 
 ## How it works
 
@@ -114,15 +115,26 @@ uv python install 3.14 && (cd hal && uv sync --python 3.14.3 \
 (cd Faynt-Tournament && uv venv --python 3.12 \
   && uv pip install torch "transformers>=4.57,<5" safetensors PyYAML huggingface_hub -e ../slippi-ai \
   && .venv/bin/hf download frisson-labs/Faynt-10M-Arena --local-dir weights/Faynt-10M-Arena --exclude checkpoint.pt "*.png")
+
+# Reyn: also uses ../slippi-ai's parser
+git clone https://github.com/frisson-labs/Reyn && (cd Reyn && uv venv --python 3.12 \
+  && uv pip install torch -e . -e ../slippi-ai huggingface_hub \
+  && .venv/bin/hf download frisson-labs/Reyn-26C --local-dir model-files)
 ```
 
 Init options go through `**config` on the agent class, e.g. `Faynt(character=..., device="cuda", compile=True)`, `HAL(compile=False, seed=0)`, `MIMIC(compile=False)` or `Phillip(seed=1)`.
 
-## Related
+## Reyn (language-steerable)
 
-[frisson-labs/Reyn-26C](https://huggingface.co/frisson-labs/Reyn-26C) (MIT) is a **language-steerable** policy for all 26 characters. It takes instructions such as "be more aggressive", "go to the top platform" or "fire fox", and it reports that 81.8% of its test cases met their command-following target. It fits the LLM-coach plan directly. It has not been integrated yet; it would follow the same pattern as Faynt.
+[frisson-labs/Reyn-26C](https://huggingface.co/frisson-labs/Reyn-26C) (MIT, code [frisson-labs/Reyn](https://github.com/frisson-labs/Reyn) @ `93fa527`) is a 33M-parameter policy for all 26 characters, from the Faynt authors, steered by English commands. It is the default body of the LLM coach ([coach.md](coach.md)).
 
-## Closed-loop results (2026-11-13, real Dolphin and ISO)
+- **Observation**: the same slippi-ai `Game` tree as Faynt (p0 = this bot, libmelee character and stage IDs), so `bot_reyn.py` reuses slippi-ai's libmelee `Parser`. Zero added delay, 256-frame KV cache, one step per frame.
+- **Steering**: `steer["command"]` is a phrase or `None` (clear); `steer["temperature"]`. A changed phrase goes through Reyn's neural router (`model.say`) inside the child, on the next frame. `applied_steer["reply"]` is the router's answer (`outcome`, `row`, `name`, `score`), and `applied_steer["active"]` the command row actually held. An `abstain` keeps the previous command. The command survives the next game's reset.
+- **Commands**: `vendor/Reyn/docs/commands.md` lists about 100 general meanings and `commands.csv` 104 character specials; `melee_llm.agents.coach.reyn_commands()` turns them into a per-character, per-stage menu.
+- **Router**: 5-10 ms per `say`, on the CPU. It almost never abstains: `xyzzy nonsense` routes to "Fox Illusion" at 0.96 and "be aggressive" to the aggressive row. Only send phrases from the menu.
+- **Latency** (round trip, CPU, 4 threads): 9.0 / 11.7 / 14.0 ms p50/p95/p99 on 3,000 replay frames; in real lockstep games against CPU 9, 9.7 / 12.0 / 17.2 ms with the machine under heavy load (≈59 fps). CUDA is slower (18.8 ms p50: like Faynt the step is host-bound), so CPU is the default. 2 threads: 11.3 / 18.0 ms p50/p99. Startup about 3 s. No VRAM on CPU (436 MiB on CUDA).
+
+## Closed-loop results## Closed-loop results (2026-11-13, real Dolphin and ISO)
 
 | Match | Mode | Result | Frames / wall time |
 | --- | --- | --- | --- |
