@@ -1,6 +1,8 @@
 """Run games between two Agents on Slippi Dolphin and save .slp replays."""
 from __future__ import annotations
 
+import configparser
+import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,6 +17,36 @@ DOLPHIN = {
     "paused": ROOT / "scripts/dolphin-gpu.sh",  # rendered, game waits for every input
     "fast": ROOT / "bin/Slippi_Mainline_ExiAI.AppImage",  # headless, unthrottled
 }
+
+
+WINDOW = (1280, 960)  # matches the Xvfb :99 screen that live.sh starts
+
+
+class Console(melee.Console):
+    """Rendered modes: put Dolphin's game window at (0, 0) filling the screen, at 2x internal resolution.
+
+    Xvfb has no window manager, so Dolphin's fullscreen flag is ignored; an explicit window size works.
+    """
+
+    def _setup_dolphin_ini(self):
+        super()._setup_dolphin_ini()
+        if self.gfx_backend == "Null":
+            return
+        cfg_dir = self._get_dolphin_config_path()
+        for name, section, values in [
+            ("Dolphin.ini", "Display", {"Fullscreen": "False", "RenderToMain": "False", "RenderWindowAutoSize": "False",
+                                        "RenderWindowXPos": "0", "RenderWindowYPos": "0",
+                                        "RenderWindowWidth": str(WINDOW[0]), "RenderWindowHeight": str(WINDOW[1])}),
+            ("GFX.ini", "Settings", {"InternalResolution": "2"}),  # window size is ignored by this build; viewer.py crops to the game window
+        ]:
+            path, cfg = os.path.join(cfg_dir, name), configparser.ConfigParser()
+            cfg.read(path)
+            if not cfg.has_section(section):
+                cfg.add_section(section)
+            for k, v in values.items():
+                cfg.set(section, k, v)
+            with open(path, "w") as f:
+                cfg.write(f)
 
 
 @dataclass
@@ -41,7 +73,7 @@ def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BA
     fast, blocking = mode == "fast", mode in ("fast", "paused")
     replay_dir = replay_dir or ROOT / "replays"
     replay_dir.mkdir(parents=True, exist_ok=True)
-    console = melee.Console(
+    console = Console(
         path=str(DOLPHIN[mode]), fullscreen=False, save_replays=True, replay_dir=str(replay_dir),
         disable_audio=True, gfx_backend="Null" if fast else "OGL",
         emulation_speed=0 if fast else 1.0, blocking_input=blocking,

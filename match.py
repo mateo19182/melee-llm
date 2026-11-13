@@ -1,6 +1,6 @@
 """CLI: run Melee games between two players and save .slp replays to replays/.
 
-Players: cpu:N (in-game CPU level 1-9), shine, idle. More arrive as agents are added to AGENTS.
+Players: cpu:N (in-game CPU level 1-9), shine, idle, llm_paused:<model>, llm_live:<model> (see AGENTS).
 """
 import argparse
 import json
@@ -12,6 +12,11 @@ from melee_llm.agents.base import CPU, Idle, Multishine
 from melee_llm.runner import DOLPHIN, play
 
 AGENTS = {"shine": Multishine, "idle": Idle}
+
+from melee_llm.agents.llm_live import LiveLLM  # noqa: E402
+from melee_llm.agents.llm_paused import PausedLLM  # noqa: E402
+
+AGENTS |= {"llm_paused": PausedLLM, "llm_live": LiveLLM}  # llm_paused:<model>[,interval=30,mode=json,...]
 
 
 def make(spec: str, character: str):
