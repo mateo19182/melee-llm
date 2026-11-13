@@ -24,6 +24,7 @@ import uuid
 from pathlib import Path
 
 from melee_llm.botwriter import toolloop
+from melee_llm.botwriter.similarity import similarity
 
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
@@ -43,7 +44,8 @@ def _script(path: Path, body: str) -> None:
     path.chmod(0o755)
 
 
-def make_sandbox(dest: Path, iso: str | None, deadline: float | None, session_id: str = "manual") -> Path:
+def make_sandbox(dest: Path, iso: str | None, deadline: float | None, session_id: str = "manual",
+                 slippi_ports: str | None = None) -> Path:
     """Copy the template plus scripted opponents and sample replays; write tool wrappers."""
     if dest.exists():
         raise SystemExit(f"{dest} already exists")
@@ -55,6 +57,8 @@ def make_sandbox(dest: Path, iso: str | None, deadline: float | None, session_id
         if (ROOT / "replays" / name).exists():
             shutil.copy(ROOT / "replays" / name, dest / "replays" / name)
     env = f'export PYTHONPATH="{ROOT}" BOTWRITER_SESSION="{session_id}"' + (f' MELEE_ISO="{iso}"' if iso else "")
+    if slippi_ports:  # caps how many practice Dolphins this sandbox can run at once
+        env += f' MELEE_SLIPPI_PORTS="{slippi_ports}"'
     py = sys.executable
     tools = dest / "tools"
     tools.mkdir(exist_ok=True)
@@ -169,18 +173,18 @@ def _invoke(cmd: list[str], cwd: Path, env: dict, transcript: Path, stderr: Path
 
 
 def run_session(harness: str, model: str, minutes: float, name: str, iso: str | None, budget_usd: float | None,
-                effort: str | None, base_url: str, max_tokens: int) -> dict:
+                effort: str | None, base_url: str, max_tokens: int, slippi_ports: str | None = None) -> dict:
     sid = time.strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(3)
     sdir = HOME / "sessions" / sid
     sandbox = HOME / "sandboxes" / secrets.token_hex(8)  # not under the session record, unguessable sibling
     sdir.mkdir(parents=True)
     t0 = time.time()
     deadline = t0 + minutes * 60
-    make_sandbox(sandbox, iso, deadline, sid)
+    make_sandbox(sandbox, iso, deadline, sid, slippi_ports)
     prompt = PROMPT.format(minutes=minutes, no_iso="" if iso else NO_ISO)
     env = _agent_env(sandbox, sid)
     meta = {"id": sid, "name": name, "harness": harness, "model": model, "effort": effort, "minutes": minutes,
-            "budget_usd": budget_usd, "iso": bool(iso), "sandbox": str(sandbox), "started": t0, "prompt": prompt}
+            "budget_usd": budget_usd, "iso": bool(iso), "slippi_ports": slippi_ports, "sandbox": str(sandbox), "started": t0, "prompt": prompt}
     (sdir / "meta.json").write_text(json.dumps(meta, indent=1))
     transcript = sdir / "transcript.jsonl"
     if harness == "openai":
@@ -214,6 +218,7 @@ def run_session(harness: str, model: str, minutes: float, name: str, iso: str | 
         meta["bot_sha256"] = hashlib.sha256(bot.read_bytes()).hexdigest()
         meta["bot_lines"] = len(bot.read_text(errors="replace").splitlines())
         meta["validation"] = validate(final / "bot.py", sandbox / "replays")
+        meta["smashbot_similarity"] = similarity(final / "bot.py")
     shutil.make_archive(str(sdir / "sandbox"), "gztar", sandbox)  # keep practice logs/old versions for analysis
     (sdir / "meta.json").write_text(json.dumps(meta, indent=1, default=str))
     return meta
@@ -251,14 +256,16 @@ def main() -> None:
     r.add_argument("--effort", help="reasoning effort passed to the CLI")
     r.add_argument("--base-url", default="http://127.0.0.1:8317/v1", help="openai harness endpoint")
     r.add_argument("--max-tokens", type=int, default=5_000_000, help="openai harness total token budget")
+    r.add_argument("--slippi-ports", default="51590-51593",
+                   help="Slippi port range for this session's practice Dolphins (its size caps concurrent games)")
     a = ap.parse_args()
     if a.cmd == "sandbox":
         dl = time.time() + a.minutes * 60 if a.minutes else None
         print(make_sandbox(Path(a.dest).resolve(), a.iso, dl))
         return
     meta = run_session(a.harness, a.model, a.minutes, a.name or f"{a.model}/{int(time.time())}", a.iso,
-                       a.budget_usd, a.effort, a.base_url, a.max_tokens)
-    print(json.dumps({k: meta.get(k) for k in ("id", "name", "exit", "wall_s", "cost_usd", "usage", "validation")}, indent=1, default=str))
+                       a.budget_usd, a.effort, a.base_url, a.max_tokens, a.slippi_ports)
+    print(json.dumps({k: meta.get(k) for k in ("id", "name", "exit", "wall_s", "cost_usd", "usage", "validation", "smashbot_similarity")}, indent=1, default=str))
 
 
 if __name__ == "__main__":

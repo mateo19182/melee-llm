@@ -43,7 +43,6 @@ def make_agent(spec: str, character: melee.Character = melee.Character.FOX, budg
         module, _, rest = arg.partition(":")
         cls_name, _, cls_arg = rest.partition(":")
         cls = getattr(importlib.import_module(module), cls_name)
-        a = cls(cls_arg) if cls_arg else cls()
-        a.character = character
+        a = cls(cls_arg, character=character) if cls_arg else cls(character=character)
         return a
     raise ValueError(f"unsupported player spec {spec!r}")

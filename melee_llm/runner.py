@@ -99,9 +99,17 @@ def _result(gs: melee.GameState, frames: int, t0: float, agents: dict[int, Agent
     return GameResult(stocks, percent, frames, time.time() - t0, winner, {p: a.name for p, a in agents.items()})
 
 
-def _newest_replay(replay_dir: Path, since: float) -> Path | None:
-    files = [f for f in replay_dir.rglob("*.slp") if f.stat().st_mtime >= since - 1]
-    return max(files, key=lambda f: f.stat().st_mtime, default=None)
+def _new_replay(replay_dir: Path, seen: set[Path]) -> Path | None:
+    """Oldest .slp not yet assigned to a game (names are Game_<start time>.slp). A Sudden Death after a
+    timed-out game gets its own, later file, which must not be taken for the game's replay."""
+    return min((f for f in replay_dir.rglob("*.slp") if f not in seen), key=lambda f: f.name, default=None)
+
+
+def _cpus_ready(gs: melee.GameState, agents: dict[int, Agent]) -> bool:
+    """libmelee's autostart presses START once both characters are picked, before a CPU on a later port has
+    switched itself to CPU: that port would then stand still all game. Start only once every CPU is set."""
+    return all(p in gs.players and gs.players[p].controller_status == melee.ControllerStatus.CONTROLLER_CPU
+               and gs.players[p].cpu_level == a.cpu_level for p, a in agents.items() if a.cpu_level)
 
 
 def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BATTLEFIELD,
@@ -138,15 +146,25 @@ def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BA
         for p, a in agents.items():
             a.setup(controllers[p], p, next(q for q in ports if q != p))
         menu, results = melee.MenuHelper(), []
-        last, frames, t0 = None, 0, time.time()
+        last, frames, t0, replay = None, 0, time.time(), None
+        seen = set(replay_dir.rglob("*.slp"))
         while len(results) < games:
             gs = console.step()
             if gs is None:
                 continue
+            if gs.menu_state == melee.Menu.SUDDEN_DEATH and last is None and results:
+                # tie-break of a timed-out game that was already scored (stocks, then percent): play it out uncounted
+                for p, a in agents.items():
+                    if not a.cpu_level:
+                        a.step(gs)
+                continue
             if gs.menu_state in (melee.Menu.IN_GAME, melee.Menu.SUDDEN_DEATH):
                 if last is None:
                     frames, t0 = 0, time.time()
-                    replay = _newest_replay(replay_dir, t0)
+                    wrong = {p: int(gs.players[p].cpu_level) for p, a in agents.items() if gs.players[p].cpu_level != a.cpu_level}
+                    if wrong:
+                        raise RuntimeError(f"game started with wrong CPU levels {wrong}")
+                    replay = _new_replay(replay_dir, seen)
                     for a in agents.values():
                         a.on_game_start(gs, replay)
                 last, frames = gs, frames + 1
@@ -156,14 +174,16 @@ def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BA
                 continue
             if last is not None:
                 results.append(_result(last, frames, t0, agents))
-                found = _newest_replay(replay_dir, t0)
+                found = replay or _new_replay(replay_dir, seen)
+                seen.add(found)
                 results[-1].replay = str(found) if found else None
                 for a in agents.values():
                     a.on_game_end(last)
                 last = None
+            start = gs.menu_state != melee.Menu.CHARACTER_SELECT or _cpus_ready(gs, agents)
             for p, a in agents.items():
                 menu.menu_helper_simple(gs, controllers[p], a.character, stage, cpu_level=a.cpu_level,
-                                        costume=a.costume or p, autostart=p == ports[0])
+                                        costume=a.costume or p, autostart=start and p == ports[0])
         return results
     finally:
         for a in agents.values():

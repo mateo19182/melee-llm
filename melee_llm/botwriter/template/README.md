@@ -49,19 +49,25 @@ class Bot:
   recorded. The evaluator enforces this and logs every attempt. A bot that tries is disqualified.
 - Don't try to find or read the evaluation harness, the hidden opponents or other entries. Work
   inside this directory.
+- Write your own bot. Don't port or copy SmashBot or other public Melee bots, from memory or
+  otherwise. Entries are checked for near-copies of SmashBot.
 
 ## Tools (run from this directory)
 
 | Command | What it does |
 | --- | --- |
-| `tools/practice --opponent cpu:7 --games 4 [--stage fd\|bf] [--bot bot.py]` | Plays real games headless and unthrottled. Prints one compact block per game: result, stocks, damage dealt and taken, hits, your deaths (kill or self-destruct, percent, blast zone), % time offstage, your most frequent actions, frame-budget stats. Ends with a JSON line. Replays and `bot.log` go to `runs/<timestamp>/`. |
+| `tools/practice --opponent cpu:7 --games 4 [--stage fd\|bf] [--bot bot.py]` | Plays real games headless and unthrottled. Prints one compact block per game: result, stocks, damage dealt and taken, hits, your deaths (kill or self-destruct, percent, blast zone), % time offstage, your most frequent actions, frame-budget stats. Ends with a JSON line. Replays and `bot-port{1,2}.log` go to `runs/<timestamp>/`. |
 | `tools/practice --opponent baseline:rusher` | Scripted opponents. Their source is in `opponents/`. |
 | `tools/practice --opponent bot:old/bot_v2.py` / `--opponent self` | Plays against a saved version of your bot, or a copy of the current one. |
 | `tools/inspect-replay runs/.../Game_x.slp --port 1 [--timeline]` | Summary of one replay from a port's point of view. Without `--port`, prints full JSON for both players. |
 | `tools/check-bot [--bot bot.py]` | **Offline, needs no game.** Runs your bot over recorded replays and reports exceptions, crashes, policy violations and frame times. Run it after every edit. |
 | `tools/time-left` | Time remaining in this session. |
 
-Games are noisy, so play several before you trust a change. Save versions you like with
+Games alternate spawn ports, and the two ports play at the same time in separate emulators. A
+game takes roughly 30 s to 3 min of wall time (longer if nobody dies: 8-minute timeouts), so
+`--games 2` is about 1-3 min and `--games 4` about 2-6 min. Give the command a long enough tool
+timeout, or run it in the background and read its output later. Several practice commands can
+run at once. Games are noisy, so play several before you trust a change. Save versions you like with
 `cp bot.py old/bot_vN.py`, then check new versions against them.
 
 If `tools/practice` says no ISO is configured, you can't play games in this session. Use

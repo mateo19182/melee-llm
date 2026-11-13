@@ -5,14 +5,16 @@
 
 Config (JSON):
   {"entrants": {"opus-5/run1": "path/to/bot.py", ...},          # name "<model>/<run>" groups runs
-   "roster": ["cpu:1", ..., "cpu:9", "baseline:rusher", "agent:melee_llm.bots.x:Y"],
+   "roster": ["cpu:1", ..., "cpu:9", "baseline:rusher", ...],        # main score
+   "hard_tier": ["agent:melee_llm.bots:HAL:MASTER", ...],            # learned bots, scored separately
    "stages": ["FINAL_DESTINATION", "BATTLEFIELD"], "character": "FOX", "allowed_characters": ["FOX"],
    "games_per_side": 2, "workers": 8, "budget_ms": 16, "iso": "...", "out": "DIR",
    "entrants_play_each_other": false, "calibrate_roster": false, "anchor": "cpu:1", "job_timeout_s": 1800}
 
 Games append to DIR/games.jsonl (re-running resumes); DIR/leaderboard.json holds the scores.
 Primary score = mean over roster opponents of the entrant's win rate (draw = half), so it does
-not depend on who else is in the field. A Bradley-Terry fit over all games gives Elo-scale ratings.
+not depend on who else is in the field. `hard_score` is the same over the hard tier (learned bots).
+A Bradley-Terry fit over all games gives Elo-scale ratings.
 """
 from __future__ import annotations
 
@@ -32,7 +34,9 @@ from pathlib import Path
 DEFAULTS = {"stages": ["FINAL_DESTINATION", "BATTLEFIELD"], "character": "FOX", "allowed_characters": ["FOX"],
             "games_per_side": 2, "workers": 4, "budget_ms": 16.0, "entrants_play_each_other": False,
             "calibrate_roster": False, "anchor": "cpu:1", "job_timeout_s": 1800,
-            "roster": [f"cpu:{i}" for i in range(1, 10)] + ["baseline:laser", "baseline:rusher", "baseline:shine"]}
+            "roster": [f"cpu:{i}" for i in range(1, 10)] + ["baseline:laser", "baseline:rusher", "baseline:shine"],
+            "hard_tier": ["agent:melee_llm.bots:HAL:MASTER", "agent:melee_llm.bots:Phillip:gm",
+                          "agent:melee_llm.bots:MIMIC", "agent:melee_llm.bots:Faynt"]}
 
 
 def load_config(path: str | Path) -> dict:
@@ -49,7 +53,7 @@ def player_spec(cfg: dict, name: str) -> str:
 
 
 def make_jobs(cfg: dict) -> list[dict]:
-    entrants, roster = list(cfg["entrants"]), list(cfg["roster"])
+    entrants, roster = list(cfg["entrants"]), list(cfg["roster"]) + list(cfg["hard_tier"])
     pairs = [(e, r) for e in entrants for r in roster]
     if cfg["entrants_play_each_other"]:
         pairs += [(a, b) for i, a in enumerate(entrants) for b in entrants[i + 1:]]
@@ -76,12 +80,13 @@ def _alarm(*_):
 def run_job(job: dict, cfg: dict) -> list[dict]:
     global _PORT
     import melee
-    from melee_llm.botwriter.dolphin import claim_slippi_port
+    from melee_llm.botwriter.dolphin import claim_slippi_port, exit_on_term
     from melee_llm.botwriter.specs import make_agent
     from melee_llm.runner import play
 
     if _PORT is None:
         _PORT = claim_slippi_port()
+        exit_on_term()
     out = Path(cfg["out"])
     char = melee.Character[cfg["character"]]
     allowed = {melee.Character[c] for c in cfg["allowed_characters"]}
@@ -107,9 +112,9 @@ def run_job(job: dict, cfg: dict) -> list[dict]:
         signal.signal(signal.SIGALRM, _alarm)
         signal.alarm(int(cfg["job_timeout_s"]))
         rdir = out / "replays" / job["id"]
-        results = play(agents, cfg["iso"], melee.Stage[job["stage"]], mode="fast", games=job["games"], replay_dir=rdir)
+        results = play(agents, cfg["iso"], melee.Stage[job["stage"]], mode="fast", games=job["games"], replay_dir=rdir,
+                       slippi_port=_PORT)
         signal.alarm(0)
-        replays = sorted(rdir.glob("*.slp"))
         recs = []
         for i, r in enumerate(results):
             stats = {side[p]: (agents[p].game_stats[i] if i < len(getattr(agents[p], "game_stats", [])) else None) for p in agents}
@@ -117,7 +122,7 @@ def run_job(job: dict, cfg: dict) -> list[dict]:
                          "stocks": {side[p]: int(r.stocks[p]) for p in agents},
                          "percent": {side[p]: round(float(r.percent[p]), 1) for p in agents},
                          "frames": r.frames, "seconds": round(r.seconds, 1), "bot_stats": stats,
-                         "replay": str(replays[i]) if i < len(replays) else None, "slippi_port": _PORT, "ts": time.time()})
+                         "replay": r.replay, "slippi_port": _PORT, "ts": time.time()})
         return recs
     except Exception:
         signal.alarm(0)
@@ -185,16 +190,23 @@ def leaderboard(cfg: dict, games: list[dict]) -> dict:
             flags["crashes"] += bool(st.get("crashed"))
             flags["frames"] += int(st.get("frames") or 0)
         per_opp = {o: round(statistics.fmean(s), 3) for o, s in vs.items()}
-        roster_rates = [per_opp[o] for o in roster if o in per_opp]
-        n_roster = sum(len(vs[o]) for o in roster if o in vs)
-        score = statistics.fmean(roster_rates) if roster_rates else 0.0
+
+        def tier(opps):
+            rates = [per_opp[o] for o in opps if o in per_opp]
+            score = statistics.fmean(rates) if rates else 0.0
+            ci = wilson(score, sum(len(vs[o]) for o in opps if o in vs))
+            return score, [round(100 * x, 1) for x in ci], len(rates)
+
+        score, ci, _ = tier(roster)
+        hard, hard_ci, hard_n = tier(cfg["hard_tier"])
         level = 0  # highest CPU level with every lower roster CPU also beaten at least half the time
         for lvl in sorted(int(o[4:]) for o in roster if o.startswith("cpu:")):
             if per_opp.get(f"cpu:{lvl}", 0) >= 0.5:
                 level = lvl
             else:
                 break
-        rows[e] = {"roster_score": round(100 * score, 1), "roster_score_ci95": [round(100 * x, 1) for x in wilson(score, n_roster)],
+        rows[e] = {"roster_score": round(100 * score, 1), "roster_score_ci95": ci,
+                   "hard_score": round(100 * hard, 1) if hard_n else None, "hard_score_ci95": hard_ci if hard_n else None,
                    "elo": elo.get(e), "cpu_ladder_level": level, "games": sum(map(len, vs.values())),
                    "vs": per_opp, "integrity": dict(flags), "flagged": bool(flags["policy_violations"] or flags["forfeits"])}
     models = defaultdict(list)
@@ -202,13 +214,14 @@ def leaderboard(cfg: dict, games: list[dict]) -> dict:
         models[e.split("/")[0]].append(r)
     by_model = {m: {"runs": len(rs), "roster_score_mean": round(statistics.fmean(r["roster_score"] for r in rs), 1),
                     "roster_score_sd": round(statistics.pstdev([r["roster_score"] for r in rs]), 1),
+                    "hard_score_mean": round(statistics.fmean(r["hard_score"] or 0 for r in rs), 1),
                     "elo_mean": round(statistics.fmean(r["elo"] or 0 for r in rs), 1),
                     "best_run_score": max(r["roster_score"] for r in rs)} for m, rs in models.items()}
-    return {"updated": time.strftime("%Y-%m-%dT%H:%M:%S"), "config": {k: cfg[k] for k in ("stages", "character", "games_per_side", "budget_ms", "roster", "anchor")},
+    return {"updated": time.strftime("%Y-%m-%dT%H:%M:%S"), "config": {k: cfg[k] for k in ("stages", "character", "games_per_side", "budget_ms", "roster", "hard_tier", "anchor")},
             "games": len(played), "errors": len(games) - len(played),
             "models": dict(sorted(by_model.items(), key=lambda kv: -kv[1]["roster_score_mean"])),
             "entrants": dict(sorted(rows.items(), key=lambda kv: -kv[1]["roster_score"])),
-            "roster_elo": {r: elo.get(r) for r in roster}}
+            "roster_elo": {r: elo.get(r) for r in roster + list(cfg["hard_tier"])}}
 
 
 def run(cfg: dict) -> dict:

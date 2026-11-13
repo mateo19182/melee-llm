@@ -8,13 +8,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import multiprocessing as mp
 import time
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import melee
 
 from melee_llm.botwriter.agent import BotAgent
-from melee_llm.botwriter.dolphin import claim_slippi_port, find_iso
+from melee_llm.botwriter.dolphin import claim_slippi_port, exit_on_term, find_iso
 from melee_llm.botwriter.host import FakeController
 from melee_llm.botwriter.specs import make_agent
 from melee_llm.botwriter.summary import compact, summarize
@@ -33,32 +35,43 @@ def _opponent(spec: str, bot: Path, char: melee.Character, budget, log_dir: Path
     return make_agent(spec, char, budget, log_dir, allow_agents=False)
 
 
+def _play_side(bot: Path, opponent: str, bot_port: int, n: int, stage: melee.Stage, iso: str, out: Path,
+               opp_char: melee.Character, budget_ms: float | None, mode: str) -> list[dict]:
+    exit_on_term()
+    rdir = out / f"port{bot_port}"
+    opp = _opponent(opponent, bot, opp_char, budget_ms, out)
+    me = BotAgent(bot, budget_ms, log_path=out / f"bot-port{bot_port}.log")
+    results = play({bot_port: me, 3 - bot_port: opp}, iso, stage, mode=mode, games=n, replay_dir=rdir,
+                   slippi_port=claim_slippi_port())
+    games = []
+    for i, r in enumerate(results):
+        g = {"bot_port": bot_port, "winner": r.winner, "result": "draw" if r.winner is None else
+             "win" if r.winner == bot_port else "loss", "stocks": {p: int(v) for p, v in r.stocks.items()},
+             "percent": {p: round(float(v), 1) for p, v in r.percent.items()}, "frames": r.frames,
+             "seconds": round(r.seconds, 1), "bot_frame_stats": me.game_stats[i] if i < len(me.game_stats) else None}
+        if r.replay:
+            g["replay"] = r.replay
+            try:
+                g["summary"] = summarize(r.replay)
+            except Exception as e:  # a broken replay must not hide the result
+                g["summary_error"] = str(e)
+        games.append(g)
+    return games
+
+
 def run_practice(bot: Path, opponent: str, games: int, stage: melee.Stage, iso: str, out: Path,
                  opp_char: melee.Character = melee.Character.FOX, budget_ms: float | None = 16.0,
                  mode: str = "fast") -> dict:
+    """Games alternate spawn sides; the two sides run at once in their own Dolphins."""
     out.mkdir(parents=True, exist_ok=True)
-    claim_slippi_port()
+    _opponent(opponent, bot, opp_char, budget_ms, out).close()  # reject bad specs before starting Dolphins
+    exit_on_term()
     report = {"bot": str(bot), "opponent": opponent, "stage": stage.name, "games": []}
-    sides = [(1, (games + 1) // 2), (2, games // 2)]  # alternate spawn sides
-    for bot_port, n in sides:
-        if n == 0:
-            continue
-        rdir = out / f"port{bot_port}"
-        opp = _opponent(opponent, bot, opp_char, budget_ms, out)
-        me = BotAgent(bot, budget_ms, log_path=out / "bot.log")
-        results = play({bot_port: me, 3 - bot_port: opp}, iso, stage, mode=mode, games=n, replay_dir=rdir)
-        replays = sorted(rdir.glob("*.slp"))
-        for i, r in enumerate(results):
-            g = {"bot_port": bot_port, "winner": r.winner, "result": "draw" if r.winner is None else
-                 "win" if r.winner == bot_port else "loss", "stocks": r.stocks, "percent": r.percent,
-                 "frames": r.frames, "bot_frame_stats": me.game_stats[i] if i < len(me.game_stats) else None}
-            if i < len(replays):
-                g["replay"] = str(replays[i])
-                try:
-                    g["summary"] = summarize(replays[i])
-                except Exception as e:  # a broken replay must not hide the result
-                    g["summary_error"] = str(e)
-            report["games"].append(g)
+    sides = [(p, n) for p, n in ((1, (games + 1) // 2), (2, games // 2)) if n]
+    with ProcessPoolExecutor(len(sides), mp_context=mp.get_context("spawn")) as pool:
+        futs = [pool.submit(_play_side, bot, opponent, p, n, stage, iso, out, opp_char, budget_ms, mode) for p, n in sides]
+        for f in futs:
+            report["games"] += f.result()
     res = [g["result"] for g in report["games"]]
     report["record"] = {"wins": res.count("win"), "losses": res.count("loss"), "draws": res.count("draw")}
     report["stock_diff_avg"] = round(sum(
@@ -149,9 +162,9 @@ def main() -> None:
         print(f"  frames late {fs.get('late')} skipped {fs.get('skipped')} exceptions {fs.get('exceptions')} "
               f"p99 {fs.get('ms_p99')} ms crashed {fs.get('crashed')}  replay {g.get('replay')}")
     print(json.dumps({"opponent": rep["opponent"], "stage": rep["stage"], **rep["record"],
-                      "stock_diff_avg": rep["stock_diff_avg"], "report": str(out / "report.json"), "bot_log": str(out / "bot.log")}))
-    if any((g.get("bot_frame_stats") or {}).get("exceptions") for g in rep["games"]):
-        print("--- bot log tail ---\n" + _tail(out / "bot.log"))
+                      "stock_diff_avg": rep["stock_diff_avg"], "report": str(out / "report.json"), "bot_logs": str(out / "bot-port*.log")}))
+    for p in sorted({g["bot_port"] for g in rep["games"] if (g.get("bot_frame_stats") or {}).get("exceptions")}):
+        print(f"--- bot log tail (port {p}) ---\n" + _tail(out / f"bot-port{p}.log"))
 
 
 if __name__ == "__main__":
