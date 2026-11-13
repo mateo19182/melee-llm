@@ -1,0 +1,41 @@
+diff --git a/src/components/App.tsx b/src/components/App.tsx
+index 401c75c..d5b01b7 100644
+--- a/src/components/App.tsx
++++ b/src/components/App.tsx
+@@ -8,7 +8,8 @@ import { Navigation } from "~/components/panels/Navigation";
+ import { Sidebar } from "~/components/panels/Sidebar";
+ import { TopBar } from "~/components/panels/TopBar";
+ import { Viewer } from "~/components/viewer/Viewer";
+-import { load } from "~/state/fileStore";
++import { fileStore, load } from "~/state/fileStore";
++import { localLibrary } from "~/state/selectionStore";
+ import { replayStore } from "~/state/replayStore";
+ import { fetchAnimations } from "~/viewer/animationCache";
+ import "~/state/fileStore";
+@@ -42,7 +43,12 @@ export function App() {
+       void fetch(url)
+         .then(async (response) => await response.blob())
+         .then((blob) => new File([blob], url.split("/").at(-1) ?? "url.slp"))
+-        .then(async (file) => await load([file], startFrame));
++        .then(async (file) => {
++          await load([file], startFrame);
++          setSidebar("local replays");
++          const stub = fileStore.stubs.at(-1);
++          if (stub !== undefined) await localLibrary.select(stub);
++        });
+     } catch (e) {
+       console.error("Error: could not load replay", url, e);
+     }
+diff --git a/src/worker.ts b/src/worker.ts
+index 8fc9404..23b1f59 100644
+--- a/src/worker.ts
++++ b/src/worker.ts
+@@ -22,7 +22,7 @@ onmessage = async (event) => {
+               const settings = parseGameSettings(
+                 decode(await file.arrayBuffer(), { useTypedArrays: true })
+               );
+-              if (isLegalGameWithoutCPUs(settings)) {
++              if (settings !== undefined) { // local patch: keep CPU and non-legal games
+                 const stub = settingsToStub(file, settings);
+                 return [file, stub];
+               } else {

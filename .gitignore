@@ -1,0 +1,6 @@
+bin/
+vendor/
+replays/
+.venv/
+*.iso
+__pycache__/
