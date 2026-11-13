@@ -15,6 +15,7 @@ if [ ! -d bin/vgl ]; then
   dpkg -x /tmp/vgl.deb bin/vgl && rm /tmp/vgl.deb
 fi
 
+[ -x bin/mediamtx ] || curl -fsSL https://github.com/bluenviron/mediamtx/releases/download/v1.21.3/mediamtx_v1.21.3_linux_amd64.tar.gz | tar -xz -C bin mediamtx
 [ -d vendor/noVNC ] || git clone -q --depth 1 https://github.com/novnc/noVNC.git vendor/noVNC
 if [ ! -d vendor/slippilab ]; then
   git clone -q https://github.com/frankborden/slippilab.git vendor/slippilab

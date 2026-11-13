@@ -1,0 +1,22 @@
+# Live WebRTC view of the game: http://m19182:8889/live (bound to the Tailscale IP only).
+logLevel: warn
+api: no
+metrics: no
+pprof: no
+playback: no
+rtsp: yes
+rtspAddress: 127.0.0.1:8554
+rtmp: no
+hls: no
+srt: no
+webrtc: yes
+webrtcAddress: 100.83.166.6:8889
+webrtcLocalUDPAddress: 100.83.166.6:8189
+webrtcLocalTCPAddress: ''
+webrtcIPsFromInterfaces: no
+webrtcAdditionalHosts: [100.83.166.6]
+paths:
+  live:
+    runOnDemand: /home/mateo/projects/ai/melee-llm/scripts/stream.sh
+    runOnDemandRestart: yes
+    runOnDemandCloseAfter: 10s

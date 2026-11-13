@@ -106,7 +106,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             rows = "".join(
                 f'<li><a href="/?replayUrl=/replays/{html.escape(f.name)}">{html.escape(f.name)}</a></li>'
                 for f in files)
-            return self._send(f'<p><a href="/watch">live</a></p><h1>Replays</h1><ul>{rows or "<li>none yet</li>"}</ul>'.encode())
+            return self._send(f'<p>live: <a href="http://m19182:8889/live/">WebRTC (H.264, smooth)</a> · <a href="/watch">MJPEG fallback</a></p><h1>Replays</h1><ul>{rows or "<li>none yet</li>"}</ul>'.encode())
         if self.path == "/watch":
             return self._send(WATCH_HTML)
         if self.path == "/live":
