@@ -4,6 +4,7 @@ Bound to the Tailscale IP only (never 0.0.0.0). Pages: /list (replays), /watch (
 """
 import html
 import http.server
+import json
 import os
 import re
 import subprocess
@@ -106,7 +107,22 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             rows = "".join(
                 f'<li><a href="/?replayUrl=/replays/{html.escape(f.name)}">{html.escape(f.name)}</a></li>'
                 for f in files)
-            return self._send(f'<p>live: <a href="http://m19182:8889/live/">WebRTC (H.264, smooth)</a> · <a href="/watch">MJPEG fallback</a></p><h1>Replays</h1><ul>{rows or "<li>none yet</li>"}</ul>'.encode())
+            return self._send(f'<p><a href="/arena">arena standings</a> · live: <a href="http://m19182:8889/live/">WebRTC (H.264, smooth)</a> · <a href="/watch">MJPEG fallback</a></p><h1>Replays</h1><ul>{rows or "<li>none yet</li>"}</ul>'.encode())
+        if self.path == "/arena":
+            path = ROOT / "arena/standings.json"
+            data = json.loads(path.read_text()) if path.exists() else {"table": [], "games": 0, "updated": "never"}
+            rows = "".join(f"<tr><td>{html.escape(r['entrant'])}</td><td>{r['elo']}</td><td>{r['wins']}-{r['losses']}"
+                           f"{'-' + str(r['draws']) if r['draws'] else ''}</td></tr>" for r in data["table"])
+            recent = (ROOT / "arena/results.jsonl").read_text().splitlines()[-15:] if (ROOT / "arena/results.jsonl").exists() else []
+            games = "".join(
+                f"<li>{html.escape(g['p1'])} ({g['char1'].title()}) vs {html.escape(g['p2'])} ({g['char2'].title()}), "
+                f"{g['stage'].replace('_', ' ').title()}: winner P{g['winner']} {g['stocks']}"
+                + (f' <a href="/?replayUrl=/replays/{html.escape(Path(g["replay"]).name)}">replay</a>' if g.get("replay") else "")
+                + "</li>" for g in map(json.loads, reversed(recent)))
+            return self._send(f"""<meta http-equiv="refresh" content="30"><style>body{{font-family:sans-serif;margin:2em}}
+td,th{{padding:4px 12px;text-align:left}}</style><p><a href="http://m19182:8889/live/">watch live</a></p>
+<h1>Arena</h1><p>{data['games']} games, updated {data['updated']}</p>
+<table><tr><th>Bot</th><th>Elo</th><th>W-L</th></tr>{rows}</table><h2>Recent</h2><ul>{games}</ul>""".encode())
         if self.path == "/watch":
             return self._send(WATCH_HTML)
         if self.path == "/live":

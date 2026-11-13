@@ -6,3 +6,4 @@ replays/
 __pycache__/
 auto.crt
 auto.key
+arena/

@@ -48,3 +48,12 @@ Open http://m19182:8767/list. Port 8766 is taken by another service on this host
 - LLM plays: see [docs/llm-player.md](docs/llm-player.md).
 - LLM writes bots: see [docs/bot-writer.md](docs/bot-writer.md).
 - Learned bots (HAL, Faynt, MIMIC, Phillip), which serve as ladder opponents and as the body an LLM coach steers: see `docs/bots.md`.
+
+## Arena
+
+`arena.py` runs the learned bots and a level-9 CPU back to back on display :99, in lockstep at about 60 fps. Each game uses the least-played pairing, random characters (Fox, Falco, Marth or Falcon) and a random legal stage. It writes a strip under the stream with the matchup and Elo, and results go to `arena/results.jsonl` and `arena/standings.json`. Standings are at http://m19182:8767/arena.
+
+```sh
+systemd-run --user --unit=melee-arena --working-directory=$PWD --setenv=DISPLAY=:99 $PWD/.venv/bin/python arena.py --iso ~/melee.iso
+systemctl --user stop melee-arena
+```
