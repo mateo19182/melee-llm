@@ -4,3 +4,5 @@ replays/
 .venv/
 *.iso
 __pycache__/
+auto.crt
+auto.key

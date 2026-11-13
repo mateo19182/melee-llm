@@ -16,11 +16,13 @@ from melee_llm.agents.base import Agent
 ROOT = Path(__file__).resolve().parent.parent
 DOLPHIN = {
     "watch": ROOT / "scripts/dolphin-gpu.sh",  # rendered on the GPU, real time (view on :99)
-    "paused": ROOT / "scripts/dolphin-gpu.sh",  # rendered, game waits for every input
+    "paused": ROOT / "scripts/dolphin-gpu.sh",  # rendered, game waits for every input (slow players → slow motion)
+    "lockstep": ROOT / "scripts/dolphin-gpu.sh",  # same as paused; with fast bots it runs at real time, no dropped frames
     "fast": ROOT / "bin/Slippi_Mainline_ExiAI.AppImage",  # headless, unthrottled
 }
 
 
+HEADLESS_DISPLAY = os.environ.get("MELEE_HEADLESS_DISPLAY", ":98")  # the ExiAI build still wants an X display
 WINDOW = (1280, 960)  # matches the Xvfb :99 screen that live.sh starts
 
 
@@ -109,7 +111,7 @@ def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BA
     assert len(agents) == 2, "two ports for now"
     if not _port_free(slippi_port):
         raise RuntimeError(f"Slippi port {slippi_port} is busy: a stale Dolphin is probably still running")
-    fast, blocking = mode == "fast", mode in ("fast", "paused")
+    fast, blocking = mode == "fast", mode in ("fast", "paused", "lockstep")
     replay_dir = replay_dir or ROOT / "replays"
     replay_dir.mkdir(parents=True, exist_ok=True)
     console = Console(
@@ -119,7 +121,14 @@ def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BA
     )
     ports = sorted(agents)
     controllers = {p: melee.Controller(console=console, port=p, type=melee.ControllerType.STANDARD) for p in ports}
-    console.run(iso_path=iso)
+    display = os.environ.get("DISPLAY")
+    if fast:  # keep headless Dolphins off the streamed display
+        os.environ["DISPLAY"] = HEADLESS_DISPLAY
+    try:
+        console.run(iso_path=iso)
+    finally:
+        if fast:
+            os.environ.pop("DISPLAY", None) if display is None else os.environ.__setitem__("DISPLAY", display)
     try:
         if not console.connect():
             raise RuntimeError("could not connect to Dolphin")

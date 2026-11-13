@@ -20,6 +20,10 @@ from melee_llm.agents.llm_paused import PausedLLM  # noqa: E402
 
 AGENTS |= {"llm_paused": PausedLLM, "llm_live": LiveLLM}  # llm_paused:<model>[,interval=30,mode=json,...]
 
+from melee_llm.bots import BOTS  # noqa: E402
+
+AGENTS |= BOTS  # hal[:identity], phillip[:model], mimic[:checkpoint], faynt[:variant]; see docs/bots.md
+
 
 def make(spec: str, character: str):
     kind, _, arg = spec.partition(":")
@@ -39,8 +43,9 @@ def main() -> None:
     p.add_argument("--char1", default="FOX")
     p.add_argument("--char2", default="FALCO")
     p.add_argument("--stage", default="BATTLEFIELD")
-    p.add_argument("--mode", choices=DOLPHIN, default="watch",
-                   help="watch: real time; paused: game waits for each input; fast: headless, unthrottled")
+    p.add_argument("--mode", choices=DOLPHIN, default="lockstep",
+                   help="lockstep/paused: rendered, game waits for each input (real time with fast bots); "
+                        "watch: real time, never waits (crashes with learned bots); fast: headless, unthrottled")
     p.add_argument("--games", type=int, default=1)
     a = p.parse_args()
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))  # so play()'s cleanup runs under `timeout`/kill

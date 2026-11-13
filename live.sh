@@ -7,6 +7,8 @@ cd "$(dirname "$0")"
 BIND=${BIND:-100.83.166.6}
 systemctl --user is-active -q melee-xvfb || { systemctl --user reset-failed melee-xvfb 2>/dev/null || true;
   systemd-run --user --unit=melee-xvfb --description="Xvfb :99 for Melee" Xvfb :99 -screen 0 1280x960x24 >/dev/null; }
+systemctl --user is-active -q melee-xvfb-headless || { systemctl --user reset-failed melee-xvfb-headless 2>/dev/null || true;
+  systemd-run --user --unit=melee-xvfb-headless --description="Xvfb :98 for headless Melee jobs" Xvfb :98 -screen 0 640x480x24 >/dev/null; }
 sleep 1
 if [ "${VNC:-0}" = 1 ]; then
   pgrep -f "x11vnc -display :99" >/dev/null || x11vnc -display :99 -localhost -forever -shared -nopw -quiet -bg -o /tmp/melee-x11vnc.log
