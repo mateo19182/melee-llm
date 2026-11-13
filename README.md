@@ -18,13 +18,14 @@ Rendered modes run Dolphin through `scripts/dolphin-gpu.sh`. VirtualGL's EGL bac
 ## Watch a match live
 
 ```sh
-./live.sh                      # Xvfb :99 → x11vnc (localhost) → noVNC on the Tailscale IP
+./live.sh                      # Xvfb :99 as user service melee-xvfb
 DISPLAY=:99 uv run match.py --iso ~/melee.iso --p1 cpu:9 --p2 cpu:9
+DISPLAY=:99 uv run match.py --iso ~/melee.iso --p1 llm_paused:claude-haiku-4-5-20251001 --p2 cpu:5 --mode paused
 ```
 
-Open http://m19182:6080/vnc.html?autoconnect=1&resize=scale. The page has no password and is bound only to the Tailscale IP.
+Open http://m19182:8767/watch. It's an MJPEG stream of Dolphin's game window at about 60 fps, served by `viewer.py` and bound only to the Tailscale IP. `VNC=1 ./live.sh` also starts a noVNC view on :6080, which is interactive but laggy.
 
-Players are `cpu:N`, `shine` (libmelee's multishine demo) or `idle`. There are three modes:
+Players are `cpu:N`, `shine` (libmelee's multishine demo), `idle`, `llm_paused:<model>` or `llm_live:<model>`. The LLM players are described in [docs/llm-player.md](docs/llm-player.md). There are three modes:
 
 - `--mode watch`: real time, rendered.
 - `--mode paused`: the game waits for each input, so slow players such as LLMs can think.
@@ -39,3 +40,9 @@ systemd-run --user --unit=melee-viewer --working-directory=$PWD $PWD/.venv/bin/p
 ```
 
 Open http://m19182:8767/list. Port 8766 is taken by another service on this host.
+
+## Tracks
+
+- LLM plays: see [docs/llm-player.md](docs/llm-player.md).
+- LLM writes bots: see [docs/bot-writer.md](docs/bot-writer.md).
+- Learned bots (HAL, Faynt, MIMIC, Phillip), which serve as ladder opponents and as the body an LLM coach steers: see `docs/bots.md`.

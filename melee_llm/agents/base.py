@@ -8,6 +8,7 @@ A match calls `setup` once, then `step` on every in-game frame. `step` presses b
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import melee
 
@@ -20,6 +21,9 @@ class Agent:
 
     def setup(self, controller: melee.Controller, port: int, opponent_port: int) -> None:
         self.controller, self.port, self.opponent_port = controller, port, opponent_port
+
+    def on_game_start(self, gs: melee.GameState, replay: Path | None) -> None:
+        """First in-game frame. `replay` is the .slp Slippi just started writing (None if not found)."""
 
     def step(self, gs: melee.GameState) -> None:
         pass

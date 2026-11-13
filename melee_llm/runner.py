@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import configparser
 import os
+import signal
+import socket
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -48,6 +50,33 @@ class Console(melee.Console):
             with open(path, "w") as f:
                 cfg.write(f)
 
+    def stop(self):
+        # The AppImage launcher dies on kill() but the Dolphin inside it (AppRun.wrapped) survives and keeps
+        # the Slippi port, so the next match would silently attach to it. Kill everything using our temp home.
+        home = self.temp_dir
+        super().stop()
+        if home:
+            _kill_matching(home)
+
+
+def _kill_matching(needle: str) -> None:
+    for pid in filter(str.isdigit, os.listdir("/proc")):
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as f:
+                if needle.encode() in f.read() and int(pid) != os.getpid():
+                    os.kill(int(pid), signal.SIGKILL)
+        except (OSError, ValueError):
+            pass
+
+
+def _port_free(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        try:
+            s.bind(("127.0.0.1", port))
+            return True
+        except OSError:
+            return False
+
 
 @dataclass
 class GameResult:
@@ -57,6 +86,7 @@ class GameResult:
     seconds: float
     winner: int | None = None
     agents: dict[int, str] = field(default_factory=dict)
+    replay: str | None = None
 
 
 def _result(gs: melee.GameState, frames: int, t0: float, agents: dict[int, Agent]) -> GameResult:
@@ -67,16 +97,25 @@ def _result(gs: melee.GameState, frames: int, t0: float, agents: dict[int, Agent
     return GameResult(stocks, percent, frames, time.time() - t0, winner, {p: a.name for p, a in agents.items()})
 
 
+def _newest_replay(replay_dir: Path, since: float) -> Path | None:
+    files = [f for f in replay_dir.rglob("*.slp") if f.stat().st_mtime >= since - 1]
+    return max(files, key=lambda f: f.stat().st_mtime, default=None)
+
+
 def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BATTLEFIELD,
-         mode: str = "watch", games: int = 1, replay_dir: Path | None = None) -> list[GameResult]:
+         mode: str = "watch", games: int = 1, replay_dir: Path | None = None,
+         slippi_port: int = 51441) -> list[GameResult]:
+    """Run `games` games. Parallel calls need distinct `slippi_port`s (and distinct X displays if rendered)."""
     assert len(agents) == 2, "two ports for now"
+    if not _port_free(slippi_port):
+        raise RuntimeError(f"Slippi port {slippi_port} is busy: a stale Dolphin is probably still running")
     fast, blocking = mode == "fast", mode in ("fast", "paused")
     replay_dir = replay_dir or ROOT / "replays"
     replay_dir.mkdir(parents=True, exist_ok=True)
     console = Console(
         path=str(DOLPHIN[mode]), fullscreen=False, save_replays=True, replay_dir=str(replay_dir),
         disable_audio=True, gfx_backend="Null" if fast else "OGL",
-        emulation_speed=0 if fast else 1.0, blocking_input=blocking,
+        emulation_speed=0 if fast else 1.0, blocking_input=blocking, slippi_port=slippi_port,
     )
     ports = sorted(agents)
     controllers = {p: melee.Controller(console=console, port=p, type=melee.ControllerType.STANDARD) for p in ports}
@@ -98,6 +137,9 @@ def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BA
             if gs.menu_state in (melee.Menu.IN_GAME, melee.Menu.SUDDEN_DEATH):
                 if last is None:
                     frames, t0 = 0, time.time()
+                    replay = _newest_replay(replay_dir, t0)
+                    for a in agents.values():
+                        a.on_game_start(gs, replay)
                 last, frames = gs, frames + 1
                 for p, a in agents.items():
                     if not a.cpu_level:
@@ -105,6 +147,8 @@ def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BA
                 continue
             if last is not None:
                 results.append(_result(last, frames, t0, agents))
+                found = _newest_replay(replay_dir, t0)
+                results[-1].replay = str(found) if found else None
                 for a in agents.values():
                     a.on_game_end(last)
                 last = None

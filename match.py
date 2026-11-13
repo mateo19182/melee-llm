@@ -4,6 +4,8 @@ Players: cpu:N (in-game CPU level 1-9), shine, idle, llm_paused:<model>, llm_liv
 """
 import argparse
 import json
+import signal
+import sys
 from dataclasses import asdict
 
 import melee
@@ -41,6 +43,7 @@ def main() -> None:
                    help="watch: real time; paused: game waits for each input; fast: headless, unthrottled")
     p.add_argument("--games", type=int, default=1)
     a = p.parse_args()
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))  # so play()'s cleanup runs under `timeout`/kill
     agents = {1: make(a.p1, a.char1), 2: make(a.p2, a.char2)}
     for r in play(agents, a.iso, melee.Stage[a.stage], a.mode, a.games):
         print(json.dumps(asdict(r), default=float))
