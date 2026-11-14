@@ -13,12 +13,12 @@ The spec format is `<kind>:<model>[,key=value...]`. Keys: `interval` (frames bet
 
 | File | Role |
 |---|---|
-| `melee_llm/state.py` | `observe(gs, port, opp)` builds a JSON-able dict. `render(obs, events)` turns it into about 100-170 tokens of text. `EventTracker` summarises hits, stocks, ledge grabs, techs, grabs and shield breaks. It also provides the actionability, hitstun and stage geometry helpers. |
-| `melee_llm/actions.py` | Macros as generators: each `yield` is the next frame's `Input` and each `return` is the outcome. `Executor` runs one macro at a time, writes only input diffs to the controller, enforces `max_frames` and runs reflexes. `ACTIONS` is the registry, `tool_schema()` the single `act` tool and `RecordingController` a stand-in controller for tests. |
-| `melee_llm/llm.py` | OpenAI-compatible client: tool or JSON mode, tolerant JSON parsing, latency and token accounting. Errors come back as failed `Reply`s instead of raising. |
-| `melee_llm/agents/llm_common.py` | Shared code for both agents: system prompt (Melee basics, stage geometry, character tips, action list), decision history and the JSONL log. |
+| `melee_llm/state.py` | Builds the observation and renders it as about 100-170 tokens of text; `EventTracker` summarises hits, stocks, ledge grabs, techs, grabs and shield breaks. |
+| `melee_llm/actions.py` | The macros, and the `Executor` that runs one at a time and runs reflexes. |
+| `melee_llm/llm.py` | OpenAI-compatible client: tool or JSON mode, tolerant JSON parsing, latency and token accounting. |
+| `melee_llm/agents/llm_common.py` | System prompt, decision history and the JSONL log, shared by both agents. |
 | `melee_llm/agents/llm_paused.py` | `PausedLLM` decides when the macro ends, or every `interval` frames if the macro is interruptible. It blocks while thinking, so use it only in `--mode paused`. |
-| `melee_llm/agents/llm_live.py` | `LiveLLM` asks a background thread, and `step()` never blocks. Until a reply arrives the executor keeps running the last macro or a default (dash dance, or shield when the opponent is close). Replies older than `max_stale` frames are dropped. |
+| `melee_llm/agents/llm_live.py` | `LiveLLM` asks a background thread and never blocks. Until a reply arrives the executor keeps running the last macro or a default (dash dance, or shield when the opponent is close). Replies older than `max_stale` frames are dropped. |
 
 ## Sample rendering (Falco vs Samus replay)
 
@@ -38,7 +38,7 @@ f1230 laser(short,1) → laser: fired 1, landed
 - **Aerials:** `nair|fair|bair|uair|dair`, with `jump` (short, full or double), `dir` and `fastfall`. The executor L-cancels automatically.
 - **Grounded attacks:** `jab`, `ftilt`, `utilt`, `dtilt`, `fsmash`, `usmash`, `dsmash` and `dash_attack`.
 - **Grabs:** `grab` with `throw` (f, b, u or d).
-- **Specials:** `shine` with `then` (jump, wavedash or hold), `laser` (short-hop laser by default), `side_b`, `up_b` (aimed at the ledge) and `recover`. `recover` is character-aware: double jump, then side-B for spacies near ledge height, then up-B with a per-character reach estimate.
+- **Specials:** `shine` with `then` (jump, wavedash or hold), `laser` (short-hop laser by default), `side_b`, `up_b` (aimed at the ledge) and `recover` (character-aware: double jump, side-B, then up-B).
 - **Defence:** `shield`, `roll`, `spot_dodge`, `ledge` (getup, roll, jump, attack or drop) and `tech`.
 
 Reflexes take over without asking the LLM:
@@ -53,9 +53,11 @@ Reflexes take over without asking the LLM:
 Each game writes a JSONL file to `replays/`, renamed at game end to `<replay>.p<port>.llm.jsonl`:
 
 - A `game_start` record: model, characters, stage and the full system prompt.
-- One `decision` record per decision: frame, asked_frame, obs_text, obs, decision, reason, latency_s, prompt and completion tokens, reply mode, error and the raw text when parsing failed. Paused records add `think_s`. Live records add `latency_frames` and `stale_frames`.
+- One `decision` record per decision: frame, the observation, the decision and its reason, latency, tokens, and any error.
 - `dropped` records for live replies that were too stale.
 - A `game_end` summary.
+
+The exact fields are in `melee_llm/agents/llm_common.py`.
 
 ## Offline testing (no ISO)
 
@@ -65,9 +67,11 @@ uv run python tests/test_llm_layer.py      # prints renderings + frame-by-frame 
 uv run python scripts/llm_dryrun.py replays/sample-slippi-js-itemExport.slp llm_live:claude-haiku-4-5-20251001 --decisions 5 --realtime
 ```
 
-`tests/fakesim.py` is a toy version of Fox's physics that reacts to inputs: jumpsquat, short and full hop, fast-fall, aerials with L-cancel, airdodge into wavedash, shield, roll, grab, shine jump-cancel and ledge. It checks that inputs land on the intended frames; it is not Melee. Replay states ignore our inputs, so dry runs measure prompts, parsing and latency, not play quality.
+`tests/fakesim.py` is a toy version of Fox's physics that checks inputs land on the intended frames; it is not Melee. Replay states ignore our inputs, so dry runs measure prompts, parsing and latency, not play quality.
 
 ## Measured (2026-11-13, Falco replay, JSON mode, effort=none)
+
+Dry-run figures from before the first real games. Ratings from real games are on the [bench](bench.md).
 
 | Model | Latency per decision | Prompt / completion tokens | Parsed |
 |---|---|---|---|
@@ -77,19 +81,15 @@ uv run python scripts/llm_dryrun.py replays/sample-slippi-js-itemExport.slp llm_
 | haiku, `mode=tool` | 1.0-1.1 s | ≈2.3k / 80 | 2/2 |
 
 - **Live Haiku at 60 fps:** reply latency was 61-73 frames (mean 69) and state staleness when the macro started was 69-107 frames (mean 85). `step()` took p99 0.5 ms.
-- **`effort=low`:** Haiku spent its whole 400-token budget thinking and returned nothing parseable, and Sonnet's answers were truncated about half the time. Keep `effort=none`.
+- **Keep `effort=none`.** With `effort=low`, Haiku spent its whole 400-token budget thinking and returned nothing parseable, and Sonnet's answers were truncated about half the time.
 
 ## Open problems
 
-- **Live latency.** One decision per second is too slow for neutral. Mitigations: make macros more conditional (react to state while running), use a local small model via `base_url`, or have the LLM set a *policy* (for example "camp lasers, punish landings") that a fast scripted layer executes. The paused mode works but plays in slow motion, about 1 s of thinking per 0.3-1 s of game.
+- **Live latency.** One decision per second is too slow for neutral. Untried mitigations: macros that react to state while running, a local small model via `base_url`, or an LLM that sets a *policy* (for example "camp lasers, punish landings") for a fast scripted layer.
 - **Prompt size.** About 900 of the tokens are the static system prompt. Prompt caching through the proxy is untested.
 - **Macro fidelity.** Fox and Falco have the most detail. Other characters get generic up-B and neutral-B handling, and `UPB_REACH` and `JUMPSQUAT` are rough tables.
 - **No platform awareness** in `approach` or `retreat`, and no edgeguard-specific macros (for example ledge-hog or drop-down bair).
 
 ## Needs the ISO to validate
 
-1. **Frame timing.** The wavedash airdodge press on the last jumpsquat frame, shine jump-cancel on frame 3 or 4, L-cancel timing from `frames_to_land`, and fast-fall triggering.
-2. **Stick and tap-jump thresholds.** Tilt vs smash magnitudes (utilt uses 0.5 up to avoid tap-jump), the soft turnaround (0.5), and roll and spot dodge out of a 1-frame shield.
-3. **Fox and Falco special action IDs** (`state._SPACIE_SPECIALS`, `SHINE_IDS`, `UPB_IDS`). These are taken from the spacie action-state table, not observed.
-4. **Recovery behaviour.** Firefox angle aiming at the ledge, illusion or phantasm distance thresholds, and whether the recovery reflex triggers too eagerly while edgeguarding.
-5. **Paused mode.** Dolphin `blocking_input` must tolerate step() calls of several seconds, and the JSONL rename must match the Slippi `.slp`.
+This list predates the first real games, and no frame-by-frame check is recorded here. The macros were written against a toy sim, so these remain unverified in detail: frame timing (wavedash, shine jump-cancel, L-cancel, fast-fall), stick and tap-jump thresholds, the Fox and Falco special action IDs (`state._SPACIE_SPECIALS`, `SHINE_IDS`, `UPB_IDS`, taken from the action-state table, not observed), and recovery aiming, including whether the recovery reflex triggers too eagerly while edgeguarding.

@@ -10,9 +10,9 @@ Experiments with LLMs playing Super Smash Bros. Melee through [libmelee](https:/
   - `Slippi_Mainline_ExiAI.AppImage`: vladfi1 ExiAI mainline beta.14.1, headless and unthrottled.
   - VirtualGL.
   - noVNC.
-  - Slippi Lab, with `patches/slippilab.patch` applied. The patch lets `?replayUrl=` select the loaded replay, and keeps CPU and non-legal games, which upstream silently drops.
+  - Slippi Lab, with `patches/slippilab.patch` applied.
 
-Rendered modes run Dolphin through `scripts/dolphin-gpu.sh`: VirtualGL's EGL backend renders on the NVIDIA GPU and copies the frames into the Xvfb display, so no root and no real X server are needed. This runs at 60 fps; plain Xvfb renders on the CPU at about 3 fps in game.
+Rendered modes run Dolphin through `scripts/dolphin-gpu.sh`, which renders on the NVIDIA GPU with VirtualGL into the Xvfb display: 60 fps, against about 3 fps for plain Xvfb on the CPU. No root and no real X server are needed.
 
 ## Watch a match live
 
@@ -25,17 +25,18 @@ DISPLAY=:99 uv run -m melee_llm.match --iso ~/melee.iso --p1 llm_paused:claude-h
 Where to watch:
 
 - **Web UI** (below): the main live view.
-- http://m19182:8889/live/ (tailnet): the lowest latency. A WebRTC stream from mediamtx, H.264 encoded on the GPU with NVENC at 60 fps and 6 Mbit/s. mediamtx runs as the user service `melee-mediamtx` with config `scripts/mediamtx.yml`, and starts `scripts/stream.sh` only while someone watches. It captures Dolphin's game window at native size (1168x960, 73:60): on :99, `runner.Console` opens that window at that size from Qt's saved geometry and moves it to (0, 0), since VirtualGL can't follow a resize after launch.
-- http://m19182:8767/watch: the fallback. An MJPEG stream of Dolphin's game window at about 60 fps, served by `scripts/viewer.py` and bound only to the Tailscale IP.
-- **`VNC=1 scripts/live.sh`** also starts a noVNC view on :6080, which is interactive but laggy.
+- http://m19182:8889/live/ (tailnet): the lowest latency. A WebRTC stream from mediamtx (user service `melee-mediamtx`, config `scripts/mediamtx.yml`), H.264 at 60 fps and 6 Mbit/s.
+- http://m19182:8767/watch: the fallback. An MJPEG stream at about 60 fps, served by `scripts/viewer.py` and bound only to the Tailscale IP.
+- `VNC=1 scripts/live.sh` also starts a noVNC view on :6080, which is interactive but laggy.
 
-Players are spec strings such as `cpu:N`, `hal:MASTER`, `llm_paused:<model>` or `coach:haiku,body=reyn`; `melee_llm/players.py` lists them all. There are five modes:
+Players are spec strings such as `cpu:N`, `hal:MASTER`, `llm_paused:<model>` or `coach:haiku,body=reyn`; `melee_llm/players.py` lists them all. There are six modes:
 
 - `--mode watch`: real time, rendered.
 - `--mode paused`: the game waits for each input, so slow players such as LLMs can think.
 - `--mode lockstep` (the default): rendered like `paused`; with fast bots it runs at real time.
 - `--mode fast`: headless and unthrottled; it only produces replays.
-- `--mode realtime`: headless like `fast`, but capped at 60 fps and waiting for slow inputs (lockstep without rendering); the bench's real-time track uses it.
+- `--mode realtime`: headless like `fast`, but capped at 60 fps and waiting for slow inputs; the bench's real-time track uses it.
+- `--mode sim`: no Dolphin and no ISO, in the decomp-based simulator ([docs/simulator.md](docs/simulator.md)).
 
 ## Replays
 
@@ -63,7 +64,7 @@ Open http://m19182:8767/list. Port 8766 is taken by another service on this host
 
 ## Web UI
 
-https://melee.m19182.dev is public and serves `melee_llm/web/` from 127.0.0.1:8770 through a Cloudflare Tunnel: the Melee Bench boards, the live stream with a decision feed, every match running on this host, a launcher, all replays with their decision logs, and these docs (the Docs tab renders `docs/*.md`). Visitors can browse everything and queue matches within limits (Haiku or Sonnet models only, at most 3 games per match, at most 2 matches waiting). The owner signs in at `/login` through Cloudflare Access to get the owner-only controls. Access rules, pages, services and the live slot: [docs/web-ui.md](docs/web-ui.md).
+https://melee.m19182.dev is public and serves `melee_llm/web/` from 127.0.0.1:8770 through a Cloudflare Tunnel: the Melee Bench boards, the live stream with a decision feed, every running match, a launcher, all replays with their decision logs, and these docs. Visitors can browse everything and queue limited matches; the owner signs in at `/login`. Access rules, pages, services and the live slot: [docs/web-ui.md](docs/web-ui.md).
 
 ## Code and development
 
