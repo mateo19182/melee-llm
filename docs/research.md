@@ -123,7 +123,11 @@ Paper: "Beating the World's Best at Super Smash Bros. Melee with Deep Reinforcem
 | Smuckers | 8–5 |
 | Kage | 4–1 |
 
-- The press named only Genesis 4; the second event is **[unverified]**.
+- **The two events:**
+  - Both happened before 21 Feb 2017, because all ten pros are already in the paper's first version.
+  - One is Genesis 4: the [Slox and Mafia video](https://www.youtube.com/watch?v=dXJUlqBsZtE) says "From genesis 4".
+  - The other is named nowhere we checked: the paper, the press, the repo history and vladfi1's uploads.
+- **Corrected scores:** the first version had Mafia 2–1 and Slox 8–4; v2 corrected them to 4–3 and 6–4.
 - Video: ["Phillip vs. Slox, Mafia"](https://www.youtube.com/watch?v=dXJUlqBsZtE) (Feb 2017).
 - Coverage: [MIT CSAIL](https://www.csail.mit.edu/news/ai-beats-pros-super-smash-bros), [TechCrunch](https://techcrunch.com/2017/02/24/super-smash-borg-melee-ai-takes-on-top-players-of-the-classic-nintendo-fighting-game).
 
@@ -134,7 +138,10 @@ Paper: "Beating the World's Best at Super Smash Bros. Melee with Deep Reinforcem
 
 **Playing it before Slippi:**
 - The repo dates from Apr 2016.
-- From mid-2016 it supported ordinary Dolphin netplay, and a Twitch chat bot (Feb 2017) let viewers of [twitch.tv/x_pilot](https://twitch.tv/x_pilot) queue up against it. This comes from the repo's commit log.
+- From mid-2016 it supported ordinary Dolphin netplay. In Feb 2017 two ways to play it arrived:
+  - a Twitch chat bot that let viewers of [twitch.tv/x_pilot](https://twitch.tv/x_pilot) queue up against it;
+  - a SmashLadder client (Anther's Ladder), which also checked whether the opponent could run Faster Melee.
+- This comes from the repo's commit log. The [first stream clips](https://www.youtube.com/watch?v=vWjr3338AHQ) date from Jul 2016, with the bot acting every 3 frames.
 
 **Follow-up, "At Human Speed"** ([arXiv 1810.07286](https://arxiv.org/abs/1810.07286), 2018):
 - Puts a fixed delay queue on the actions, and calls 12 frames the lowest human-plausible delay.
@@ -195,11 +202,12 @@ Paper: "Beating the World's Best at Super Smash Bros. Melee with Deep Reinforcem
 | Nov 2024 | [Cody and aMSa](https://www.youtube.com/watch?v=WGsN7lWBQPw) | |
 | Nov 2024 | [Moky, first to 10 Fox ditto](https://www.youtube.com/watch?v=1kviVflqXc4) | Phillip wins 10–3 |
 | Dec 2024 | [Hungrybox, first to 10](https://www.youtube.com/watch?v=Tpo2nq_eOO4), plus [Falcon/Fox vs Puff](https://www.youtube.com/watch?v=OMRP-jZcA4o) | A ditto-trained Falcon fails against Puff: a lesson in matchup generalisation |
+| Dec 2024 | [Jmook (Sheik, Fox, Falco, Marth)](https://www.youtube.com/watch?v=HAz4GdG9dFU) | |
 | Dec 2024 | Hungrybox, ["AI – The end of Smash Bros."](https://www.youtube.com/watch?v=qRhCvcAXfvY) | A top player's take on what Phillip means |
 | 2025 | Salt, [n0ne](https://www.youtube.com/watch?v=-5Y3rNNdufQ), Wizzrobe | Phillip YouTube channel |
 | 2026 | 404cray, Fiction, M2K, Goodie, Ginger ("2007 M2K" agent), [Cody vs v6](https://www.youtube.com/watch?v=BBK7qnnOfSs), [Zain vs four agents](https://www.youtube.com/watch?v=HPY94jqrZng), [Wizzrobe vs fox v6, puff v6, super-gm-dk](https://www.youtube.com/watch?v=JY6gRwI5zB0) | Newer agent generations |
-| 1 Oct 2026 | [Zain's "Humans vs Robots" crew battle](https://www.youtube.com/watch?v=Szm1y1JrNpQ): Hungrybox, Cody, Mew2King, Wizzrobe, Magi, Moky | Mew2King anchored a comeback for the humans ([his breakdown](https://www.youtube.com/watch?v=9b_2hzdTKNw)) |
-| 17 Oct 2026 | [Cody's "Humanity vs AI" crew battle](https://www.twitch.tv/videos/2903721139) | Result **[unverified]** |
+| 1 Oct 2026 | [Zain's "Humans vs Robots" crew battle](https://www.youtube.com/watch?v=Szm1y1JrNpQ): Hungrybox, Cody, Mew2King, Wizzrobe, Magi, Moky | **Humans win.** Mew2King anchored a comeback ([his breakdown](https://www.youtube.com/watch?v=9b_2hzdTKNw)) |
+| 17 Oct 2026 | [Cody's "Humanity vs AI" rematch](https://www.twitch.tv/videos/2903721139), with new agents | **Humans win again** (see below) |
 
 **Scoreboards** (Manifold):
 - "[A human beats a plausibly superhuman agent in a best-of-5 in 2025](https://manifold.markets/NBAP/will-a-human-player-defeat-the-ssbm)" resolved **NO**. It lists the qualifying agents and exploit rules, and Firoiu comments there.
@@ -216,7 +224,17 @@ Paper: "Beating the World's Best at Super Smash Bros. Melee with Deep Reinforcem
 - Reacting to lasers with Marth's wavedash f-smash beats the Fox agent (Cody).
 - Some Samus agents can be stunlocked into missiles.
 - Fox agents have no answer to Puff's Rollout.
-- A Kirby player reportedly 4-stocked it in early 2025 (r/SSBM) **[unverified]**.
+- **Kirby:**
+  - A Kirby player 4-stocked an agent in early 2025, which the [Manifold market](https://manifold.markets/NBAP/will-a-human-player-defeat-the-ssbm) counted as an exploit, since no agent had been trained against Kirby.
+  - Kirby also closed the 17 Oct 2026 rematch.
+- **A Dec 2024 human win** posted on r/SSBM came before the 2025 window, so it didn't count for that market.
+
+**The 17 Oct 2026 rematch:**
+- We transcribed the last 40 minutes of Cody's VOD.
+- The humans were down 8 stocks to 11 with Cody and Mew2King left, against Phillip's Falcon, Marth and Sheik.
+- Mew2King anchored and won on Dreamland, using Kirby at the end. They apologised for "cheesing" with it.
+- They noted vladfi1 had brought new agents for the event, and that Phillip "learned how to fight Kirby while we were doing the crew battle".
+- In their words: "The humans did win, yes."
 
 ### Project Nabla (Bryan Chen, Aug 2022)
 
@@ -298,7 +316,7 @@ It is the closest published work to this repo's coach track: an LLM above a lear
 - **How it works:** you send `state` and typed questions (Choice, Score, …) to `POST /v1/systemone`. It returns calibrated probabilities in one pass, with no text generation.
 - **Speed and price:** 70–500 ms, $42 per billion input tokens.
 - **Where it fits:** too slow for frame-level control, but it suits choosing a tactic every 4–30 frames, which is what `jev_live` / `coach_jev` do here.
-- **Melee demos:** community builds exist, and one person self-reports beating the level 9 CPU after 13 games. **No official TypeSafe Melee write-up was found [unverified].**
+- **Melee demos:** community builds exist, and one person self-reports beating the level 9 CPU after 13 games. **TypeSafe itself has published nothing on Melee**: none of its nine blog posts or its site pages mention it (checked 2026-11-14). The Melee material is all community-built.
 - **Related:** Google followed with "Gemini Decisions" in Nov 2026 ([codelab](https://codelabs.developers.google.com/codelabs/discriminative-models)).
 
 ### Other attempts worth knowing
@@ -318,11 +336,13 @@ It is the closest published work to this repo's coach track: an LLM above a lear
 - **[stomped.dev](https://stomped.dev/) ([FAQ](https://stomped.dev/faq)):** a ranked arena for Melee bots only, and a ready-made benchmark venue for this repo.
   - Bots get the raw `.slp` event stream over WebSocket and must answer within 11 ms per frame.
   - Rules: vanilla 1.02 with no UCF, wobbling legal, frozen Stadium; ratings use OpenSkill. It streams on the "stompedlive" Twitch channel.
-  - Launch date **[unverified]**.
+  - Launch: around 19 Oct 2026, the date of the domain's first TLS certificate.
+  - On 14 Nov 2026 the ladder leader was 67–3, and the most active bot had played over 600 games.
 - **Simulators:**
   - [melee-sim-light](https://github.com/kyhavlov/melee-sim-light), linked from the Reyn post.
   - Enzyme's decomp-based simulator, used for slippi-ai training.
-- **[melee-unlocked](https://github.com/hero88go/melee-unlocked):** a PC source port with a "Fight a pro" mode built on Phillip agents **[unverified]**.
+- **[melee-unlocked](https://github.com/hero88go/melee-unlocked)** (Sep 2026): a native Windows source port compiled from the decompilation, with Slippi rollback.
+  - Its training mode has "Fight a pro": play Phillip as Zain's Marth, Cody's Fox or aMSa's Yoshi, with an 18–21 frame reaction delay. Offline only.
 - **[No Johns](https://github.com/ScavieFae/nojohns):** agents wagering on bot-vs-bot matches, using Phillip or SmashBot as fighters.
 - **Adjacent LLM game benchmarks:**
   - [LLM Colosseum](https://github.com/OpenGenerativeAI/llm-colosseum): Street Fighter III from text state. GPT-3.5 beat GPT-4 there, because speed won.
@@ -490,6 +510,7 @@ A short reading and watching list. Every link was opened on 2026-11-14.
 | 2024-12 | [Phillip (Falcon, Fox) vs Hungrybox](https://www.youtube.com/watch?v=OMRP-jZcA4o), vladfi1 | Matchup generalisation failing in practice |
 | 2024-12 | [AI – The end of Smash Bros.](https://www.youtube.com/watch?v=qRhCvcAXfvY), Hungrybox | A top player's take |
 | 2026-10 | [Humans vs Robots crew battle](https://www.youtube.com/watch?v=Szm1y1JrNpQ), Zain, and [How I Saved Humanity from A.I.](https://www.youtube.com/watch?v=9b_2hzdTKNw), Mew2King | The big 2026 exhibition and its anchor comeback |
+| 2026-10 | [Humanity vs AI rematch](https://www.twitch.tv/videos/2903721139), Cody | New agents, the same ending: Mew2King and Kirby |
 | 2026-11 | [Wizzrobe vs new agents](https://www.youtube.com/watch?v=JY6gRwI5zB0), vladfi1 | The newest generation: v6 agents and super-gm |
 | live | [twitch.tv/x_pilot](https://twitch.tv/x_pilot) | Play Phillip yourself |
 
@@ -543,10 +564,16 @@ There are no public talks by Vlad Firoiu or Eric Gu, no podcasts and no document
 - [Absolute beginner guide](https://www.youtube.com/watch?v=5307wx4fnTg), Ludvix: Slippi, controllers and getting started.
 - [Making Sense of Melee](https://planetbanatt.net/articles/ambistats.html), planetbanatt: a data-driven look at what wins games. Useful intuition for rewards and evaluation.
 
-## Open questions (not resolved by this research)
+## Questions closed on 2026-11-14
 
-- The result of Cody's 17 Oct 2026 crew battle against Phillip. The VOD needs watching.
-- The second 2017 tournament where Phillip v1 played pros.
-- Whether TypeSafe has published Melee material of its own. Only third-party mentions and community builds were found.
-- The details of the Dec 2024 "humanity triumphs" human win on r/SSBM (Reddit is blocked from this machine).
-- When stomped.dev launched.
+- **The crew battles against Phillip:** there were two, and the humans won both.
+  - 1 Oct, hosted by Zain.
+  - 17 Oct, a rematch on Cody's stream; we settled this one by transcribing the VOD.
+  - Mew2King anchored both times.
+- **Hungrybox:** he has played Phillip many times (2024–2026).
+- **Mang0:** no public set against Phillip, and his replays are excluded from the training data.
+- **TypeSafe:** it has published no Melee material of its own.
+- **Melee at Evo:** absent since 2018, including 2025 and 2026.
+- **stomped.dev:** live since about 19 Oct 2026.
+- **The second 2017 tournament:** narrowed to between Genesis 4 (Jan) and 21 Feb 2017, but its name is not recorded in any source we found.
+- **The 2024–25 Reddit threads:** settled through the Manifold market. The Dec 2024 win fell outside the 2025 window, and the Kirby 4-stock counted as an exploit.
