@@ -174,7 +174,8 @@ def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BA
     `mode="sim"` plays in melee-sim-light instead of Dolphin (melee_llm.sim.runner).
 
     `observer(event, info)`, if given, is called with "game_start" {game, replay, gs}, "frame" {gs} on every
-    in-game frame (after the agents stepped) and "game_end" {game, result}. It must be fast.
+    in-game frame (after the agents stepped) and "game_end" {game, result} (in sim mode also `gs`, the final
+    frame, which no "frame" event shows). It must be fast.
 
     Every call publishes itself to the match registry (melee_llm.matches, shown on the web UI's All matches
     page). `meta` overrides what it guesses: {"source", "label", "job_id", "specs": {port: spec}, ...}.

@@ -88,3 +88,18 @@ def test_gamestates_match_libmelee_on_a_dolphin_replay():
     assert r["compared"] > 1000
     # hitstun_frames_left is the one known difference: libmelee reports Melee's shared slot outside hitstun
     assert set(r["mismatches"]) <= {"hitstun_frames_left"}, r["examples"]
+
+
+@needs_sim
+def test_practice_in_the_simulator_summarizes_each_game_without_a_replay(tmp_path, monkeypatch):
+    import melee_llm.sim.runner as sim
+    from melee_llm.botwriter import practice
+    monkeypatch.setenv("MELEE_MATCHES", "0")
+    monkeypatch.setattr(sim, "TIMER_FRAMES", 600)
+    monkeypatch.setattr(practice, "exit_on_term", lambda: None)
+    bot = Path(__file__).parents[1] / "melee_llm/botwriter/baselines/rusher.py"
+    [g] = practice._play_side(bot, "idle", 2, 1, melee.Stage.BATTLEFIELD, None, tmp_path, melee.Character.FOX, None, "sim")
+    s = g["summary"]
+    assert "replay" not in g and s["replay"] is None
+    assert s["frames"] == g["frames"] + 1  # the frames the agents saw, plus the final one
+    assert s["players"][2]["top_actions"] and s["players"][1]["hits_landed"] == 0

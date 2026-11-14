@@ -78,7 +78,7 @@ def play(agents: dict[int, Agent], stage: melee.Stage = melee.Stage.BATTLEFIELD,
                 a.on_game_end(gs)
             if pub:
                 pub.game_end(game, results[-1])
-            notify("game_end", {"game": game, "result": results[-1]})
+            notify("game_end", {"game": game, "result": results[-1], "gs": gs})
         return results
     except BaseException as e:
         error = e
