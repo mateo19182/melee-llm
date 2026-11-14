@@ -22,7 +22,7 @@ html,body{height:100%;overflow:hidden}
 .slide .k{color:var(--gold);font-weight:700}
 .slide .dimt{color:var(--dim)}
 .slide .small{font-size:18px}
-.slide img{display:block;border:1px solid var(--line-hi);border-radius:8px}
+.slide img,.slide video{display:block;border:1px solid var(--line-hi);border-radius:8px}
 .cols{display:grid;grid-template-columns:1fr 1fr;gap:34px;align-items:center;flex:1;min-height:0}
 .cols.fig{grid-template-columns:auto 1fr}
 .big{font:italic 900 74px/1 var(--menu);font-variation-settings:"wdth" 112;color:var(--gold);text-shadow:var(--outline)}
@@ -30,13 +30,14 @@ html,body{height:100%;overflow:hidden}
 .cards{display:grid;gap:14px}
 .card{background:var(--panel);border:1px solid var(--line-hi);border-radius:8px;padding:12px 16px;font-size:19px;line-height:1.32}
 .card h3{font-size:15px;color:var(--gold);margin:0 0 6px}
-.cards.roomy .card{font-size:23px;padding:18px 22px}.cards.roomy .quote{font-size:21px}
+.card .big{font-size:46px;margin:6px 0 8px}
+.cards.roomy .card{font-size:22px;padding:20px 22px}.cards.roomy .card h3{font-size:16px}.cards.roomy .card .big{font-size:43px;white-space:nowrap;margin:16px 0 20px}
 .strip{margin-top:auto;padding-top:14px;border-top:1px solid var(--line);color:var(--dim);font-size:18px}
 .title-slide h1{font-size:92px;margin:0 0 .15em}
 .title-slide .sub{font:italic 800 32px/1.2 var(--menu);font-variation-settings:"wdth" 108;color:var(--title);margin-bottom:1.2em}
 .timeline{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:22px}
 .timeline .card .yr{font:italic 900 26px var(--menu);color:var(--hi)}
-.quote{font-size:18px;color:var(--text);border-left:3px solid var(--gold);padding-left:12px;margin-top:8px}
+.quote{font-size:19px;color:var(--text);border-left:3px solid var(--gold);padding-left:12px;margin-top:12px}
 .notes{display:none}
 #sp-panel{display:none}
 body.shownotes #sp-panel,body.presenter #sp-panel{display:block;position:fixed;z-index:5;background:rgba(3,4,20,.94);border-top:2px solid var(--f-mid);
@@ -53,17 +54,17 @@ body.presenter #sp-panel{top:0;right:0;bottom:0;width:38vw;height:auto;border-to
 <div class="deck"><div class="stage">
 
 <section class="slide frame title-slide" data-title="Title">
-  <span class="frame-stripes" aria-hidden="true"></span><div class="frame-title" aria-hidden="true">Melee × LLM</div>
+  <span class="frame-stripes" aria-hidden="true"></span><div class="frame-title" aria-hidden="true">Melee × AI</div>
   <div class="cols">
     <div>
       <h1>Melee Bot Elo</h1>
-      <div class="sub">LLMs in a game that doesn't wait</div>
-      <p>CPUs, learned bots and frontier LLMs on one Elo scale</p>
+      <div class="sub">Every kind of Melee bot on one scale</div>
+      <p>CPUs, learned bots, LLMs, our own bot, a simulator and an AI commentary booth, in two days</p>
       <p class="dimt small">Mateo Amado · 2026-11-14 · melee.m19182.dev</p>
     </div>
     <img src="media/replay-2d.webp" alt="A bench game redrawn from its replay: two Foxes on Final Destination" style="width:100%">
   </div>
-  <aside class="notes"><p><b>0:15.</b> I'm Mateo. I spent two days on one question: where do LLMs fit in a game that doesn't wait for them?</p></aside>
+  <aside class="notes"><p><b>0:15.</b> I'm Mateo. In two days I put every kind of Melee bot on one scale, and built a pile of things around it. This is a bench game, redrawn from its replay file.</p></aside>
 </section>
 
 <section class="slide frame" data-title="A game that doesn't wait">
@@ -71,16 +72,16 @@ body.presenter #sp-panel{top:0;right:0;bottom:0;width:38vw;height:auto;border-to
   <h2>A game that doesn't wait</h2>
   <div class="cols">
     <div>
-      <div class="stat"><div class="big">60 fps</div><div>one frame is 16.7 ms</div></div>
-      <div class="stat"><div class="big">1–3 s</div><div>for an LLM to reply: 60 to 180 frames of getting hit</div></div>
+      <div class="stat"><div class="big">60 fps</div><div>one frame is 16.7 ms, and every one counts</div></div>
+      <div class="stat"><div class="big">2001</div><div>and still played competitively</div></div>
     </div>
     <ul>
-      <li>LLM game benchmarks are mostly turn-based: chess, Pokémon, Slay the Spire. <b>The game waits.</b></li>
-      <li>Melee (2001) is still played competitively, at frame-level precision</li>
-      <li>Great open tooling: <span class="k">Slippi</span> replays and netplay, <span class="k">libmelee</span> to read and press buttons, a decompiled game</li>
+      <li>Hard for any AI: frame-level reactions and reading the opponent, with no pause button</li>
+      <li>Most AI game benchmarks are turn-based. <b>Here the game never waits.</b></li>
+      <li>Great open tooling: <span class="k">Slippi</span> replays and netplay, <span class="k">libmelee</span> to read the game and press buttons, a decompiled game</li>
     </ul>
   </div>
-  <aside class="notes"><p><b>0:25.</b> Most LLM game benchmarks are turn-based: the game waits while the model thinks. Melee runs at 60 frames a second and waits for nobody. One second of thinking is 60 frames in which you get hit, grabbed and thrown off the stage. And the community has built amazing open tooling for it.</p></aside>
+  <aside class="notes"><p><b>0:20.</b> Melee is from 2001 and people still play it competitively. It runs at 60 frames a second and never waits for you, which makes it a hard target for any AI. And the community has built amazing open tooling around it.</p></aside>
 </section>
 
 <section class="slide frame" data-title="Ten years of bots, and why now">
@@ -103,27 +104,25 @@ body.presenter #sp-panel{top:0;right:0;bottom:0;width:38vw;height:auto;border-to
     <li><b>A simulator</b>: the game ~100× faster than real time</li>
   </ul>
   <div class="strip">Nobody had put these bots on one scale, or asked where an LLM fits among them.</div>
-  <aside class="notes"><p><b>0:35.</b> People have built Melee bots for ten years: hand-scripted SmashBot, then Phillip, trained with reinforcement learning, which played pros. Then HAL showed you can clone pro play for five dollars. And the last six weeks were the busiest of all: Faynt, the strongest bot yet; Reyn, a bot you steer in English; Jev, a model that decides in 0.15 seconds; a bot ladder; and a simulator. Nobody had put them all on one scale. So I did.</p></aside>
+  <aside class="notes"><p><b>0:30.</b> People have built Melee bots for ten years: hand-scripted SmashBot, then Phillip, trained with reinforcement learning, which played pros. HAL showed you can clone pro play for five dollars. And the last six weeks were the busiest yet: Faynt, the strongest bot; Reyn, a bot you steer in English; a bot ladder; and a simulator. Nobody had put them on one scale. So I did.</p></aside>
 </section>
 
-<section class="slide frame" data-title="The benchmark">
+<section class="slide frame" data-title="The bench">
   <span class="frame-stripes" aria-hidden="true"></span><div class="frame-title" aria-hidden="true">The bench</div>
-  <h2>Five jobs for an LLM</h2>
-  <p class="dimt small" style="margin-top:-8px">Too slow to press buttons every frame, so each setup gives the LLM a higher-level job</p>
-  <div class="cards" style="grid-template-columns:repeat(5,1fr)">
-    <div class="card"><h3>1 · Plays, untimed</h3>Picks moves from a text view. The game pauses while it thinks.</div>
-    <div class="card"><h3>2 · Plays, live</h3>Same, at full speed. A reply older than 2 s is thrown away.</div>
-    <div class="card"><h3>3 · Jev plays</h3>A fast model answering multiple choice in 0.15 s.</div>
-    <div class="card"><h3>4 · Coaches Reyn</h3>Reyn plays every frame; every 5 s the coach picks an English command.</div>
-    <div class="card"><h3>5 · Writes a bot</h3>A coding agent gets 30 minutes to write a Python bot.</div>
+  <h2>One scale for everyone</h2>
+  <div class="cards roomy" style="grid-template-columns:repeat(4,1fr)">
+    <div class="card"><h3>Built-in CPUs</h3>Levels 1–9. Level 9 is the anchor: <b>1500</b>.</div>
+    <div class="card"><h3>Scripted bots</h3>Three small ones: a rusher, a laser spammer, a shine spammer.</div>
+    <div class="card"><h3>Learned bots</h3>Phillip, HAL, MIMIC, Faynt and Reyn: networks trained on human replays.</div>
+    <div class="card"><h3>LLMs, five ways</h3>Playing (paused or live), Jev, coaching Reyn, and writing a bot in 30 minutes.</div>
   </div>
-  <ul class="small" style="margin-top:22px">
-    <li>Haiku 4.5, Sonnet 5.5, GPT-6 Luna, GPT-6.1 Sol, against CPUs and five learned bots</li>
-    <li>Fox vs Fox, one Elo fit, <b>CPU level 9 = 1500</b>, 95% intervals</li>
-    <li>A scheduler picks each game to shrink the widest intervals: {{games_bench}} games overnight in {{hours}} h</li>
+  <ul style="margin-top:28px">
+    <li>The real game, from my disc, in Slippi Dolphin on my home server; a dozen games side by side</li>
+    <li>Fox vs Fox, Battlefield and Final Destination, one Elo fit with 95% intervals</li>
+    <li>No hand-picked games: a scheduler picks whichever game shrinks the widest intervals. {{games_bench}} games overnight in {{hours}} h</li>
   </ul>
   <div class="strip">{{games_rt}} real-time and {{games_ut}} untimed games on two boards</div>
-  <aside class="notes"><p><b>0:40.</b> An LLM reply takes one to three seconds and a frame is 16 milliseconds, so the LLM never presses buttons directly. I gave it five jobs: play with the game paused, play live, Jev as the fast player, coach Reyn with English commands, or write a whole bot in 30 minutes. Everything is Fox vs Fox, on one Elo scale with the level 9 CPU pinned at 1500. A scheduler chose the games by itself all night.</p></aside>
+  <aside class="notes"><p><b>0:30.</b> The bench runs the real game on my home server, a dozen games at once. Everyone plays Fox vs Fox: the game's CPUs, three small scripted bots, the five published learned bots, and LLMs in five different roles. One Elo scale, with the level 9 CPU pinned at 1500. Nobody picks the games: a scheduler chooses whichever game tightens the ratings most, all night.</p></aside>
 </section>
 
 <section class="slide frame" data-title="The board">
@@ -133,102 +132,127 @@ body.presenter #sp-panel{top:0;right:0;bottom:0;width:38vw;height:auto;border-to
     <div>
       <h2>The real-time board</h2>
       <ul>
-        <li><b>Faynt never lost</b>: {{rec rt faynt}}. Then Phillip gm ({{elo rt phillip:gm}}) and HAL ({{elo rt hal:MASTER}})</li>
-        <li><b>Coached Reyn</b> sits around HAL</li>
-        <li><b>Bots written by LLMs</b> sit around CPU 9</li>
-        <li><b>Every LLM playing live</b> is at the bottom: {{live_min}}–{{live_max}}, about a <span class="k">level 4 CPU</span></li>
+        <li><b>Learned bots are far ahead.</b> Faynt never lost: {{rec rt faynt}}. Then Phillip gm ({{elo rt phillip:gm}}) and HAL ({{elo rt hal:MASTER}})</li>
+        <li><b>CPU levels barely matter</b> in a Fox mirror: level 1 ({{elo rt cpu:1}}) beats level 5 ({{elo rt cpu:5}}). The CPU Fox jumps off the stage by itself</li>
+        <li><b>LLMs</b> span the whole board, depending on their job</li>
       </ul>
     </div>
   </div>
-  <aside class="notes"><p><b>0:35.</b> Here's the real-time board. Learned bots are far ahead: Faynt went {{rec rt faynt}}, never lost a game. Reyn with a coach sits around HAL. The bots LLMs wrote sit around the hardest CPU. And at the very bottom, every LLM playing live, about a level 4 CPU.</p></aside>
+  <aside class="notes"><p><b>0:25.</b> Here's the board. The learned bots are far ahead: Faynt went {{rec rt faynt}}, it never lost a game. A fun one: CPU levels barely matter in a Fox mirror, because the CPU Fox keeps jumping off the stage by itself. And the LLMs are all over the board, depending on the job they had.</p></aside>
 </section>
 
-<section class="slide frame" data-title="Speed beats smarts">
-  <span class="frame-stripes" aria-hidden="true"></span><div class="frame-title" aria-hidden="true">Finding 1</div>
-  <h2>In real time, speed beats smarts</h2>
-  <div class="cols fig">
-    <img src="figures/latency-tax.svg" alt="Untimed vs real-time Elo for each model" style="width:700px">
-    <div>
-      <div class="stat"><div class="big">{{elo ut llm_paused:gpt-6.1-sol}} → {{elo rt llm_live:gpt-6.1-sol}}</div><div>GPT-6.1 Sol, untimed (beats CPU 9) → live</div></div>
-      <div class="stat"><div class="big">{{drop llm_live:gpt-6.1-sol}}</div><div>of Sol's live replies arrive too late</div></div>
-      <p class="small">Live, every model loses {{tax_min}}–{{tax_max}} points and they all tie with Jev. The LLM adds nothing measurable over the autopilot around it.</p>
-    </div>
+<section class="slide frame" data-title="What the LLMs did">
+  <span class="frame-stripes" aria-hidden="true"></span><div class="frame-title" aria-hidden="true">LLMs</div>
+  <h2>Where the LLMs landed</h2>
+  <div class="cards roomy" style="grid-template-columns:repeat(3,1fr);margin:auto 0">
+    <div class="card"><h3>Playing: speed beats smarts</h3>
+      <div class="big">{{elo ut llm_paused:gpt-6.1-sol}} → {{elo rt llm_live:gpt-6.1-sol}}</div>
+      GPT-6.1 Sol beats CPU 9 when the game waits for it. Live, {{drop llm_live:gpt-6.1-sol}} of its replies arrive too late, and every LLM sits around a level 4 CPU.</div>
+    <div class="card"><h3>Coaching: two words win</h3>
+      <div class="big">“Don't die.”</div>
+      LLMs coaching Reyn barely beat a random coach. Holding “Don't die.” all game, with no coach, rates {{elo rt reyn:stock_protection}}: above every LLM coach.</div>
+    <div class="card"><h3>Coding: a CPU 9 in 30 min</h3>
+      <div class="big">{{elo rt written:sonnet-5.5/run1}}</div>
+      Sonnet 5.5 wrote a 135-line bot just above the level 9 CPU. Opus's 303-line one did worse. One run each, so it ranks nothing yet.</div>
   </div>
-  <aside class="notes"><p><b>0:40.</b> Given time to think, models spread out, and Sol beats the level 9 CPU. Live, all of that disappears. Sol's replies take two to three seconds, so 95% of them arrive too late and get thrown away. Every model loses three to six hundred points and they end up tied with each other. Even the fast ones act on a game state that's 70 frames old.</p></aside>
+  <aside class="notes"><p><b>0:40.</b> The LLMs, in one slide. Playing directly, speed beats smarts: the best model beats the hardest CPU when the game waits, but live, 95% of its replies come too late and every LLM plays like a level 4 CPU. As coaches for Reyn, they barely beat a random coach, and the best instruction turned out to be just "Don't die." And given 30 minutes, a coding agent writes a bot about as good as the hardest CPU.</p></aside>
 </section>
 
-<section class="slide frame" data-title="The best coach is two words">
-  <span class="frame-stripes" aria-hidden="true"></span><div class="frame-title" aria-hidden="true">Finding 2</div>
-  <h2>The best coach is two words</h2>
+<section class="slide frame" data-title="The website">
+  <span class="frame-stripes" aria-hidden="true"></span><div class="frame-title" aria-hidden="true">Also built</div>
+  <h2>A website to watch it all</h2>
   <div class="cols fig">
-    <img src="figures/coaching.svg" alt="Reyn's rating with each coach" style="width:700px">
+    <img src="media/site-bench.webp" alt="The Bench page of the website" style="width:700px">
+    <ul class="small">
+      <li><b>Bench</b>: both boards, a page per entrant with record and sample decisions</li>
+      <li><b>All matches</b>: every game on the server, drawn live in 2D</li>
+      <li><b>Launch</b>: any matchup, queued from the browser</li>
+      <li><b>Games</b>: every replay, with the AI's decisions on a timeline</li>
+      <li><b>Live</b>: the real game streamed, with what each AI is thinking</li>
+    </ul>
+  </div>
+  <div class="strip">Public at melee.m19182.dev, dressed like Melee's own menus</div>
+  <aside class="notes"><p><b>0:25.</b> To watch all this I built a website, styled like Melee's menus. The boards, a live 2D view of every game on the server, a launcher for any matchup, every replay with the AI's decisions on a timeline, and a live stream of the real game. It's public.</p></aside>
+</section>
+
+<section class="slide frame" data-title="The commentary booth">
+  <span class="frame-stripes" aria-hidden="true"></span><div class="frame-title" aria-hidden="true">Also built</div>
+  <h2>An AI commentary booth</h2>
+  <div class="cols fig">
+    <video src="media/backup-clip.mp4#t=40" controls preload="metadata" style="height:480px"></video>
     <div>
       <ul class="small">
-        <li>Reyn, no orders: <b>{{elo rt reyn}}</b></li>
-        <li>Random command every 5 s: <b>{{elo rt coach:random}}</b></li>
-        <li>LLM coaches: {{coach_delta_min}} to {{coach_delta_max}} over random, within noise</li>
-        <li>Jev coach: <b>{{elo rt coach_jev}}</b></li>
+        <li>Two casters: <b>Charlie</b> on play-by-play (“loses his mind on big moments”) and <b>Laura</b> on colour (“dry wit, teases Charlie”)</li>
+        <li>A fast LLM watches the game's events (combos, stocks, self-destructs) and writes a line every few seconds</li>
+        <li>ElevenLabs voices them, only while someone is listening</li>
       </ul>
-      <div class="stat" style="margin-top:18px"><div class="big">“Don't die.”</div><div>held all game, no coach: <b style="color:var(--gold)">{{elo rt reyn:stock_protection}}</b></div></div>
-      <p class="small">Jev wins by accident: its favourite pick, “kill now”, is mapped by Reyn to “Don't die.”</p>
+      <div class="quote"><b>Charlie:</b> HAL MASTER's Fox is in the air and Faynt's Marth is waiting for him!<br><b>Laura:</b> Waiting is the right word. Faynt doesn't chase, Charlie, he collects.</div>
     </div>
   </div>
-  <aside class="notes"><p><b>0:40.</b> The surprise. Any coach makes Reyn about 300 points better, but a random coach that never looks at the game gets most of that. The four LLM coaches are barely above random. Jev looked like the best coach, until I found that its favourite command, "kill now", gets translated by Reyn into "Don't die." And just holding "Don't die." all game, with no coach at all, beats every LLM coach.</p></aside>
+  <aside class="notes"><p><b>0:35.</b> Every live game gets two AI casters. Charlie does play-by-play, Laura does colour. A fast LLM watches the game events and writes their lines, and ElevenLabs voices them. (Play 10–15 s of the clip.)</p></aside>
 </section>
 
-<section class="slide frame" data-title="Bot writers and screenshots">
-  <span class="frame-stripes" aria-hidden="true"></span><div class="frame-title" aria-hidden="true">Findings 3, 4</div>
+<section class="slide frame" data-title="MeleeBot">
+  <span class="frame-stripes" aria-hidden="true"></span><div class="frame-title" aria-hidden="true">Also built</div>
+  <h2>Our own bot: MeleeBot</h2>
+  <div class="cols fig">
+    <img src="media/site-training.webp" alt="Training page: loss and validation accuracy of the 20M model" style="width:660px">
+    <div>
+      <div class="stat"><div class="big">23,000</div><div>ranked online Yoshi games to learn from</div></div>
+      <ul class="small">
+        <li>A small transformer that copies human play, the way HAL did: 4 s of game in, the next controller input out</li>
+        <li><b>6M</b>: 0 wins in 12 against CPU 9. <b>20M</b>: 1 win, twice the stocks taken</li>
+        <li>Next: self-play, where the published bots got strong</li>
+      </ul>
+    </div>
+  </div>
+  <aside class="notes"><p><b>0:30.</b> On day two I trained a bot of my own, a Yoshi, the way HAL did: a small transformer that copies 23,000 ranked online games. The first version lost every game to the hardest CPU; the bigger one won one in twelve. Honest result: it still loses. Self-play is next, and that's where the published bots got good.</p></aside>
+</section>
+
+<section class="slide frame" data-title="The simulator">
+  <span class="frame-stripes" aria-hidden="true"></span><div class="frame-title" aria-hidden="true">Also built</div>
+  <h2>A simulator, ~100× faster</h2>
+  <div class="cols">
+    <div>
+      <div class="stat"><div class="big">287 / 300</div><div>replays reproduced frame for frame (the other 13 were unfinished files)</div></div>
+      <div class="stat"><div class="big">~100×</div><div>faster than the emulator</div></div>
+    </div>
+    <ul>
+      <li>The community decompiled Melee back into C; <b>melee-sim-light</b> runs it with no emulator</li>
+      <li>I hooked every player into it, learned bots included</li>
+      <li>Save any moment, try thousands of inputs, keep the best: <b>tool-assisted superplay</b>, and training on far more games than humans play</li>
+      <li class="dimt">Catch: no built-in CPUs</li>
+    </ul>
+  </div>
+  <aside class="notes"><p><b>0:25.</b> Melee's community decompiled the game back into C, and there's a simulator that runs it without an emulator. I hooked all our players into it and checked it against 300 replays: every complete one matched frame for frame, at about a hundred times the speed. That opens up tool-assisted superplay, and training at scale.</p></aside>
+</section>
+
+<section class="slide frame" data-title="Play them, and what's next">
+  <span class="frame-stripes" aria-hidden="true"></span><div class="frame-title" aria-hidden="true">Next</div>
   <div class="cols" style="align-items:start">
     <div>
-      <h2>An LLM writes a CPU 9 in 30 min</h2>
-      <div class="stat"><div class="big">{{elo rt written:sonnet-5.5/run1}}</div><div>Sonnet 5.5: 135 lines, done in 21 minutes, just above CPU 9</div></div>
-      <ul class="small">
-        <li>Haiku 4.5, 108 lines: {{elo rt written:haiku-4.5/run1}}</li>
-        <li>Opus 5.5, the most engineered at 303 lines: {{elo rt written:opus-5.5/run1}}</li>
-        <li>One run each: input timing decides everything, so this ranks nothing yet</li>
+      <h2>Play the bots</h2>
+      <ul>
+        <li>On a laptop with a controller: Phillip at any tier, Faynt, Reyn, MeleeBot</li>
+        <li>From home over Slippi direct connect</li>
+        <li>The board has a slot waiting for humans</li>
       </ul>
     </div>
     <div>
-      <h2>Screenshots don't help</h2>
-      <p class="small dimt">Haiku vs a level 5 CPU, {{perc_text_n}} games each</p>
-      <div class="cards" style="grid-template-columns:repeat(3,1fr);text-align:center">
-        <div class="card"><h3>Text</h3><div class="big" style="font-size:44px">{{perc_text}}</div></div>
-        <div class="card"><h3>Screenshot</h3><div class="big" style="font-size:44px">{{perc_image}}</div></div>
-        <div class="card"><h3>Both</h3><div class="big" style="font-size:44px">{{perc_both}}</div></div>
-      </div>
-      <p class="small" style="margin-top:14px">From images, models read damage almost perfectly but left/right and facing at about chance.</p>
+      <h2>What's next</h2>
+      <ul>
+        <li>Superplay and training in the simulator</li>
+        <li>MeleeBot: self-play, then the stomped.dev ladder</li>
+        <li>A small local model, fast enough to matter live</li>
+        <li>A coach that starts from “Don't die.”</li>
+      </ul>
     </div>
   </div>
-  <aside class="notes"><p><b>0:30.</b> Two quick ones. Give a coding agent 30 minutes and it writes a bot that plays like the hardest CPU; Sonnet's 135 lines did best and Opus's 303 lines did worst, but it's one run each. And screenshots don't help: from images alone, Haiku didn't even notice it was hanging off the ledge.</p></aside>
-</section>
-
-<section class="slide frame" data-title="What else I built">
-  <span class="frame-stripes" aria-hidden="true"></span><div class="frame-title" aria-hidden="true">Also built</div>
-  <h2>What else I built</h2>
-  <div class="cards roomy" style="grid-template-columns:1fr 1fr;flex:1">
-    <div class="card"><h3>A website</h3>Both boards, a page per entrant, every game drawn live in 2D, replays with the AI's decisions on a timeline, a live stream.</div>
-    <div class="card"><h3>An AI commentary booth</h3>Two voiced casters, Charlie and Laura, written live by a fast LLM.
-      <div class="quote"><b>Laura:</b> Faynt doesn't chase, Charlie, he collects.</div></div>
-    <div class="card"><h3>MeleeBot</h3>Our own Yoshi, cloned from 23,000 ranked online games. 20M parameters, 1 win in 12 against CPU 9. Self-play is next.</div>
-    <div class="card"><h3>A simulator</h3>The decompiled game without an emulator: 287 of 300 replays match frame for frame, ~100× faster.</div>
-  </div>
-  <aside class="notes"><p><b>0:25.</b> Around the bench: a website to watch it all live, an AI commentary booth with two voiced casters, our own Yoshi bot trained on 23,000 online games (still losing to the CPU), and every player hooked into a simulator that runs a hundred times faster.</p></aside>
-</section>
-
-<section class="slide frame" data-title="What's next">
-  <span class="frame-stripes" aria-hidden="true"></span><div class="frame-title" aria-hidden="true">Next</div>
-  <h2>What's next</h2>
-  <ul>
-    <li><b>Superplay in the simulator</b>: save a moment, try thousands of inputs, keep the best</li>
-    <li><b>A faster brain</b>: a small local model at ~0.5 s per decision</li>
-    <li><b>A better coach</b>: start from “Don't die.” and switch only with a reason</li>
-    <li><b>MeleeBot</b>: self-play, then the stomped.dev ladder</li>
-  </ul>
   <div style="margin-top:auto;text-align:center">
     <div class="dimt small">Write-up, boards, replays and live games</div>
     <div class="big" style="font-size:58px">melee.m19182.dev/writeup</div>
   </div>
-  <aside class="notes"><p><b>0:20.</b> Next: use the simulator for frame-perfect superplay, try a small local model fast enough to matter live, and build a coach that starts from "Don't die." All of this was built in two days, and the write-up is at melee.m19182.dev/writeup. Thanks!</p></aside>
+  <aside class="notes"><p><b>0:20.</b> You can play all of these bots yourself, on my laptop with a controller after this, or from home over Slippi. Next: superplay and training in the simulator, self-play for MeleeBot, and a faster brain for the LLMs. All built in two days; the write-up is at melee.m19182.dev/writeup. Thanks!</p></aside>
 </section>
 
 </div></div>
@@ -247,6 +271,7 @@ function fit() {
 function show(n, echo = true) {
   i = Math.max(0, Math.min(slides.length - 1, n));
   slides.forEach((s, k) => s.classList.toggle("on", k === i));
+  document.querySelectorAll("video").forEach(v => { if (!v.closest(".on")) v.pause(); });
   history.replaceState(null, "", location.search + "#" + (i + 1));
   $("sp-count").textContent = `${i + 1} / ${slides.length}`;
   $("sp-next").textContent = slides[i + 1] ? "Next: " + slides[i + 1].dataset.title : "Last slide";
@@ -254,7 +279,10 @@ function show(n, echo = true) {
   if (echo && bc) bc.postMessage(i);
 }
 if (bc) bc.onmessage = e => show(e.data, false);
-if (presenter) document.body.classList.add("presenter");
+if (presenter) {
+  document.body.classList.add("presenter");
+  document.querySelectorAll("video").forEach(v => v.muted = true);
+}
 addEventListener("resize", fit);
 addEventListener("keydown", e => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -263,6 +291,7 @@ addEventListener("keydown", e => {
   else if (["ArrowLeft", "ArrowUp", "PageUp", "Backspace"].includes(k)) show(i - 1);
   else if (k === "Home") show(0);
   else if (k === "End") show(slides.length - 1);
+  else if (k === "k") { const v = slides[i].querySelector("video"); if (v) v.paused ? v.play() : v.pause(); }
   else if (k === "n") { document.body.classList.toggle("shownotes"); fit(); }
   else if (k === "p") open(location.pathname + "?presenter#" + (i + 1), "melee-presenter", "width=1200,height=700");
   else if (k === "f") document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
@@ -270,7 +299,7 @@ addEventListener("keydown", e => {
   e.preventDefault();
 });
 document.querySelector(".deck").addEventListener("click", e => {
-  if (e.target.closest("a")) return;
+  if (e.target.closest("a, video")) return;
   show(i + (e.clientX > innerWidth / 2 ? 1 : -1));
 });
 $("sp-timer").onclick = () => t0 = Date.now();
