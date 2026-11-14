@@ -9,6 +9,8 @@ import melee
 from melee_llm.agents.llm_common import LLMAgent, parse_spec
 from melee_llm.state import actionable
 
+END_WAIT_S = 5.0  # at game end, how long to wait for an in-flight call so its tokens are counted
+
 
 class LiveLLM(LLMAgent):
     """Real-time play. While a request is in flight the executor keeps running the last macro, or a safe
@@ -56,19 +58,20 @@ class LiveLLM(LLMAgent):
             self.camera.start_ring(lambda: self.seen_frame, self.clip_every / 60)
         me = gs.players[self.port]
         try:
-            self.pending = (*self._res.get_nowait(), int(gs.frame))
-            self.inflight = False
+            res = (*self._res.get_nowait(), int(gs.frame))
+            if self.pending:  # never applied: still count its tokens
+                self._drop(self.pending, int(gs.frame), "superseded")
+            self.pending, self.inflight = res, False
         except queue.Empty:
             pass
         if self.pending and self.ex.interruptible and self.can_decide(me):
-            (asked, obs, user, shots), rep, arrived = self.pending
-            self.pending = None
+            got, self.pending = self.pending, None
+            (asked, obs, user, shots), rep, arrived = got
             stale = int(gs.frame) - asked
             if stale <= self.max_stale:
                 self.apply(gs, obs, user, rep, asked, latency_frames=arrived - asked, stale_frames=stale, shots=shots)
             else:
-                self.log.write({"type": "dropped", "frame": int(gs.frame), "asked_frame": asked, "stale_frames": stale,
-                                "decision": rep.args, "latency_s": round(rep.latency_s, 3)})
+                self._drop(got, int(gs.frame), "stale")
         if not self.inflight and self.can_decide(me) and (
                 self.ex.idle or gs.frame - self.last_asked >= self.interval):
             obs, user = self.snapshot(gs)
@@ -78,7 +81,26 @@ class LiveLLM(LLMAgent):
             self.ex.start(self._default(gs))
         self.ex.step(gs)
 
+    def _drop(self, pending, frame: int, why: str) -> None:
+        """A reply that was never applied. Its tokens were still spent, so the record carries them (bench spend)."""
+        (asked, *_), rep, _arrived = pending
+        rec = {"type": "dropped", "why": why, "frame": frame, "asked_frame": asked, "stale_frames": frame - asked,
+               "decision": rep.args, "latency_s": round(rep.latency_s, 3), "prompt_tokens": rep.prompt_tokens,
+               "completion_tokens": rep.completion_tokens, "reply_mode": rep.mode, "error": rep.error}
+        self.dropped.append(rec)
+        self.log.write(rec)
+
     def on_game_end(self, gs):
+        if self.log is not None:
+            frame = int(gs.frame) if gs else -1
+            if self.pending:
+                self._drop(self.pending, frame, "game_end")
+            if self.inflight:  # a call still running: wait briefly so its usage is logged
+                try:
+                    self._drop((*self._res.get(timeout=END_WAIT_S), frame), frame, "game_end")
+                    self.inflight = False
+                except queue.Empty:
+                    pass
         self.pending = None
         super().on_game_end(gs)
 

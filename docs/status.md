@@ -38,25 +38,24 @@ Elo is relative to CPU 9 = 1500, ± the 95% half-width.
 - **CPU levels aren't monotonic** in Fox ditto (levels 1, 3 and 7 are about equal). This looks like a real Melee quirk.
 - **Caveats:**
   - Live GPT-6.1 Sol discards ~95% of its replies because they arrive more than 2 s late, so its live rating is mostly the fallback behaviour.
-  - Before the counter fix, the bench didn't count discarded replies, so real spend is ~115M tokens, not 100M.
+  - The overnight run counted 100.1M CLIProxy tokens, but discarded replies weren't counted then: real spend was **115.1M** (recounted from the logs; `spent_recounted` in `data/bench/status.json`). Fixed: every call's tokens now count ([bench](bench.md#scheduler-active-sampling-under-a-budget)).
 
 ## What's left (rough priority)
 
-1. **Fix the bench's token counter** to include discarded replies. Small.
-2. **Coach deep-dive.** Why does the Jev coach beat random? Ablations on interval, prompt, named features (e.g. "opponent in endlag") and Jev vs LLM. Cheap: Jev costs cents.
-3. **Janky entrants**, dropped into the bench:
+1. **Coach deep-dive.** Why does the Jev coach beat random? Ablations on interval, prompt, named features (e.g. "opponent in endlag") and Jev vs LLM. Cheap: Jev costs cents.
+2. **Janky entrants**, dropped into the bench:
    - Jev with named features
    - two LLMs sharing one character
    - an image-only player
    - MIMIC trained on your replays
    - random-command Reyn variants
-4. **Netplay with you.** Blocked on a bot Slippi account and a controller; this takes the `human:mateo` slot.
-5. **Bot-writer round 2.** 3 runs per model plus GPT, longer sessions, harder scripted opponents. Also fix the tool loop that quits after 3 idle replies.
-6. **Write-up "Melee Bot Elo".**
+3. **Netplay with you.** Blocked on a bot Slippi account and a controller; this takes the `human:mateo` slot.
+4. **Bot-writer round 2.** 3 runs per model plus GPT, longer sessions, harder scripted opponents. Also fix the tool loop that quits after 3 idle replies.
+5. **Write-up "Melee Bot Elo".**
    - Draft at `writeup/`. Not finished on purpose.
    - Decided: name the models, SVG figures, include a 2D replay render.
    - Regenerate the numbers with `python3 writeup/make_figures.py`.
-7. **Longer bets:** a fast local brain (a small model trained on our logs, ~50 ms decisions), Melee puzzles (savestate scenarios), a live AI caster, a world model / V-JEPA.
+6. **Longer bets:** a fast local brain (a small model trained on our logs, ~50 ms decisions), Melee puzzles (savestate scenarios), a live AI caster, a world model / V-JEPA.
 
 ## Running services (user units)
 

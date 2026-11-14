@@ -5,7 +5,7 @@ import json
 import time
 from pathlib import Path
 
-from melee_llm.bench import imports, ratings
+from melee_llm.bench import imports, ratings, recount
 from melee_llm.bench.entrants import CATEGORIES, TRACKS, by_id
 from melee_llm.bench.scheduler import DATA, read_results
 
@@ -31,7 +31,7 @@ def standings() -> dict:
     st = _json(DATA / "standings.json")
     if st is None:
         imp, exc = _imports()
-        st = ratings.standings(read_results(DATA / "results.jsonl"), imp, exc, boot=200)
+        st = ratings.standings(recount.apply(read_results(DATA / "results.jsonl")), imp, exc, boot=200)
     return st
 
 

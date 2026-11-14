@@ -6,6 +6,7 @@ One leaderboard where every kind of player gets one rating on one scale: built-i
 uv run python -m melee_llm.bench entrants                 # the registry
 uv run python -m melee_llm.bench imports                  # which older games count, and why the others don't
 uv run python -m melee_llm.bench standings                # recompute data/bench/standings.json (1000 bootstraps)
+uv run python -m melee_llm.bench recount                  # recount token spend from the decision logs (see Budget)
 uv run python -m melee_llm.bench run --budget 100 --target 125    # the fill (resumable); runs as unit melee-bench
 ```
 
@@ -76,15 +77,20 @@ It stops when every active entrant is converged, when the CLIProxy token budget 
 
 **Budget.** Only CLIProxy tokens (Claude and GPT models) count toward `--budget`; Jev is billed to its own TypeSafe key at about a cent per game and reported in USD. The page shows spend per provider and per entrant (tokens and list-price USD per game, where a price is known).
 
+**Every call counts.** A reply that is never applied still costs its tokens: a live player drops replies older than `max_stale` frames or superseded by a newer one, and a call can still be in flight when the game ends (the player waits up to 5 s for it). These are logged as `dropped` records with their usage, and `side_stats` adds them to the side's tokens, `calls` and `dropped`. Calls that fail in transport (timeouts) return no usage and stay uncounted; they were 5 of ~5,600 coach calls. The standings' spend per entrant carries `dropped` and `discarded_rate` (dropped / all replies), shown on the entrant page and in the cost column.
+
+Before 2026-11-14 the `dropped` records carried no usage, so the overnight run counted only applied replies: **100.1M CLIProxy tokens counted, 115.1M actually spent** (Claude 69.8M, GPT 45.4M). `bench recount` re-reads every game's logs, estimates each old dropped reply at its log's mean tokens per applied call (`tokens_estimated`), and writes `recount.json`. `results.jsonl` is not rewritten; the standings' per-entrant spend uses the recount, and `status.json` gets it as `spent_recounted` next to `spent` (the budget counter, as counted at the time). Discarded rates in that run: GPT-6.1 Sol live 95%, Sonnet live 35%, gpt-6-luna live 23%, `jev_live` 7%, Haiku live 5%; coaches and paused players drop none.
+
 ## Isolation and files
 
 Each game is `python -m melee_llm.bench one` in its own process group, with its own Slippi port (51920-51999) and replay dir `replays/bench/<game id>/` (replay, decision logs, `stderr.log`), on the headless display `:98`. It never touches `:99` or port 51441. A wall timeout (25 min, 3 h for untimed LLM games) kills the group, Dolphin included. `llm_paused` sides are wrapped in llm_arena's `ArenaLLM` for its transport retries (no frame cap). A game where a side's calls failed more than 10% of the time is `void`: kept, not rated.
 
 | File (`data/bench/`, gitignored) | What |
 |---|---|
-| `results.jsonl` | Append-only, one line per finished game: entrant ids and specs, stage, mode, track, status (`ok`, `void`, `slow`, `error`, `timeout`), winner, stocks, percent, frames, fps, wall time, `sides` (per LLM port: decisions, calls, errors, tokens, USD, mean latency, log path), `bot_stats` for written bots |
+| `results.jsonl` | Append-only, one line per finished game: entrant ids and specs, stage, mode, track, status (`ok`, `void`, `slow`, `error`, `timeout`), winner, stocks, percent, frames, fps, wall time, `sides` (per LLM port: decisions, dropped replies, calls, errors, tokens incl. dropped replies, USD, mean latency, log path), `bot_stats` for written bots |
 | `standings.json` | Both boards, spend per entrant, the registry, import counts. Rewritten by the scheduler at most every 2 min |
-| `status.json` | Scheduler progress: phase, spend, running games, unconverged entrants, recent log lines |
+| `status.json` | Scheduler progress: phase, spend (`spent`, and `spent_recounted` with every call), running games, unconverged entrants, recent log lines |
+| `recount.json` | Per game and side, token counts re-read from the logs by `bench recount` (dropped replies included) |
 
 Bench games also appear on All matches (source `bench`) and in Games, where the replay page plays them with their decision logs.
 

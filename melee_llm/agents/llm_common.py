@@ -116,6 +116,7 @@ class LLMAgent(Agent):
         self.log: DecisionLog | None = None
         self.history: list[dict] = []
         self.stats: list[dict] = []
+        self.dropped: list[dict] = []  # replies never applied (LiveLLM: stale, superseded, game end)
         assert obs in OBS_MODES, f"obs must be one of {OBS_MODES}"
         self.obs_mode, self.clip, self.clip_every = obs, max(1, int(clip)), max(1, int(clip_every))
         self.img_width, self.img_quality = img_width, img_quality
@@ -144,7 +145,7 @@ class LLMAgent(Agent):
 
     def _start_game(self, gs: melee.GameState) -> None:
         self.log = DecisionLog(self.log_dir, f"p{self.port}-{self.kind}")
-        self.history, self.stats = [], []
+        self.history, self.stats, self.dropped = [], [], []
         me, op = gs.players[self.port], gs.players[self.opponent_port]
         self.system = SYSTEM.format(me=me.character.name, opp=op.character.name, stage=stage_text(gs.stage),
                                     tips=TIPS.get(me.character, "") + self.system_extra, actions=action_help())
@@ -237,9 +238,13 @@ class LLMAgent(Agent):
         self.stats.append(rec)
         self.log.write(rec)
 
+    def _before_end(self) -> None:
+        """Hook: last records before game_end (LiveLLM has logged any reply still in flight by then)."""
+
     def on_game_end(self, gs):
         if self.log is None:
             return
+        self._before_end()
         lat = [s["latency_s"] for s in self.stats]
         summary = {"type": "game_end", "frame": int(gs.frame) if gs else None, "decisions": len(lat),
                    "errors": sum(bool(s["error"]) for s in self.stats),
@@ -247,6 +252,10 @@ class LLMAgent(Agent):
                    "mean_latency_s": round(sum(lat) / len(lat), 3) if lat else None,
                    "prompt_tokens": sum(s["prompt_tokens"] for s in self.stats),
                    "completion_tokens": sum(s["completion_tokens"] for s in self.stats)}
+        if self.dropped:  # their tokens are spent too; prompt/completion above are the applied replies only
+            summary |= {"dropped": len(self.dropped),
+                        "dropped_prompt_tokens": sum(d["prompt_tokens"] for d in self.dropped),
+                        "dropped_completion_tokens": sum(d["completion_tokens"] for d in self.dropped)}
         for k in ("latency_frames", "stale_frames", "capture_ms", "image_tokens_est"):
             v = [s[k] for s in self.stats if k in s]
             if v:

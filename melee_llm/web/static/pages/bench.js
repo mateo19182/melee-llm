@@ -22,6 +22,7 @@ function cost(sp) {
   const parts = [];
   if (sp.tokens_per_game) parts.push(`${fmt.k(sp.tokens_per_game)} tok`);
   if (sp.usd_per_game) parts.push(fmt.usd(sp.usd_per_game));
+  if (sp.discarded_rate >= 0.05) parts.push(`${Math.round(100 * sp.discarded_rate)}% discarded`);
   return parts.length ? parts.join(" · ") : h("span.faint", {}, "free");
 }
 
@@ -44,7 +45,8 @@ function progress(st, s) {
         : st.stop_reason || "",
       st.waiting && st.phase === "running" ? h("span.faint", {}, ` · waiting: ${st.waiting}`) : null,
       st.spent?.by_provider ? h("span.faint", {}, ` · ${Object.entries(st.spent.by_provider).map(([k, v]) => `${k} ${fmt.k(v)}`).join(", ")}`) : null,
-      st.spent?.usd_est?.jev ? h("span.faint", {}, ` · jev ${fmt.usd(st.spent.usd_est.jev)}`) : null));
+      st.spent?.usd_est?.jev ? h("span.faint", {}, ` · jev ${fmt.usd(st.spent.usd_est.jev)}`) : null,
+      st.spent_recounted ? h("span.faint", { title: st.spent_recounted.note }, ` · ${fmt.k(st.spent_recounted.tokens)} counting discarded replies`) : null));
 }
 
 function explainer() {
@@ -135,6 +137,8 @@ async function entrant(root, id, signal) {
       sp ? h("div.stat", {}, h("b", {}, sp.tokens_per_game ? fmt.k(sp.tokens_per_game) : "0"), h("span", {}, "tokens / game")) : null,
       sp?.usd ? h("div.stat", {}, h("b", {}, fmt.usd(sp.usd_per_game)), h("span", {}, "est. $ / game")) : null,
       sp?.mean_latency_s ? h("div.stat", {}, h("b", {}, `${sp.mean_latency_s}s`), h("span", {}, "mean decision latency")) : null,
+      sp?.discarded_rate ? h("div.stat", { title: `${sp.dropped} of ${sp.decisions + sp.dropped} replies arrived too late or were superseded; their tokens still count` },
+        h("b", {}, `${Math.round(100 * sp.discarded_rate)}%`), h("span", {}, "replies discarded")) : null,
       sp ? h("div.stat", {}, h("b", {}, fmt.k(sp.tokens)), h("span", {}, "tokens spent on the bench")) : null)),
     h("div.grid2", {},
       h("div.card", {}, h("h2", {}, "Record vs opponents"), table([

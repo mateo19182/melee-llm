@@ -42,3 +42,54 @@ def test_pick_returns_a_feasible_job(tmp_path, monkeypatch):
     job = b.pick()
     assert job and job["p1"] != job["p2"] and job["mode"] in ("fast", "realtime")
     assert job["track"] in ("realtime", "untimed", "shared")
+
+
+def test_spend_counts_discarded_replies(tmp_path):
+    """Dropped replies' tokens count; old logs without usage on dropped records are estimated per call."""
+    import json
+
+    from melee_llm.bench.game import side_stats
+
+    def log(name, recs):
+        (tmp_path / name).write_text("\n".join(json.dumps(r) for r in recs) + "\n")
+
+    start = {"type": "game_start", "model": "claude-haiku-4-5-20251001"}
+    dec = {"type": "decision", "prompt_tokens": 1000, "completion_tokens": 50, "latency_s": 1.0}
+    log("g.p1.llm.jsonl", [start, dec, dec, {"type": "dropped", "why": "stale", "prompt_tokens": 900,
+                                              "completion_tokens": 40}])
+    s = side_stats(tmp_path, 1)
+    assert (s["decisions"], s["dropped"], s["calls"]) == (2, 1, 3)
+    assert s["prompt_tokens"] + s["completion_tokens"] == 2 * 1050 + 940 and s["tokens_estimated"] == 0
+    log("g.p2.llm.jsonl", [start, dec, {"type": "dropped", "stale_frames": 200}, {"type": "dropped"}])
+    s2 = side_stats(tmp_path, 2)
+    assert s2["dropped"] == 2 and s2["tokens_estimated"] == 2 * 1050
+    assert s2["prompt_tokens"] + s2["completion_tokens"] == 3 * 1050
+
+    res = [{"id": "g", "p1": "llm_live:claude-haiku-4-5-20251001", "p2": "cpu:9", "sides": {"1": s}},
+           {"id": "h", "p1": "llm_live:claude-haiku-4-5-20251001", "p2": "cpu:9", "sides": {"1": s2}}]
+    sp = ratings.spend(res)["llm_live:claude-haiku-4-5-20251001"]
+    assert sp["tokens"] == 2 * 1050 + 940 + 3 * 1050 and sp["discarded_rate"] == round(3 / 6, 3)
+    assert scheduler.total_spend(res, entrants.by_id())["tokens"] == sp["tokens"]
+
+
+def test_live_player_logs_usage_of_unapplied_replies(tmp_path):
+    """LiveLLM: a superseded reply, the one pending at game end and the call still in flight all log their tokens."""
+    import json
+
+    from melee_llm.agents.llm_common import DecisionLog
+    from melee_llm.agents.llm_live import LiveLLM
+    from melee_llm.llm import Reply
+
+    a = LiveLLM("claude-haiku-4-5-20251001", log_dir=tmp_path)
+    a._stop.set()  # no worker: results are queued by hand
+    a.port = 1
+    a.log, a.stats, a.dropped = DecisionLog(tmp_path, "t", replay=tmp_path / "g.slp", port=1), [], []
+    rep = lambda n: Reply({"action": "wait"}, prompt_tokens=n, completion_tokens=10)  # noqa: E731
+    a._drop(((5, {}, "", []), rep(100), 50), 60, "superseded")
+    a.pending, a.inflight = ((40, {}, "", []), rep(200), 90), True
+    a._res.put(((80, {}, "", []), rep(300)))
+    a.on_game_end(None)
+    recs = [json.loads(ln) for ln in (tmp_path / "g.p1.llm.jsonl").read_text().splitlines()]
+    dropped = [r for r in recs if r["type"] == "dropped"]
+    assert [r["prompt_tokens"] for r in dropped] == [100, 200, 300]
+    assert recs[-1]["type"] == "game_end" and recs[-1]["dropped_prompt_tokens"] == 600

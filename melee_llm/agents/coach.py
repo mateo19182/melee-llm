@@ -42,6 +42,7 @@ ROW_CHARS = {**dict.fromkeys(SWORD, {C.MARTH, C.ROY}), **dict.fromkeys(FIREBALL,
 CSV_CHAR = {C.CPTFALCON: "falcon", C.DK: "donkey_kong", C.DOC: "dr_mario", C.GAMEANDWATCH: "game_and_watch",
             C.POPO: "ice_climbers", C.NANA: "ice_climbers", C.JIGGLYPUFF: "jigglypuff", C.YLINK: "young_link"}
 NO_PLATFORMS = {melee.Stage.FINAL_DESTINATION}
+END_WAIT_S = 5.0  # at game end, how long to wait for an in-flight call so its tokens are counted
 
 
 @dataclass(frozen=True)
@@ -189,6 +190,19 @@ class CoachedBot(Agent):
         self.body.on_game_end(gs)
         if self.log is None:
             return
+        dropped = None
+        if self.inflight:  # the last call is still running: wait briefly so its tokens are logged, then drop it
+            try:
+                (asked, _), (decision, rep) = self._res.get(timeout=END_WAIT_S)
+                self.inflight = False
+                if rep:
+                    dropped = {"type": "dropped", "why": "game_end", "asked_frame": asked, "decision": decision,
+                               "latency_s": round(rep.latency_s, 3), "prompt_tokens": rep.prompt_tokens,
+                               "completion_tokens": rep.completion_tokens, "error": rep.error}
+                    self.log.write(dropped)
+            except queue.Empty:
+                pass
+        self._before_end()
         lat = [r["latency_s"] for r in self.records if r.get("latency_s") is not None]
         replies = [(r.get("router") or {}).get("outcome") for r in self.records]
         self.log.write({"type": "game_end", "frame": int(gs.frame) if gs else None, "decisions": len(self.records),
@@ -198,9 +212,12 @@ class CoachedBot(Agent):
                         "mean_latency_s": round(sum(lat) / len(lat), 3) if lat else None,
                         "prompt_tokens": sum(r.get("prompt_tokens", 0) for r in self.records),
                         "completion_tokens": sum(r.get("completion_tokens", 0) for r in self.records),
-                        "body_latency": self.body.latency()})
+                        "dropped": int(dropped is not None), "body_latency": self.body.latency()})
         self.log.close(self.port)
         self.log = None
+
+    def _before_end(self) -> None:
+        """Hook: last records before game_end (after any in-flight call was logged)."""
 
     def close(self):
         self._stop.set()

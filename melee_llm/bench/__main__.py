@@ -1,4 +1,4 @@
-"""CLI: python -m melee_llm.bench {run,one,standings,entrants,imports}. See docs/bench.md."""
+"""CLI: python -m melee_llm.bench {run,one,standings,recount,entrants,imports}. See docs/bench.md."""
 from __future__ import annotations
 
 import argparse
@@ -33,6 +33,8 @@ def main() -> None:
     s = sub.add_parser("standings", help="recompute data/bench/standings.json")
     s.add_argument("--boot", type=int, default=1000)
     s.add_argument("--out", default=str(scheduler.DATA))
+    c = sub.add_parser("recount", help="recount token spend from the decision logs (replies never applied included)")
+    c.add_argument("--out", default=str(scheduler.DATA))
     sub.add_parser("entrants")
     sub.add_parser("imports")
     a = p.parse_args()
@@ -53,7 +55,9 @@ def main() -> None:
         from melee_llm.bench import imports, ratings
         out = Path(a.out)
         imp, exc = imports.load()
-        st = ratings.standings(scheduler.read_results(out / "results.jsonl"), imp, exc, boot=a.boot)
+        from melee_llm.bench import recount
+        st = ratings.standings(recount.apply(scheduler.read_results(out / "results.jsonl"), recount.load(out / "recount.json")),
+                               imp, exc, boot=a.boot)
         out.mkdir(parents=True, exist_ok=True)
         scheduler._write_json(out / "standings.json", st)
         for t, tr in st["tracks"].items():
@@ -61,6 +65,20 @@ def main() -> None:
             for i, row in enumerate(tr["players"], 1):
                 print(f"{i:3d} {row['id']:42s} {row['elo']:5d}  [{row['elo_lo']}, {row['elo_hi']}] ±{row['half_width']:.0f} "
                       f"n={row['games']} {row['wins']}-{row['losses']}-{row['draws']}")
+    elif a.cmd == "recount":
+        from melee_llm.bench import recount
+        from melee_llm.bench.entrants import by_id
+        out = Path(a.out)
+        results = scheduler.read_results(out / "results.jsonl")
+        rc = recount.recount(results)
+        scheduler._write_json(out / "recount.json", rc)
+        ents = by_id()
+        st = json.loads((out / "status.json").read_text()) if (out / "status.json").exists() else {}
+        st["spent_recounted"] = scheduler.recounted_spend(results, ents, out)
+        scheduler._write_json(out / "status.json", st)
+        was, now = scheduler.total_spend(results, ents), st["spent_recounted"]
+        print(f"{len(rc)} games recounted; CLIProxy tokens {was['tokens']:,} as counted → {now['tokens']:,} "
+              f"({json.dumps(now['by_provider'])})")
     elif a.cmd == "entrants":
         from melee_llm.bench.entrants import registry
         for x in registry():

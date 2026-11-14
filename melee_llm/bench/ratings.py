@@ -116,9 +116,11 @@ def record(p: str, games: list[dict]) -> dict:
 
 def spend(results: list[dict]) -> dict:
     """Per entrant: bench games with token/cost accounting. CLIProxy tokens (claude, gpt) count against the budget;
-    Jev is billed to its own key and reported in USD."""
+    Jev is billed to its own key and reported in USD. Tokens include replies that were never applied (`dropped`);
+    pass results through recount.apply() for games logged before those carried their usage."""
     out: dict[str, dict] = defaultdict(lambda: {"games": 0, "prompt": 0, "completion": 0, "usd": 0.0, "calls": 0,
-                                                "decisions": 0, "errors": 0, "latency": []})
+                                                "decisions": 0, "dropped": 0, "tokens_estimated": 0, "errors": 0,
+                                                "latency": []})
     for r in results:
         for port, s in (r.get("sides") or {}).items():
             e = r.get(f"p{port}")
@@ -129,6 +131,8 @@ def spend(results: list[dict]) -> dict:
             o["usd"] += s.get("usd") or 0.0
             o["calls"] += s.get("calls", 0)
             o["decisions"] += s.get("decisions", 0)
+            o["dropped"] += s.get("dropped", 0)
+            o["tokens_estimated"] += s.get("tokens_estimated", 0)
             o["errors"] += s.get("errors", 0)
             if s.get("mean_latency_s") is not None:
                 o["latency"].append(s["mean_latency_s"])
@@ -136,6 +140,8 @@ def spend(results: list[dict]) -> dict:
         lat = o.pop("latency")
         o["mean_latency_s"] = round(statistics.fmean(lat), 2) if lat else None
         o["tokens"] = o["prompt"] + o["completion"]
+        replies = o["decisions"] + o["dropped"]
+        o["discarded_rate"] = round(o["dropped"] / replies, 3) if replies else None  # replies never applied
         o["tokens_per_game"] = round(o["tokens"] / o["games"]) if o["games"] else None
         o["usd_per_game"] = round(o["usd"] / o["games"], 4) if o["games"] else None
         o["usd"] = round(o["usd"], 4)

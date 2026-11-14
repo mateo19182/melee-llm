@@ -28,7 +28,7 @@ from pathlib import Path
 
 import numpy as np
 
-from melee_llm.bench import imports, ratings
+from melee_llm.bench import imports, ratings, recount
 from melee_llm.bench.entrants import Entrant, by_id, game_mode, game_track, tracks_of
 from melee_llm.bench.game import status_of
 from melee_llm.llm_arena.ratings import ELO
@@ -88,6 +88,27 @@ def provider_tokens(rec: dict, entrants: dict[str, Entrant]) -> dict[str, int]:
     return dict(out)
 
 
+def total_spend(results: list[dict], entrants: dict[str, Entrant]) -> dict:
+    tot: Counter = Counter()
+    usd: Counter = Counter()
+    for r in results:
+        tot.update(provider_tokens(r, entrants))
+        for port, s in (r.get("sides") or {}).items():
+            e = entrants.get(r.get(f"p{port}"))
+            if e and s.get("usd"):
+                usd[e.provider] += s["usd"]
+    return {"tokens": sum(tot.values()), "by_provider": dict(tot), "usd_est": {k: round(v, 3) for k, v in usd.items()}}
+
+
+def recounted_spend(results: list[dict], entrants: dict[str, Entrant], out: Path = DATA) -> dict | None:
+    """Spend with every call counted (recount.json fills in games logged before dropped replies had usage)."""
+    rc = recount.load(out / "recount.json")
+    if not rc:
+        return None
+    return {**total_spend(recount.apply(results, rc), entrants),
+            "note": "all calls incl. replies never applied; pre-fix dropped replies estimated from logs"}
+
+
 def _gpu_free_mb() -> int | None:
     try:
         out = subprocess.run(["nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
@@ -136,15 +157,7 @@ class Bench:
 
     def spent(self) -> dict:
         with self.lock:
-            tot: Counter = Counter()
-            usd: Counter = Counter()
-            for r in self.results:
-                tot.update(provider_tokens(r, self.entrants))
-                for port, s in (r.get("sides") or {}).items():
-                    e = self.entrants.get(r.get(f"p{port}"))
-                    if e and s.get("usd"):
-                        usd[e.provider] += s["usd"]
-        return {"tokens": sum(tot.values()), "by_provider": dict(tot), "usd_est": {k: round(v, 3) for k, v in usd.items()}}
+            return total_spend(self.results, self.entrants)
 
     def est_tokens(self, eid: str) -> int:
         e = self.entrants[eid]
@@ -400,14 +413,18 @@ class Bench:
         with self.lock:
             results = list(self.results)
             self.dirty = False
-        st = ratings.standings(results, self.imported, self.excluded, boot=self.cfg.boot, target=self.cfg.target)
+        st = ratings.standings(recount.apply(results, recount.load(self.out / "recount.json")), self.imported,
+                               self.excluded, boot=self.cfg.boot, target=self.cfg.target)
         self.standings, self.standings_at = st, time.time()
         _write_json(self.out / "standings.json", st)
 
     def write_status(self, phase: str, waiting: str = "") -> None:
         sp = self.spent()
+        with self.lock:
+            corrected = recounted_spend(list(self.results), self.entrants, self.out)
         st = {"updated": round(time.time(), 1), "started_at": round(self.t0, 1), "phase": phase, "waiting": waiting,
               "stop_reason": self.stop_reason, "budget_tokens": self.cfg.budget_tokens, "spent": sp,
+              "spent_recounted": corrected,
               "target": self.cfg.target, "load": round(os.getloadavg()[0], 1), "games_started": self.started,
               "unconverged": getattr(self, "unconverged", {}), "suspended": {k: round(v) for k, v in self.suspended.items()
                                                                               if v > time.time()},

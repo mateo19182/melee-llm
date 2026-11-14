@@ -169,10 +169,8 @@ class JevBrain:
     def apply(self, gs, obs, user, rep: Reply, asked_frame, **extra):
         super().apply(gs, obs, user, rep, asked_frame, **extra, **rep.extra)
 
-    def on_game_end(self, gs):
-        if self.log is not None:
-            self.log.write({"type": "jev_stats", **self.jev.stats()})
-        super().on_game_end(gs)
+    def _before_end(self):
+        self.log.write({"type": "jev_stats", **self.jev.stats()})
 
     def close(self) -> None:
         super().close()

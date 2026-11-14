@@ -75,10 +75,8 @@ class JevCoach(CoachedBot):
         self._extra = rep.extra if rep else {}
         super()._apply(decision, frame, rep, user, asked=asked)
 
-    def on_game_end(self, gs):
-        if self.log is not None:
-            self.log.write({"type": "jev_stats", **self.jev.stats()})
-        super().on_game_end(gs)
+    def _before_end(self):
+        self.log.write({"type": "jev_stats", **self.jev.stats()})
 
     def close(self):
         super().close()
