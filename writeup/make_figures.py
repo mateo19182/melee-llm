@@ -6,13 +6,13 @@
 Stage 1 (extract) reads data/bench/, the bench decision logs, the perception pilot and the
 bot-writer ladder, and writes writeup/snapshot.json (committed, so the figures are reproducible
 without the gitignored data). Stage 2 (render) writes writeup/figures/*.svg and fills
-writeup/melee-bench.template.md into writeup/melee-bench.md. Edit prose in the template.
+writeup/melee-bench.template.md into writeup/melee-bench.md and writeup/slides.template.html into
+writeup/slides.html. Edit prose in the templates.
 
 Template placeholders, {{...}}:
     elo TRACK ID / ci TRACK ID / rec TRACK ID / n_games TRACK ID   (TRACK is rt or ut)
     delta TRACK A B          Elo of A minus Elo of B
     drop ID                  share of live replies dropped as stale
-    tpg ID / usd ID          tokens and list-price USD per game
     any key of snapshot["numbers"]
 Standard library only.
 """
@@ -138,22 +138,19 @@ def extract() -> dict:
                                "cpu_level": e["cpu_ladder_level"], "cost_usd": meta.get("cost_usd"),
                                "lines": meta.get("bot_lines"), "minutes": round(meta.get("wall_s", 0) / 60, 1)}
 
-    spend = {k: {x: v[x] for x in ("games", "tokens", "tokens_per_game", "usd", "usd_per_game", "mean_latency_s")}
-             for k, v in st["spend"].items()}
     return {
         "as_of": st["generated"],
         "games": {"bench": st["games"]["bench"], "imported": st["games"]["imported"],
                   "rt": st["tracks"]["realtime"]["games"], "ut": st["tracks"]["untimed"]["games"]},
         "status": {k: status[k] for k in ("started_at", "updated", "phase", "stop_reason", "budget_tokens",
                                           "spent", "spent_recounted", "games_started", "unconverged") if k in status},
-        "boards": boards, "spend": spend, "live": drops, "perception": perception, "botwriter": botwriter,
+        "boards": boards, "live": drops, "perception": perception, "botwriter": botwriter,
     }
 
 
 # ---------------------------------------------------------------- numbers
 
 def numbers(s: dict) -> dict:
-    sp = s["status"].get("spent_recounted") or s["status"]["spent"]  # the recount includes replies never applied
     t0, t1 = s["status"]["started_at"], s["status"]["updated"]
     rt = {p["id"]: p for p in s["boards"]["rt"]}
     coaches = [rt[f"coach:{m}"]["elo"] for m, _ in LLMS if f"coach:{m}" in rt]
@@ -167,10 +164,6 @@ def numbers(s: dict) -> dict:
         "hours": f"{(t1 - t0) / 3600:.1f}",
         "games_bench": f"{s['games']['bench']:,}", "games_imported": f"{s['games']['imported']:,}",
         "games_rt": f"{s['games']['rt']:,}", "games_ut": f"{s['games']['ut']:,}",
-        "tokens_m": f"{sp['tokens'] / 1e6:.1f}", "budget_m": f"{s['status']['budget_tokens'] / 1e6:.0f}",
-        "tokens_claude_m": f"{sp['by_provider'].get('claude', 0) / 1e6:.1f}",
-        "tokens_gpt_m": f"{sp['by_provider'].get('gpt', 0) / 1e6:.1f}",
-        "usd_claude": f"{sp['usd_est'].get('claude', 0):,.0f}", "usd_jev": f"{sp['usd_est'].get('jev', 0):.2f}",
         "coach_llm_min": f"{min(coaches):.0f}", "coach_llm_max": f"{max(coaches):.0f}",
         "coach_delta_min": f"{min(coaches) - rt['coach:random']['elo']:+.0f}",
         "coach_delta_max": f"{max(coaches) - rt['coach:random']['elo']:+.0f}",
@@ -206,30 +199,9 @@ def resolve(key: str, s: dict, nums: dict) -> str:
         case ["drop", i]:
             d = s["live"][i]
             return f"{100 * d['dropped'] / (d['decisions'] + d['dropped']):.0f}%"
-        case ["tpg", i]:
-            return f"{s['spend'][i]['tokens_per_game'] / 1e3:,.0f}k"
-        case ["usd", i]:
-            return f"${s['spend'][i]['usd_per_game']:.2f}"
         case [k] if k in nums:
             return nums[k]
     raise KeyError(f"unknown placeholder {{{{{key}}}}}")
-
-
-def tables(s: dict) -> dict:
-    """Markdown tables the template includes as {{table_*}}."""
-    rows = ["| Entrant | Games | Tokens per game | List-price USD per game |", "|---|---|---|---|"]
-    order = [f"llm_paused:{m}" for m, _ in LLMS] + [f"llm_live:{m}" for m, _ in LLMS] \
-        + [f"coach:{m}" for m, _ in LLMS] + ["jev_paused", "jev_live", "coach_jev"]
-    for i in order:
-        v = s["spend"].get(i)
-        if not v:
-            continue
-        tpg = v["tokens_per_game"]  # the standings already count dropped replies (bench recount)
-        usd = f"${v['usd_per_game']:.2f}" if v["usd"] else ("n/a" if not i.startswith(("jev", "coach_jev")) else "")
-        if i.startswith(("jev", "coach_jev")):
-            usd = f"${v['usd_per_game']:.3f} (billed)"
-        rows.append(f"| {label(i)} | {v['games']} | {tpg / 1e3:,.0f}k | {usd} |")
-    return {"table_tokens": "\n".join(rows)}
 
 
 # ---------------------------------------------------------------- SVG
@@ -450,11 +422,11 @@ def render(s: dict) -> None:
     n = numbers(s)
     for f in (fig_leaderboard, fig_coach, fig_latency, fig_botwriter):
         f(s, n)
-    subs = {**n, **tables(s)}
-    tpl = (HERE / "melee-bench.template.md").read_text()
-    out = re.sub(r"\{\{([^}]+)\}\}", lambda m: subs.get(m.group(1).strip()) or resolve(m.group(1).strip(), s, n), tpl)
-    (HERE / "melee-bench.md").write_text(out)
-    print(f"rendered {len(list(FIGS.glob('*.svg')))} figures and melee-bench.md, snapshot {n['as_of']}")
+    for src, dst in (("melee-bench.template.md", "melee-bench.md"), ("slides.template.html", "slides.html")):
+        tpl = (HERE / src).read_text()
+        out = re.sub(r"\{\{([^}]+)\}\}", lambda m: n.get(m.group(1).strip()) or resolve(m.group(1).strip(), s, n), tpl)
+        (HERE / dst).write_text(out)
+    print(f"rendered {len(list(FIGS.glob('*.svg')))} figures, melee-bench.md and slides.html, snapshot {n['as_of']}")
 
 
 def main() -> None:

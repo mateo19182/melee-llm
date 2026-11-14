@@ -34,7 +34,6 @@ async function render() {
     a.classList.toggle("active", section === href || (href !== "/live" && section.startsWith(href.replace(/s$/, ""))) || (href === "/live" && section === "/"));
   }
   frameTitle();
-  describe();
   for (const [re, load] of routes) {
     const m = path.match(re);
     if (!m) continue;
@@ -69,13 +68,13 @@ document.addEventListener("click", (e) => {
 window.addEventListener("popstate", render);
 
 // Menu chrome: the frame's title tab names the current section, and its top edge steps up just past the title.
-// The description box under the frame explains the menu item under the pointer, else the current one.
+// The description box under the frame explains the menu item under the pointer, and is hidden otherwise.
 function frameTitle() {
   const title = document.getElementById("frame-title");
   title.textContent = document.querySelector("#nav a.active")?.textContent ?? "";
   document.getElementById("frame").style.setProperty("--sx", `${title.offsetWidth + 36}px`);
 }
-function describe(a = document.querySelector("#nav a.active")) {
+function describe(a) {
   document.getElementById("desc").textContent = a?.dataset.desc ?? "";
 }
 document.fonts.ready.then(frameTitle);

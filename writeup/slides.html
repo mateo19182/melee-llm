@@ -1,0 +1,310 @@
+<!doctype html>
+<!-- Source: writeup/slides.template.html; writeup/make_figures.py fills in the numbers to write slides.html. -->
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Melee Bot Elo · slides</title>
+<meta name="theme-color" content="#070926">
+<link rel="icon" href="/static/img/smash-emblem.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="../melee_llm/web/static/style.css">
+<style>
+html,body{height:100%;overflow:hidden}
+.deck{position:fixed;inset:0;display:grid;place-items:center}
+.stage{position:relative;flex:none;width:1280px;height:720px;transform:scale(var(--s,1))}
+.slide{position:absolute;inset:22px 22px 18px;margin:0;width:auto;max-width:none;display:none;flex-direction:column;
+  padding:calc(var(--low) + 30px) 44px 34px;font-size:23px;line-height:1.38}
+.slide.on{display:flex;animation:enter .35s var(--ease) both}
+.slide h2{font-size:44px;margin:0 0 .45em;color:#eef0f8}
+.slide p{margin:0 0 .55em}
+.slide ul{margin:0;padding-left:1.1em}
+.slide li{margin:.28em 0}
+.slide li::marker{color:var(--gold)}
+.slide b{color:#fff}
+.slide .k{color:var(--gold);font-weight:700}
+.slide .dimt{color:var(--dim)}
+.slide .small{font-size:18px}
+.slide img,.slide video{display:block;border:1px solid var(--line-hi);border-radius:8px}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:34px;align-items:center;flex:1;min-height:0}
+.cols.fig{grid-template-columns:auto 1fr}
+.big{font:italic 900 74px/1 var(--menu);font-variation-settings:"wdth" 112;color:var(--gold);text-shadow:var(--outline)}
+.stat{margin:0 0 18px}.stat .big{font-size:56px}.stat div:last-child{color:var(--dim);font-size:19px;margin-top:4px}
+.cards{display:grid;gap:14px}
+.card{background:var(--panel);border:1px solid var(--line-hi);border-radius:8px;padding:12px 16px;font-size:19px;line-height:1.32}
+.card h3{font-size:15px;color:var(--gold);margin:0 0 6px}
+.card .big{font-size:46px;margin:6px 0 8px}
+.cards.roomy .card{font-size:22px;padding:20px 22px}.cards.roomy .card h3{font-size:16px}.cards.roomy .card .big{font-size:43px;white-space:nowrap;margin:16px 0 20px}
+.strip{margin-top:auto;padding-top:14px;border-top:1px solid var(--line);color:var(--dim);font-size:18px}
+.title-slide h1{font-size:92px;margin:0 0 .15em}
+.title-slide .sub{font:italic 800 32px/1.2 var(--menu);font-variation-settings:"wdth" 108;color:var(--title);margin-bottom:1.2em}
+.timeline{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:22px}
+.timeline .card .yr{font:italic 900 26px var(--menu);color:var(--hi)}
+.quote{font-size:19px;color:var(--text);border-left:3px solid var(--gold);padding-left:12px;margin-top:12px}
+.notes{display:none}
+#sp-panel{display:none}
+body.shownotes #sp-panel,body.presenter #sp-panel{display:block;position:fixed;z-index:5;background:rgba(3,4,20,.94);border-top:2px solid var(--f-mid);
+  color:var(--text);font:17px/1.5 var(--sans);overflow:auto;padding:12px 22px}
+body.shownotes .deck{bottom:32vh}
+body.shownotes #sp-panel{left:0;right:0;bottom:0;height:32vh}
+body.presenter .deck{right:38vw;bottom:0}
+body.presenter #sp-panel{top:0;right:0;bottom:0;width:38vw;height:auto;border-top:0;border-left:2px solid var(--f-mid);font-size:20px}
+#sp-head{display:flex;gap:16px;align-items:baseline;color:var(--dim);font:600 14px var(--menu);margin-bottom:8px}
+#sp-timer{font:italic 900 30px/1.1 var(--menu);color:var(--gold);cursor:pointer}
+#sp-notes p{margin:0 0 .6em}
+</style></head>
+<body>
+<div class="deck"><div class="stage">
+
+<section class="slide frame title-slide" data-title="Title">
+  <span class="frame-stripes" aria-hidden="true"></span><div class="frame-title" aria-hidden="true">Melee × AI</div>
+  <div class="cols">
+    <div>
+      <h1>Melee Bot Elo</h1>
+      <div class="sub">Every kind of Melee bot on one scale</div>
+      <p>CPUs, learned bots, LLMs, our own bot, a simulator and an AI commentary booth, in two days</p>
+      <p class="dimt small">Mateo Amado · 2026-11-14 · melee.m19182.dev</p>
+    </div>
+    <img src="media/replay-2d.webp" alt="A bench game redrawn from its replay: two Foxes on Final Destination" style="width:100%">
+  </div>
+  <aside class="notes"><p><b>0:15.</b> I'm Mateo. In two days I put every kind of Melee bot on one scale, and built a pile of things around it. This is a bench game, redrawn from its replay file.</p></aside>
+</section>
+
+<section class="slide frame" data-title="A game that doesn't wait">
+  <span class="frame-stripes" aria-hidden="true"></span><div class="frame-title" aria-hidden="true">Why Melee</div>
+  <h2>A game that doesn't wait</h2>
+  <div class="cols">
+    <div>
+      <div class="stat"><div class="big">60 fps</div><div>one frame is 16.7 ms, and every one counts</div></div>
+      <div class="stat"><div class="big">2001</div><div>and still played competitively</div></div>
+    </div>
+    <ul>
+      <li>Hard for any AI: frame-level reactions and reading the opponent, with no pause button</li>
+      <li>Most AI game benchmarks are turn-based. <b>Here the game never waits.</b></li>
+      <li>Great open tooling: <span class="k">Slippi</span> replays and netplay, <span class="k">libmelee</span> to read the game and press buttons, a decompiled game</li>
+    </ul>
+  </div>
+  <aside class="notes"><p><b>0:20.</b> Melee is from 2001 and people still play it competitively. It runs at 60 frames a second and never waits for you, which makes it a hard target for any AI. And the community has built amazing open tooling around it.</p></aside>
+</section>
+
+<section class="slide frame" data-title="Ten years of bots, and why now">
+  <span class="frame-stripes" aria-hidden="true"></span><div class="frame-title" aria-hidden="true">History</div>
+  <h2>Ten years of Melee bots</h2>
+  <div class="timeline">
+    <div class="card"><div class="yr">2001</div>Built-in CPUs, levels 1–9</div>
+    <div class="card"><div class="yr">2015</div>SmashBot: hand-written, frame-perfect</div>
+    <div class="card"><div class="yr">2017</div>Phillip: RL, beat pros at 2-frame reactions</div>
+    <div class="card"><div class="yr">2024</div>Phillip at human speed: lost to Zain, beat Moky</div>
+    <div class="card"><div class="yr">2025</div>HAL: cloned pro Fox for ~$5, beats CPU 9 95%</div>
+  </div>
+  <h3 style="font-size:17px;color:var(--gold)">The last six weeks</h3>
+  <ul class="small" style="columns:2;column-gap:34px">
+    <li><b>Faynt</b>: 240 of 244 vs Phillip, public weights</li>
+    <li><b>HAL scaled up</b>: ~2200 Elo, top 1% of humans</li>
+    <li><b>Reyn</b>: a bot that takes orders in plain English</li>
+    <li><b>Jev</b>: picks one of N options in 0.15 s</li>
+    <li><b>stomped.dev</b>: a ranked ladder for bots</li>
+    <li><b>A simulator</b>: the game ~100× faster than real time</li>
+  </ul>
+  <div class="strip">Nobody had put these bots on one scale, or asked where an LLM fits among them.</div>
+  <aside class="notes"><p><b>0:30.</b> People have built Melee bots for ten years: hand-scripted SmashBot, then Phillip, trained with reinforcement learning, which played pros. HAL showed you can clone pro play for five dollars. And the last six weeks were the busiest yet: Faynt, the strongest bot; Reyn, a bot you steer in English; a bot ladder; and a simulator. Nobody had put them on one scale. So I did.</p></aside>
+</section>
+
+<section class="slide frame" data-title="The bench">
+  <span class="frame-stripes" aria-hidden="true"></span><div class="frame-title" aria-hidden="true">The bench</div>
+  <h2>One scale for everyone</h2>
+  <div class="cards roomy" style="grid-template-columns:repeat(4,1fr)">
+    <div class="card"><h3>Built-in CPUs</h3>Levels 1–9. Level 9 is the anchor: <b>1500</b>.</div>
+    <div class="card"><h3>Scripted bots</h3>Three small ones: a rusher, a laser spammer, a shine spammer.</div>
+    <div class="card"><h3>Learned bots</h3>Phillip, HAL, MIMIC, Faynt and Reyn: networks trained on human replays.</div>
+    <div class="card"><h3>LLMs, five ways</h3>Playing (paused or live), Jev, coaching Reyn, and writing a bot in 30 minutes.</div>
+  </div>
+  <ul style="margin-top:28px">
+    <li>The real game, from my disc, in Slippi Dolphin on my home server; a dozen games side by side</li>
+    <li>Fox vs Fox, Battlefield and Final Destination, one Elo fit with 95% intervals</li>
+    <li>No hand-picked games: a scheduler picks whichever game shrinks the widest intervals. 1,573 games overnight in 9.0 h</li>
+  </ul>
+  <div class="strip">2,459 real-time and 2,018 untimed games on two boards</div>
+  <aside class="notes"><p><b>0:30.</b> The bench runs the real game on my home server, a dozen games at once. Everyone plays Fox vs Fox: the game's CPUs, three small scripted bots, the five published learned bots, and LLMs in five different roles. One Elo scale, with the level 9 CPU pinned at 1500. Nobody picks the games: a scheduler chooses whichever game tightens the ratings most, all night.</p></aside>
+</section>
+
+<section class="slide frame" data-title="The board">
+  <span class="frame-stripes" aria-hidden="true"></span><div class="frame-title" aria-hidden="true">Results</div>
+  <div class="cols fig">
+    <img src="figures/leaderboard-realtime.svg" alt="Real-time board with 95% intervals" style="height:584px">
+    <div>
+      <h2>The real-time board</h2>
+      <ul>
+        <li><b>Learned bots are far ahead.</b> Faynt never lost: 390–0. Then Phillip gm (2488) and HAL (2234)</li>
+        <li><b>CPU levels barely matter</b> in a Fox mirror: level 1 (1250) beats level 5 (1194). The CPU Fox jumps off the stage by itself</li>
+        <li><b>LLMs</b> span the whole board, depending on their job</li>
+      </ul>
+    </div>
+  </div>
+  <aside class="notes"><p><b>0:25.</b> Here's the board. The learned bots are far ahead: Faynt went 390–0, it never lost a game. A fun one: CPU levels barely matter in a Fox mirror, because the CPU Fox keeps jumping off the stage by itself. And the LLMs are all over the board, depending on the job they had.</p></aside>
+</section>
+
+<section class="slide frame" data-title="What the LLMs did">
+  <span class="frame-stripes" aria-hidden="true"></span><div class="frame-title" aria-hidden="true">LLMs</div>
+  <h2>Where the LLMs landed</h2>
+  <div class="cards roomy" style="grid-template-columns:repeat(3,1fr);margin:auto 0">
+    <div class="card"><h3>Playing: speed beats smarts</h3>
+      <div class="big">1692 → 1114</div>
+      GPT-6.1 Sol beats CPU 9 when the game waits for it. Live, 95% of its replies arrive too late, and every LLM sits around a level 4 CPU.</div>
+    <div class="card"><h3>Coaching: two words win</h3>
+      <div class="big">“Don't die.”</div>
+      LLMs coaching Reyn barely beat a random coach. Holding “Don't die.” all game, with no coach, rates 2398: above every LLM coach.</div>
+    <div class="card"><h3>Coding: a CPU 9 in 30 min</h3>
+      <div class="big">1663</div>
+      Sonnet 5.5 wrote a 135-line bot just above the level 9 CPU. Opus's 303-line one did worse. One run each, so it ranks nothing yet.</div>
+  </div>
+  <aside class="notes"><p><b>0:40.</b> The LLMs, in one slide. Playing directly, speed beats smarts: the best model beats the hardest CPU when the game waits, but live, 95% of its replies come too late and every LLM plays like a level 4 CPU. As coaches for Reyn, they barely beat a random coach, and the best instruction turned out to be just "Don't die." And given 30 minutes, a coding agent writes a bot about as good as the hardest CPU.</p></aside>
+</section>
+
+<section class="slide frame" data-title="The website">
+  <span class="frame-stripes" aria-hidden="true"></span><div class="frame-title" aria-hidden="true">Also built</div>
+  <h2>A website to watch it all</h2>
+  <div class="cols fig">
+    <img src="media/site-bench.webp" alt="The Bench page of the website" style="width:700px">
+    <ul class="small">
+      <li><b>Bench</b>: both boards, a page per entrant with record and sample decisions</li>
+      <li><b>All matches</b>: every game on the server, drawn live in 2D</li>
+      <li><b>Launch</b>: any matchup, queued from the browser</li>
+      <li><b>Games</b>: every replay, with the AI's decisions on a timeline</li>
+      <li><b>Live</b>: the real game streamed, with what each AI is thinking</li>
+    </ul>
+  </div>
+  <div class="strip">Public at melee.m19182.dev, dressed like Melee's own menus</div>
+  <aside class="notes"><p><b>0:25.</b> To watch all this I built a website, styled like Melee's menus. The boards, a live 2D view of every game on the server, a launcher for any matchup, every replay with the AI's decisions on a timeline, and a live stream of the real game. It's public.</p></aside>
+</section>
+
+<section class="slide frame" data-title="The commentary booth">
+  <span class="frame-stripes" aria-hidden="true"></span><div class="frame-title" aria-hidden="true">Also built</div>
+  <h2>An AI commentary booth</h2>
+  <div class="cols fig">
+    <video src="media/backup-clip.mp4#t=40" controls preload="metadata" style="height:480px"></video>
+    <div>
+      <ul class="small">
+        <li>Two casters: <b>Charlie</b> on play-by-play (“loses his mind on big moments”) and <b>Laura</b> on colour (“dry wit, teases Charlie”)</li>
+        <li>A fast LLM watches the game's events (combos, stocks, self-destructs) and writes a line every few seconds</li>
+        <li>ElevenLabs voices them, only while someone is listening</li>
+      </ul>
+      <div class="quote"><b>Charlie:</b> HAL MASTER's Fox is in the air and Faynt's Marth is waiting for him!<br><b>Laura:</b> Waiting is the right word. Faynt doesn't chase, Charlie, he collects.</div>
+    </div>
+  </div>
+  <aside class="notes"><p><b>0:35.</b> Every live game gets two AI casters. Charlie does play-by-play, Laura does colour. A fast LLM watches the game events and writes their lines, and ElevenLabs voices them. (Play 10–15 s of the clip.)</p></aside>
+</section>
+
+<section class="slide frame" data-title="MeleeBot">
+  <span class="frame-stripes" aria-hidden="true"></span><div class="frame-title" aria-hidden="true">Also built</div>
+  <h2>Our own bot: MeleeBot</h2>
+  <div class="cols fig">
+    <img src="media/site-training.webp" alt="Training page: loss and validation accuracy of the 20M model" style="width:660px">
+    <div>
+      <div class="stat"><div class="big">23,000</div><div>ranked online Yoshi games to learn from</div></div>
+      <ul class="small">
+        <li>A small transformer that copies human play, the way HAL did: 4 s of game in, the next controller input out</li>
+        <li><b>6M</b>: 0 wins in 12 against CPU 9. <b>20M</b>: 1 win, twice the stocks taken</li>
+        <li>Next: self-play, where the published bots got strong</li>
+      </ul>
+    </div>
+  </div>
+  <aside class="notes"><p><b>0:30.</b> On day two I trained a bot of my own, a Yoshi, the way HAL did: a small transformer that copies 23,000 ranked online games. The first version lost every game to the hardest CPU; the bigger one won one in twelve. Honest result: it still loses. Self-play is next, and that's where the published bots got good.</p></aside>
+</section>
+
+<section class="slide frame" data-title="The simulator">
+  <span class="frame-stripes" aria-hidden="true"></span><div class="frame-title" aria-hidden="true">Also built</div>
+  <h2>A simulator, ~100× faster</h2>
+  <div class="cols">
+    <div>
+      <div class="stat"><div class="big">287 / 300</div><div>replays reproduced frame for frame (the other 13 were unfinished files)</div></div>
+      <div class="stat"><div class="big">~100×</div><div>faster than the emulator</div></div>
+    </div>
+    <ul>
+      <li>The community decompiled Melee back into C; <b>melee-sim-light</b> runs it with no emulator</li>
+      <li>I hooked every player into it, learned bots included</li>
+      <li>Save any moment, try thousands of inputs, keep the best: <b>tool-assisted superplay</b>, and training on far more games than humans play</li>
+      <li class="dimt">Catch: no built-in CPUs</li>
+    </ul>
+  </div>
+  <aside class="notes"><p><b>0:25.</b> Melee's community decompiled the game back into C, and there's a simulator that runs it without an emulator. I hooked all our players into it and checked it against 300 replays: every complete one matched frame for frame, at about a hundred times the speed. That opens up tool-assisted superplay, and training at scale.</p></aside>
+</section>
+
+<section class="slide frame" data-title="Play them, and what's next">
+  <span class="frame-stripes" aria-hidden="true"></span><div class="frame-title" aria-hidden="true">Next</div>
+  <div class="cols" style="align-items:start">
+    <div>
+      <h2>Play the bots</h2>
+      <ul>
+        <li>On a laptop with a controller: Phillip at any tier, Faynt, Reyn, MeleeBot</li>
+        <li>From home over Slippi direct connect</li>
+        <li>The board has a slot waiting for humans</li>
+      </ul>
+    </div>
+    <div>
+      <h2>What's next</h2>
+      <ul>
+        <li>Superplay and training in the simulator</li>
+        <li>MeleeBot: self-play, then the stomped.dev ladder</li>
+        <li>A small local model, fast enough to matter live</li>
+        <li>A coach that starts from “Don't die.”</li>
+      </ul>
+    </div>
+  </div>
+  <div style="margin-top:auto;text-align:center">
+    <div class="dimt small">Write-up, boards, replays and live games</div>
+    <div class="big" style="font-size:58px">melee.m19182.dev/writeup</div>
+  </div>
+  <aside class="notes"><p><b>0:20.</b> You can play all of these bots yourself, on my laptop with a controller after this, or from home over Slippi. Next: superplay and training in the simulator, self-play for MeleeBot, and a faster brain for the LLMs. All built in two days; the write-up is at melee.m19182.dev/writeup. Thanks!</p></aside>
+</section>
+
+</div></div>
+<div id="sp-panel"><div id="sp-head"><span id="sp-timer" title="Click to reset">0:00</span><span id="sp-count"></span><span id="sp-next"></span></div><div id="sp-notes"></div></div>
+<script>
+const slides = [...document.querySelectorAll(".slide")];
+const presenter = new URLSearchParams(location.search).has("presenter");
+const bc = "BroadcastChannel" in window ? new BroadcastChannel("melee-slides") : null;
+const $ = id => document.getElementById(id);
+let i = 0, t0 = Date.now();
+
+function fit() {
+  const d = document.querySelector(".deck").getBoundingClientRect();
+  document.querySelector(".stage").style.setProperty("--s", Math.min(d.width / 1280, d.height / 720));
+}
+function show(n, echo = true) {
+  i = Math.max(0, Math.min(slides.length - 1, n));
+  slides.forEach((s, k) => s.classList.toggle("on", k === i));
+  document.querySelectorAll("video").forEach(v => { if (!v.closest(".on")) v.pause(); });
+  history.replaceState(null, "", location.search + "#" + (i + 1));
+  $("sp-count").textContent = `${i + 1} / ${slides.length}`;
+  $("sp-next").textContent = slides[i + 1] ? "Next: " + slides[i + 1].dataset.title : "Last slide";
+  $("sp-notes").innerHTML = slides[i].querySelector(".notes")?.innerHTML || "";
+  if (echo && bc) bc.postMessage(i);
+}
+if (bc) bc.onmessage = e => show(e.data, false);
+if (presenter) {
+  document.body.classList.add("presenter");
+  document.querySelectorAll("video").forEach(v => v.muted = true);
+}
+addEventListener("resize", fit);
+addEventListener("keydown", e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key;
+  if (["ArrowRight", "ArrowDown", "PageDown", " ", "Enter"].includes(k)) show(i + 1);
+  else if (["ArrowLeft", "ArrowUp", "PageUp", "Backspace"].includes(k)) show(i - 1);
+  else if (k === "Home") show(0);
+  else if (k === "End") show(slides.length - 1);
+  else if (k === "k") { const v = slides[i].querySelector("video"); if (v) v.paused ? v.play() : v.pause(); }
+  else if (k === "n") { document.body.classList.toggle("shownotes"); fit(); }
+  else if (k === "p") open(location.pathname + "?presenter#" + (i + 1), "melee-presenter", "width=1200,height=700");
+  else if (k === "f") document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+  else return;
+  e.preventDefault();
+});
+document.querySelector(".deck").addEventListener("click", e => {
+  if (e.target.closest("a, video")) return;
+  show(i + (e.clientX > innerWidth / 2 ? 1 : -1));
+});
+$("sp-timer").onclick = () => t0 = Date.now();
+setInterval(() => { const s = Math.floor((Date.now() - t0) / 1000); $("sp-timer").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; }, 500);
+fit();
+show((parseInt(location.hash.slice(1)) || 1) - 1, false);
+</script>
+</body></html>
