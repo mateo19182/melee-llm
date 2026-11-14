@@ -62,6 +62,7 @@ def main() -> None:
         from melee_llm.bench import imports, ratings
         out = Path(a.out)
         imp, exc = imports.load()
+        imp = [g for g in imp if g["source"] != out.name]  # a side run's own games are already its results
         from melee_llm.bench import recount
         st = ratings.standings(recount.apply(scheduler.read_results(out / "results.jsonl"), recount.load(out / "recount.json")),
                                imp, exc, boot=a.boot)

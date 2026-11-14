@@ -129,7 +129,7 @@ class Bench:
         self.results_path = out / "results.jsonl"
         self.entrants = by_id()
         self.results = read_results(self.results_path)
-        self.imported, self.excluded = imports.load()
+        self.imported, self.excluded = self._imports()
         self.imported_at = time.time()
         self.lock = threading.Lock()
         self.load = 0.0
@@ -182,9 +182,13 @@ class Bench:
             return prior
         return int((sum(own) + prior) / (len(own) + 1))
 
+    def _imports(self) -> tuple[list[dict], dict]:
+        games, excluded = imports.load()
+        return [g for g in games if g["source"] != self.out.name], excluded  # a side run's own games are its results
+
     def games(self) -> list[dict]:
         if time.time() - self.imported_at > 1800:
-            self.imported, self.excluded = imports.load()
+            self.imported, self.excluded = self._imports()
             self.imported_at = time.time()
         with self.lock:
             return [r for r in self.results if r.get("status") == "ok"] + self.context + self.imported

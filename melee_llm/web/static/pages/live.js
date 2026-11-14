@@ -43,6 +43,7 @@ export default async function live(root, _params, signal) {
     await api("/api/settings", { method: "POST", body: { arena: e.target.checked } });
     toast(e.target.checked ? "Arena will fill the live slot when the queue is empty" : "Arena paused after the current game");
   } });
+  const voiceToggle = h("input", { type: "checkbox", onchange: (e) => setVoice(e.target.checked) });
   const castToggle = h("input", { type: "checkbox", onchange: async (e) => {
     await api("/api/settings", { method: "POST", body: { commentator: e.target.checked } });
     toast(e.target.checked ? "Commentator on: an LLM calls the game in the feed" : "Commentator off: the play-by-play ticker stays");
@@ -54,6 +55,7 @@ export default async function live(root, _params, signal) {
       videoWrap,
       h("div.video-bar", {}, h("span.spacer"),
         h("label.check", { title: "An LLM commentates the live game in the feed (uses tokens)" }, castToggle, "Commentator"),
+        h("label.check", { title: "Speak the commentator's lines out loud in this browser (ElevenLabs; only while on). Also the speaker button or v" }, voiceToggle, "Voice"),
         h("label.check", {}, arenaToggle, "Arena fills idle time"), link("/launch", h("button.primary.small", {}, "Launch a match"))),
       h("div.queue-strip", {}, h("h3", {}, "Up next"), queueBox)),
     h("div.card.panel", {},
@@ -118,6 +120,7 @@ export default async function live(root, _params, signal) {
     fsBtn.innerHTML = document.fullscreenElement === videoWrap ? ICON.exit : ICON.full;
     voiceBtn.innerHTML = voiceOn ? ICON.voiceOn : ICON.voiceOff;
     voiceBtn.classList.toggle("on", voiceOn);
+    voiceToggle.checked = voiceOn;
     videoWrap.classList.toggle("paused", video.paused);
   };
   for (const ev of ["play", "pause", "playing"]) video.addEventListener(ev, syncControls);
