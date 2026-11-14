@@ -11,7 +11,7 @@ import numpy as np
 import torch
 
 from . import features as fe
-from .model import HEADS, load
+from .model import HEADS, check_rank, default_rank, load
 from .schema import CHARACTERS, FRAME, RANKS
 
 _PLAYER = FRAME["me"]
@@ -121,7 +121,7 @@ def raw_frames() -> RawFrames:
 class Policy:
     """One game at a time: feed every GameState to `act`, which returns a libmelee-style controller dict."""
 
-    def __init__(self, checkpoint, port, opponent_port, delay=0, rank="MASTER", win=1, temperature=1.0,
+    def __init__(self, checkpoint, port, opponent_port, delay=0, rank=None, win=1, temperature=1.0,
                  device=None, threads=8, seed=0):
         self.raw = raw_frames()
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
@@ -130,7 +130,7 @@ class Policy:
         self.features = self.model.config.features
         self.port, self.opp = port, opponent_port
         self.steer = {}
-        self.set_steer(dict(delay=delay, rank=rank, win=win, temperature=temperature))
+        self.set_steer(dict(delay=delay, rank=rank or default_rank(self.ckpt), win=win, temperature=temperature))
         self.centers = self.model.stick_centers.cpu().numpy()
         self.context = self.model.config.context
         torch.manual_seed(seed)
@@ -147,8 +147,7 @@ class Policy:
         new = {**self.steer, **steer}
         if not 0 <= int(new["delay"]) <= fe.MAX_DELAY:
             raise ValueError(f"delay must be 0..{fe.MAX_DELAY}")
-        if str(new["rank"]).upper() not in RANKS:
-            raise ValueError(f"rank must be one of {RANKS}")
+        check_rank(self.ckpt, str(new["rank"]).upper())
         if new["win"] not in (0, 1, None):
             raise ValueError("win must be 0, 1 or None (unknown)")
         if not float(new["temperature"]) > 0:

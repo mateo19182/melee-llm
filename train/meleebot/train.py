@@ -13,7 +13,7 @@ import torch.nn.functional as F
 
 from . import features as fe
 from .model import HEADS, Config, Policy, save
-from .schema import FRAME
+from .schema import FRAME, RANKS
 
 COND_DROP = 0.1   # share of windows trained without rank / result, so both can be left unknown at play time
 
@@ -146,7 +146,9 @@ def main():
 
     log = open(os.path.join(a.run_dir, "log.jsonl"), "a")
     curve = open(os.path.join(a.run_dir, "train.jsonl"), "a")
-    meta = dict(data_dir=os.path.abspath(a.data_dir), args=vars(a), params=n_params)
+    ranks = {r: int((train_g["rank"] == i).sum()) for i, r in enumerate(RANKS)}
+    ranks["UNKNOWN"] = max(ranks["UNKNOWN"], 1)  # COND_DROP trains it on every dataset
+    meta = dict(data_dir=os.path.abspath(a.data_dir), args=vars(a), params=n_params, ranks=ranks)
     run_info = dict(meta, steps=a.steps, started_at=time.time(), train_frames=int(train_g["length"].sum()),
                     train_games=len(train_g["length"]), val_games=len(val_g["length"]))
 

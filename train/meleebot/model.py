@@ -149,6 +149,33 @@ def save(path, model, extra):
     torch.save(dict(config=asdict(model.config), state=model.state_dict(), **extra), path)
 
 
+def trained_ranks(ck) -> dict | None:
+    """Rank name -> training games, from the checkpoint; None for checkpoints saved before it was recorded.
+
+    A rank the model never trained on has a random embedding and wrecks its play (bc-20m-amsa, trained on
+    PRO only, ran off the stage when asked for MASTER). UNKNOWN is always trained (train.COND_DROP).
+    """
+    return ck.get("ranks")
+
+
+def default_rank(ck) -> str:
+    """The highest rank with at least 5% of the training games: imitate the best players it knows well."""
+    ranks = trained_ranks(ck)
+    if not ranks:
+        return "MASTER"  # the ranked .slp runs before ranks were recorded trained PLATINUM..MASTER
+    total = sum(n for r, n in ranks.items() if r != "UNKNOWN")
+    known = [r for r in RANKS if r != "UNKNOWN" and total and ranks.get(r, 0) >= 0.05 * total]
+    return known[-1] if known else "UNKNOWN"
+
+
+def check_rank(ck, rank: str) -> None:
+    ranks = trained_ranks(ck)
+    if rank not in RANKS:
+        raise ValueError(f"rank must be one of {RANKS}")
+    if ranks is not None and rank != "UNKNOWN" and not ranks.get(rank):
+        raise ValueError(f"this model never trained on rank {rank}; it knows {sorted(r for r, n in ranks.items() if n)}")
+
+
 def load(path, device="cpu"):
     ck = torch.load(path, map_location=device, weights_only=False)
     m = Policy(Config(**ck["config"])).to(device)
