@@ -290,6 +290,17 @@ async def api_ladders(_: Request) -> Response:
     return ok(await blocking(games.ladders))
 
 
+async def api_bench(_: Request) -> Response:
+    from melee_llm.bench import views
+    return ok(await blocking(views.board))
+
+
+async def api_bench_entrant(request: Request) -> Response:
+    from melee_llm.bench import views
+    e = await blocking(views.entrant, request.path_params["id"])
+    return ok(e) if e else ok({"error": "no such entrant"}, 404)
+
+
 async def api_netplay(_: Request) -> Response:
     return ok({"sessions": [], "note": "netplay is not wired up yet"})
 
@@ -307,7 +318,7 @@ async def api_doc(request: Request) -> Response:
     return ok(d) if d else ok({"error": "no such doc"}, 404)
 
 
-SPA = ["/", "/live", "/matches", "/matches/{id}", "/launch", "/jobs", "/job/{id}", "/games", "/game/{id}", "/arena", "/coach", "/botwriter",
+SPA = ["/", "/bench", "/bench/{id:path}", "/live", "/matches", "/matches/{id}", "/launch", "/jobs", "/job/{id}", "/games", "/game/{id}", "/arena", "/coach", "/botwriter",
        "/botwriter/{id}", "/ladder/{name}", "/play", "/docs", "/docs/{name}"]
 
 routes = [
@@ -331,6 +342,8 @@ routes = [
     Route("/api/botwriter/sessions", api_sessions),
     Route("/api/botwriter/sessions/{id}", api_session),
     Route("/api/ladders", api_ladders),
+    Route("/api/bench", api_bench),
+    Route("/api/bench/entrant/{id:path}", api_bench_entrant),
     Route("/api/netplay", api_netplay),
     Route("/api/docs", api_docs),
     Route("/api/docs/search", api_docs_search),

@@ -363,6 +363,26 @@ td.when { color: var(--dim); white-space: nowrap; }
 .rank.first { color: var(--hi); text-shadow: 0 0 14px rgba(102, 224, 255, .5); }
 .board .name { font: italic 600 18px var(--display); text-transform: uppercase; letter-spacing: .03em; }
 .board .elo { font: italic 700 20px var(--display); }
+/* ------------------------------------------------------------------ bench */
+.bench-progress .row { gap: 14px; }
+.budget { flex: 0 1 220px; height: 6px; border-radius: 3px; background: rgba(5, 8, 28, .7); border: 1px solid var(--line); overflow: hidden; }
+.budget .bar { height: 100%; border-radius: 0; }
+.bench-filters { gap: 10px; }
+.bench-filters .toggle { flex-wrap: wrap; }
+.bench-board .name { font-size: 17px; }
+.bench-who { min-width: 260px; }
+.bench-who .badge { margin-left: 4px; vertical-align: 2px; }
+.bench-about { font-size: 12.5px; color: var(--dim); margin-top: 2px; max-width: 560px; }
+.ci-cell { width: 24%; min-width: 140px; }
+.ci { position: relative; height: 14px; }
+.ci::before { content: ""; position: absolute; left: 0; right: 0; top: 6px; height: 1px; background: rgba(150, 175, 255, .1); }
+.ci-range { position: absolute; top: 3px; height: 8px; border-radius: 2px; background: rgba(150, 175, 255, .16); border: 1px solid rgba(150, 175, 255, .28); }
+.ci-range.ok { background: var(--hi-dim); border-color: rgba(102, 224, 255, .5); }
+.ci-dot { position: absolute; top: 1px; width: 4px; height: 12px; margin-left: -2px; background: var(--text); transform: skewX(var(--skew)); box-shadow: 0 0 6px rgba(255, 255, 255, .4); }
+.bench-samples { display: flex; flex-direction: column; gap: 6px; }
+.bench-samples .ev { cursor: default; }
+.bench-samples pre { font-size: 11.5px; color: var(--dim); margin-top: 6px; }
+.bench-explain { font-size: 14px; max-width: 900px; margin-top: 10px; }
 .heat { display: inline-block; min-width: 42px; text-align: center; padding: 2px 6px; border-radius: 3px; font-variant-numeric: tabular-nums; font-size: 12.5px; }
 .bar { height: 4px; border-radius: 2px; background: linear-gradient(90deg, rgba(102, 224, 255, .25), var(--hi)); box-shadow: 0 0 8px rgba(102, 224, 255, .3); }
 .bar-cell { width: 26%; min-width: 80px; }

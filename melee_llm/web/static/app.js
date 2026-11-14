@@ -2,6 +2,7 @@
 import { api, h, mount } from "./lib.js";
 
 const routes = [
+  [/^\/bench(\/(?<id>.+))?$/, () => import("./pages/bench.js")],
   [/^\/(live)?$/, () => import("./pages/live.js")],
   [/^\/matches(\/(?<id>[\w.-]+))?$/, () => import("./pages/matches.js")],
   [/^\/(launch|jobs)$/, () => import("./pages/launch.js")],

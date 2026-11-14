@@ -110,6 +110,16 @@ class Index:
                 add(r.get("replay"), source=f"coach-pilot:{f.parent.name}", source_label=f"Coach pilot {f.parent.name}",
                     p1=r["p1"], p2=r["p2"], char1=r["char1"], char2=r["char2"], stage=r["stage"], mode=r.get("mode"),
                     winner=r.get("winner"), stocks=r.get("stocks"), percent=r.get("percent"), frames=r.get("frames"))
+        bench = _jsonl(ROOT / "data/bench/results.jsonl")
+        if bench:
+            from melee_llm.bench.entrants import by_id
+            labels = {k: e.label for k, e in by_id().items()}
+        for r in bench:
+            if r.get("replay"):
+                add(r["replay"], source="bench", source_label="Bench", p1=r["spec1"], p2=r["spec2"],
+                    label1=labels.get(r["p1"], r["p1"]), label2=labels.get(r["p2"], r["p2"]), char1="FOX", char2="FOX",
+                    stage=r["stage"], mode=r.get("mode"), winner=r.get("winner"), stocks=r.get("stocks"),
+                    percent=r.get("percent"), frames=r.get("frames"), time=_fmt_time(r["ts"]) if r.get("ts") else None)
         for f in sorted((BOTWRITER / "ladders").glob("*/games.jsonl")):
             for r in _jsonl(f):
                 if "error" in r or not r.get("replay"):

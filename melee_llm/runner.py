@@ -21,6 +21,7 @@ DOLPHIN = {
     "paused": ROOT / "scripts/dolphin-gpu.sh",  # rendered, game waits for every input (slow players → slow motion)
     "lockstep": ROOT / "scripts/dolphin-gpu.sh",  # same as paused; with fast bots it runs at real time, no dropped frames
     "fast": ROOT / "bin/Slippi_Mainline_ExiAI.AppImage",  # headless, unthrottled
+    "realtime": ROOT / "bin/Slippi_Mainline_ExiAI.AppImage",  # headless lockstep: 60 fps cap, game waits for slow inputs
 }
 
 
@@ -130,12 +131,13 @@ def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BA
     assert len(agents) == 2, "two ports for now"
     if not _port_free(slippi_port):
         raise RuntimeError(f"Slippi port {slippi_port} is busy: a stale Dolphin is probably still running")
-    fast, blocking = mode == "fast", mode in ("fast", "paused", "lockstep")
+    fast, blocking = mode == "fast", mode in ("fast", "paused", "lockstep", "realtime")
+    headless = mode in ("fast", "realtime")
     replay_dir = replay_dir or ROOT / "replays"
     replay_dir.mkdir(parents=True, exist_ok=True)
     console = Console(
         path=str(DOLPHIN[mode]), fullscreen=False, save_replays=True, replay_dir=str(replay_dir),
-        disable_audio=True, gfx_backend="Null" if fast else "OGL",
+        disable_audio=True, gfx_backend="Null" if headless else "OGL",
         emulation_speed=0 if fast else 1.0, blocking_input=blocking, slippi_port=slippi_port,
     )
     ports = sorted(agents)
@@ -143,7 +145,7 @@ def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BA
     display = os.environ.get("DISPLAY")
     pub = matches.publisher(agents, stage, mode, games, slippi_port, replay_dir, meta)
     error = None
-    if fast:  # keep headless Dolphins off the streamed display
+    if headless:  # keep headless Dolphins off the streamed display
         os.environ["DISPLAY"] = HEADLESS_DISPLAY
     try:
         console.run(iso_path=iso)
@@ -152,7 +154,7 @@ def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BA
             pub.close(e)
         raise
     finally:
-        if fast:
+        if headless:
             os.environ.pop("DISPLAY", None) if display is None else os.environ.__setitem__("DISPLAY", display)
     try:
         if not console.connect():

@@ -32,6 +32,7 @@ Players are `cpu:N`, `shine` (libmelee's multishine demo), `idle`, `llm_paused:<
 - `--mode watch`: real time, rendered.
 - `--mode paused`: the game waits for each input, so slow players such as LLMs can think.
 - `--mode fast`: headless and unthrottled; it only produces replays.
+- `--mode realtime`: headless like `fast`, but capped at 60 fps and waiting for slow inputs (lockstep without rendering); the bench's real-time track uses it.
 
 ## Replays
 
@@ -45,6 +46,7 @@ Open http://m19182:8767/list. Port 8766 is taken by another service on this host
 
 ## Tracks
 
+- **Melee Bench**: one leaderboard for every kind of player (CPUs, learned, scripted and LLM-written bots, LLMs, Jev, LLM coaches), a real-time and an untimed board anchored to CPU 9 = 1500, filled by an active-sampling scheduler under a token budget: see [docs/bench.md](docs/bench.md).
 - LLM plays: see [docs/llm-player.md](docs/llm-player.md).
 - LLM vs LLM arena: rated round robins of `llm_paused` models: see [docs/llm-arena.md](docs/llm-arena.md).
 - LLM writes bots: see [docs/bot-writer.md](docs/bot-writer.md).
@@ -57,6 +59,7 @@ Open http://m19182:8767/list. Port 8766 is taken by another service on this host
 
 https://melee.m19182.dev (Cloudflare Tunnel + Access, owner only) serves `melee_llm/web/` from 127.0.0.1:8770. The app has no auth of its own, so it refuses to bind all interfaces.
 
+- **Bench**: the Melee Bench boards, per track, with category filters, rating and 95% interval, cost per game, scheduler progress, and a page per entrant (record vs opponents, recent games with replays, sample decisions). API: `/api/bench`, `/api/bench/entrant/<id>`.
 - **Live**: the stream of display :99 as LL-HLS, proxied same-origin from mediamtx (`/hls/`), with a broadcast scorebug and a decision feed. The feed shows each decision of `llm_paused`/`llm_live` players (state text, action, reason, latency, staleness, tokens), each coach call (command, rationale, router reply) and the steer state of learned bots. It tails the live game's decision logs over SSE. Every event carries the wall-clock time it happened (`ts`, added by `DecisionLog`), and HLS segments carry `EXT-X-PROGRAM-DATE-TIME` from the same clock, so the page holds events until the video has played that far. "Instant" shows them on arrival, dimmed until the video catches up. Per player, the newest decision the video has reached is marked "on screen". Click an entry for the full state and reply.
 - **All matches**: every game running on this host, live, whoever started it (web jobs, the arena, bot-writer ladders, coach pilots, scripts). Each `runner.play()` publishes `data/matches/<pid>-<port>-<start ms>.json` (`melee_llm/matches.py`): source and label, players, stage, mode, score, speed in game frames per second, decision-log paths, results and a ring of recent compact frames (position, facing, action state, percent, stocks, shield, flags). It is rewritten at most 15 times per wall second, off the game loop on a thread; the per-frame cost is measured into `overhead_us` (about 30 µs in lockstep). `play(meta={...})` names the caller; otherwise the source is guessed from the replay dir and argv. `MELEE_MATCHES=0` turns it off. The server (`registry.py`) marks a match whose process died as crashed and forgets ended ones after 3 hours. The page (`/matches`, SSE `/api/matches/events`, list `/api/matches`) plays each match's frames back about 0.35 s behind with Slippi Lab's character renderer (`src/live/renderer.ts` from `patches/slippilab.patch`, built to `dist/live-renderer.js` by `npm run build:live`). Cards show a ×N badge for games faster than real time, the latest LLM or coach decision, and links to the focus view (`/matches/<id>`), the replay and the job; the live slot's card shows the HLS video, with a 2D toggle. Ended games move to "Recently finished".
 - **Launch**: pick both players from every registered spec, characters (checked per bot: Phillip models' characters, MIMIC checkpoints), stage, mode and number of games. Models come from the CLIProxy `/v1/models`. Jobs, their results and LLM token spend (with a list-price estimate) are in `data/web.sqlite` (gitignored); replays and decision logs of job N go to `replays/jobs/N/`.
