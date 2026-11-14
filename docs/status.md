@@ -44,17 +44,22 @@ Elo is relative to CPU 9 = 1500, ± the 95% half-width.
 
 ## What's next
 
-Mateo wants all of it, with the LLM-playing side now lower priority. No fixed token budget: spend where games still answer something. Three threads:
+Mateo wants all of it, with the LLM-playing side now lower priority. No fixed token budget: spend where games still answer something. On 2026-11-14 evening he shows the project to people (write-up, website, live demos), so the current threads lean toward that.
 
-| Thread | Covers | Next |
+| Thread | Covers | Now / next |
 |---|---|---|
-| **Melee A · Hub** (server) | Bench, coach deep-dive, write-up, simulator, web UI and deploys | Coach deep-dive done ([coach-deepdive](coach-deepdive.md)); cheap non-LLM janky entrants (Jev with named features, MIMIC on Mateo's replays, random-command Reyn variants); write-up "Melee Bot Elo" (draft in `writeup/`, not finished on purpose); learned bots in the simulator |
-| **Melee B · Own bot** (server) | `train/`, `meleebot`, `data/train/` | Yoshi behaviour cloning: model design with Mateo, then training; the bot joins the bench |
-| **Melee D · Play** (laptop) | `human` player, `play.py`, [netplay](netplay.md) | `human` player type in the runner, then Mateo on the bench as `human:mateo` |
+| **Melee A · Hub** (server) | The map, bench, deploys, coordination | Coach deep-dive done ([coach-deepdive](coach-deepdive.md)). Later: cheap non-LLM janky entrants (Jev with named features, MIMIC on Mateo's replays) |
+| **Melee B · Own bot** (server) | `train/`, `meleebot`, `data/train/` | MeleeBot (`meleebot:bc-6m-v1`, behaviour-cloned Yoshi) plays live; lost its first game 0-3 to CPU 9. Next: a faster model, then the bench |
+| **Melee D · Play** (laptop) | Local play (`play.py`), [netplay](netplay.md), MeleeBot inference speed (`train/meleebot/play.py`, with B) | Local play works: 60 fps vs Phillip gm with onnxruntime pinned to 8 threads (opt-in `threads` in `bot_phillip.py`), 2-3 human free-for-all; MeleeBot ~55 fps on the laptop. On branch `local-play`, no PR yet. Next: demo-ready with a controller |
+| **Melee F · Web redesign** (server) | Styling and markup in `melee_llm/web/static` | Mockups of a restyle after Melee's real GameCube menus |
+| **Melee G · Public site** (server) | A read-only public mode of the web UI on its own hostname | Design for Mateo first; nothing goes public without his OK |
+| **Melee H · Showcase** (server) | Write-up "Melee Bot Elo" (`writeup/`), demo script, backup clip | Blog-post write-up of everything built, then a commentated clip with voices, then the demo script |
 
-Parked: bot-writer round 2 (also fix the tool loop that quits after 3 idle replies), two LLMs sharing a character, image-only player, Melee puzzles, AI caster.
+Done: **Melee C · Simulator**. `--mode sim` runs our agents and the learned bots in melee-sim-light, frame-exact against our replays and ~100× faster than headless Dolphin; next steps in [simulator](simulator.md#next-work) (scenario probes first).
 
-Rules: work in worktrees under `~/.t3/worktrees/melee-llm/`; don't change the live checkout while a bench is running (bench games import it); merge after Mateo's OK.
+Parked: bot-writer round 2 (also fix the tool loop that quits after 3 idle replies), two LLMs sharing a character, image-only player, Melee puzzles.
+
+Rules: work in worktrees under `~/.t3/worktrees/melee-llm/`; don't change the live checkout while a bench is running (bench games import it); merge and deploy after Mateo's OK.
 
 ## Running services (user units)
 
