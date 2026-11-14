@@ -141,6 +141,9 @@ class Bench:
         self.dirty = True
         self.suspended: dict[str, float] = {}  # entrant → until (after repeated errors)
         self.stop_reason: str | None = None
+        self.unconverged: dict = {}
+        self._est: dict[str, int] = {}
+        self._est_at = -1
         self.t0 = time.time()
 
     # ------------------------------------------------------------------ bookkeeping
@@ -155,6 +158,15 @@ class Bench:
             return total_spend(self.results, self.entrants)
 
     def est_tokens(self, eid: str) -> int:
+        """Expected tokens one game costs this entrant. pick() asks several times per candidate pairing, so the
+        answers are kept until the next result arrives."""
+        if self._est_at != len(self.results):
+            self._est, self._est_at = {}, len(self.results)
+        if eid not in self._est:
+            self._est[eid] = self._est_tokens(eid)
+        return self._est[eid]
+
+    def _est_tokens(self, eid: str) -> int:
         e = self.entrants[eid]
         if e.provider not in ("claude", "gpt"):
             return 0
@@ -408,7 +420,7 @@ class Bench:
               "stop_reason": self.stop_reason, "budget_tokens": self.cfg.budget_tokens, "spent": sp,
               "spent_recounted": corrected,
               "target": self.cfg.target, "load": round(os.getloadavg()[0], 1), "games_started": self.started,
-              "unconverged": getattr(self, "unconverged", {}), "suspended": {k: round(v) for k, v in self.suspended.items()
+              "unconverged": self.unconverged, "suspended": {k: round(v) for k, v in self.suspended.items()
                                                                               if v > time.time()},
               "running": [{k: r[k] for k in ("id", "p1", "p2", "stage", "mode", "track", "started", "est_tokens", "port")}
                           for r in list(self.running.values())],

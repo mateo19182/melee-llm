@@ -8,7 +8,7 @@ import json
 import os
 import re
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import openai
@@ -47,9 +47,6 @@ class Reply:
     mode: str = ""  # "tool" | "json" | "error"
     error: str = ""
     extra: dict = field(default_factory=dict)
-
-    def log(self) -> dict:
-        return asdict(self)
 
 
 def parse_json(text: str) -> dict | None:

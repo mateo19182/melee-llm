@@ -41,5 +41,6 @@ export default async function job(root, { id }, signal) {
       ], j.results.map((r, i) => ({ ...r, game: r.game ?? i, gid: j.game_ids[i] })), { empty: active ? "No finished game yet." : "No games." })),
       h("div.card", {}, h("h2", {}, "Output ", h("span.dim.mono", {}, j.dir)),
         h("pre.code", { style: { maxHeight: "40vh" } }, j.output_tail || "(empty)")));
+    return active;  // a finished job no longer changes: stop refreshing (and resetting the output's scroll)
   }, signal);
 }

@@ -130,9 +130,14 @@ export function table(cols, rows, opts = {}) {
       : h("tr", {}, h("td.empty", { colSpan: cols.length }, opts.empty || "Nothing yet.")))));
 }
 
-// Periodic refresh that stops when the page changes.
+// Periodic refresh that stops when the page changes or `fn` returns false, and rests while the tab is hidden
+// (it runs once as soon as the tab is shown again).
 export function every(ms, fn, signal) {
-  fn();
-  const id = setInterval(fn, ms);
-  signal.addEventListener("abort", () => clearInterval(id));
+  const run = async () => { if (!document.hidden && (await fn()) === false) stop(); };
+  const shown = () => { if (!document.hidden) run(); };
+  const id = setInterval(run, ms);
+  const stop = () => { clearInterval(id); document.removeEventListener("visibilitychange", shown); };
+  document.addEventListener("visibilitychange", shown);
+  signal.addEventListener("abort", stop);
+  run();
 }
