@@ -116,6 +116,7 @@ def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BA
     page). `meta` overrides what it guesses: {"source", "label", "job_id", "specs": {port: spec}, ...}.
     """
     notify = observer or (lambda event, info: None)
+    stepping = [a for a in agents.values() if not a.cpu_level]
     assert len(agents) == 2, "two ports for now"
     if not port_free(slippi_port):
         raise RuntimeError(f"Slippi port {slippi_port} is busy: a stale Dolphin is probably still running")
@@ -161,9 +162,8 @@ def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BA
                 continue
             if gs.menu_state == melee.Menu.SUDDEN_DEATH and last is None and results:
                 # tie-break of a timed-out game that was already scored (stocks, then percent): play it out uncounted
-                for p, a in agents.items():
-                    if not a.cpu_level:
-                        a.step(gs)
+                for a in stepping:
+                    a.step(gs)
                 continue
             if gs.menu_state in (melee.Menu.IN_GAME, melee.Menu.SUDDEN_DEATH):
                 if last is None:
@@ -178,12 +178,14 @@ def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BA
                         pub.game_start(len(results), gs, replay)
                     notify("game_start", {"game": len(results), "replay": replay, "gs": gs})
                 last, frames = gs, frames + 1
-                for p, a in agents.items():
-                    if not a.cpu_level:
-                        a.step(gs)
+                for a in stepping:
+                    a.begin(gs)
+                for a in stepping:
+                    a.step(gs)
                 if pub:
                     pub.frame(gs)
-                notify("frame", {"gs": gs})
+                if observer:
+                    observer("frame", {"gs": gs})
                 continue
             if last is not None:
                 results.append(_result(last, frames, t0, agents))

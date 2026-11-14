@@ -91,6 +91,7 @@ class BotAgent(Agent):
         self.model_ms: list[float] = []
         self.errors = 0
         self._proc = None
+        self._asked = None  # (steer sent, send time) of the frame the child is working on
 
     @property
     def name(self) -> str:
@@ -122,13 +123,20 @@ class BotAgent(Agent):
         self.steer = dict(self.applied_steer)
         self._sent_steer = dict(self.steer)
 
-    def step(self, gs: melee.GameState) -> None:
+    def begin(self, gs: melee.GameState) -> None:
+        """Send the frame. The runner does this for both players before either `step`, so two bots infer at
+        the same time and a frame costs the slower one, not the sum."""
         events = self._events[:]
         del self._events[:]
         steer = None if self.steer == self._sent_steer else dict(self.steer)
-        t0 = time.perf_counter()
+        self._asked = (steer, time.perf_counter())
         protocol.send(self._proc.stdin, {"op": "step", "events": events, "steer": steer,
                                          "open_loop": self.open_loop})
+
+    def step(self, gs: melee.GameState) -> None:
+        if self._asked is None:  # called without begin(): tests, bots/bench.py, netplay
+            self.begin(gs)
+        (steer, t0), self._asked = self._asked, None
         reply = protocol.recv(self._proc.stdout)
         self.round_trip_ms.append((time.perf_counter() - t0) * 1000)
         if steer is not None:

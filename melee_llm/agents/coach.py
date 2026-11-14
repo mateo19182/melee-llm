@@ -315,6 +315,9 @@ class CoachedBot(Agent):
 
     # ------------------------------------------------------------------ per frame
 
+    def begin(self, gs: melee.GameState) -> None:
+        self.body.begin(gs)
+
     def step(self, gs: melee.GameState) -> None:
         self.body.step(gs)  # the body first: it owns the frame budget
         self.tracker.update(gs)

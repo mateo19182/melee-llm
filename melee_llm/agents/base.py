@@ -1,6 +1,6 @@
 """The contract every player type implements.
 
-A match calls `setup` once, then `step` on every in-game frame. `step` presses buttons on
+A match calls `setup` once, then on every in-game frame `begin` for every player and `step` for every player. `step` presses buttons on
 `self.controller`; the runner flushes it. In `paused` matches Dolphin blocks on our input, so
 `step` may take as long as it likes (the game waits). In `live` matches `step` must return within
 ~16 ms; slow thinking has to run off-thread and leave a fast executor in charge of the controller.
@@ -24,6 +24,10 @@ class Agent:
 
     def on_game_start(self, gs: melee.GameState, replay: Path | None) -> None:
         """First in-game frame. `replay` is the .slp Slippi just started writing (None if not found)."""
+
+    def begin(self, gs: melee.GameState) -> None:
+        """Called for every player before anyone's `step`: start work that can overlap the other player's
+        (a learned bot sends the frame to its model here and collects the answer in `step`)."""
 
     def step(self, gs: melee.GameState) -> None:
         pass
