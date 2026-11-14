@@ -130,7 +130,7 @@ function enhance(article) {
     const rows = [...t.querySelectorAll("tbody tr")].map((tr) => [...tr.children]);
     if (head[0] === "year") t.replaceWith(timeline(article, rows));
     else if (head[0] === "person") t.replaceWith(people(rows));
-    else t.replaceWith(h("div.table-wrap.doc-table", {}, t.cloneNode(true)));
+    else t.replaceWith(h(`div.table-wrap.doc-table${head[0] === "date" ? ".dated" : ""}`, {}, t.cloneNode(true)));
   }
 }
 

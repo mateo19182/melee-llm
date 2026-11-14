@@ -513,6 +513,7 @@ mark { background: rgba(243, 189, 79, .28); color: inherit; border-radius: 2px; 
 .doc-table table { font-size: 14px; line-height: 1.5; }
 .doc-table td { vertical-align: top; }
 .doc-table td:first-child { color: var(--text); font-weight: 500; }
+.doc-table.dated td:first-child { white-space: nowrap; }
 
 .prose ol.timeline { list-style: none; padding: 6px 0 6px 0; margin: 1.4em 0; position: relative; }
 .timeline::before { content: ""; position: absolute; left: 91px; top: 10px; bottom: 10px; width: 2px;

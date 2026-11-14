@@ -10,6 +10,7 @@ Background for this repo: the game, the history of Melee bots and how each one w
 - **Current top players** ([SSBMRank 2025](https://liquipedia.net/smash/SSBMRank)): Zain #1, Cody Schwab #2, Hungrybox #3, Joshman, Axe and Jmook; aMSa is #23.
   - Cody won GENESIS X3 in Feb 2026 ([Liquipedia](https://liquipedia.net/smash/GENESIS/X3/Melee)).
   - The Big House has been on hiatus since July 2024 ([wiki](https://en.wikipedia.org/wiki/The_Big_House_(tournament))).
+  - Melee was last at Evo in 2018 and was absent in 2025 and 2026 ([Polygon](https://www.polygon.com/2019/2/26/18242497/evo-2019-games-lineup-smash-bros-melee-ultimate/), [Evo 2026](https://evo.gg/events/evo2026/)).
 - **Nintendo:**
   - It cancelled Smash World Tour in late 2022 ([SmashWiki](https://www.ssbwiki.com/Cancellation_of_Smash_World_Tour_2022)).
   - In Oct 2023 it published Community Tournament Guidelines: caps of 200 in-person or 300 online entrants and about $5k in prizes, and no modified game versions ([SmashWiki](https://www.ssbwiki.com/Community_Tournament_Guidelines)).
@@ -35,17 +36,19 @@ The game runs at 60 fps, so one frame is 16.7 ms. Every mechanic below has a Sma
 | Year | Bot | Author | Technique |
 | --- | --- | --- | --- |
 | 2001 | In-game CPU | HAL Laboratory | Scripted. Level sets reaction and commitment, not strategy |
-| 2015–16 | SmashBot | Dan "altf4" Petro | Rule-based behaviour tree |
+| 2015–21 | SmashBot | Dan "altf4" Petro | Rule-based behaviour tree |
 | 2016 | 20XX "AI Overhaul" | Achilles1515 | Patched CPU scripts |
 | 2017 | Phillip v1 | Vlad Firoiu, MIT | Pure deep RL from RAM state |
 | 2017 | DRQN with 12-frame delay | Sharma & Friedman, Cooper Union | Recurrent DQN |
 | 2018 | "At Human Speed" | Firoiu, Ju, Tenenbaum | RL under action delay, plus a predictive model |
 | 2020– | slippi-ai / Phillip II | vladfi1 ("x_pilot") | Behaviour cloning on Slippi ranked replays, then self-play RL |
+| 2024 | slippi-ai vs top players | Aklo, Hungrybox, Zain, Moky, Cody, aMSa | First public sets against the delayed agents |
 | 2022 | Project Nabla | Bryan Chen | Behaviour cloning (GRU), then PPO |
 | 2025–26 | HAL | Eric Gu | Behaviour-cloning transformer, 20M then 247M parameters |
 | 2025–26 | MIMIC | erickfm | Behaviour cloning, one transformer per character, plus RLVR |
 | Sep 2026 | Jev ("System One") | TypeSafe AI | General decision API, not Melee-specific |
 | Oct 2026 | Faynt | Frisson Labs | Behaviour cloning, winner curriculum, then PPO, all 26 characters |
+| Oct 2026 | Humans vs Phillip crew battles | Zain, Cody and other top players | Organised top-player exhibitions on stream |
 | Nov 2026 | Reyn | Frisson Labs | Faynt-based policy steered by language commands |
 
 ### How bots read state and press buttons
@@ -67,36 +70,81 @@ Phillip v1's Q-learner found a trick that made the CPU kill itself. Sources: [Sm
 
 **Level 9 is a sanity check, not a strength measure.** Every learned bot 4-stocks it, which our closed-loop results in bots.md confirm.
 
-### SmashBot (altf4, 2015–2016)
+### SmashBot (altf4, 2015–2021)
 
 - **Design:** hand-written, with a Goals → Strategies → Tactics → Chains hierarchy. A Chain is an input sequence such as a wavedash or a jump-cancelled upsmash. It uses exact frame data to know when the opponent is actionable.
-- **Scope:** originally Fox vs Marth only, on FD or Stadium.
-- **History:** presented at DEF CON 24 in 2016. libmelee is "all the SmashBot stuff that is plumbing" split out on 2016-12-31.
-- **Fairness:** the FAQ says it "doesn't cheat": it presses a virtual controller, but with zero reaction time.
+- **First scope:** Fox vs Marth only, on FD or Stadium.
+- **Timeline** ([repo](https://github.com/altf4/SmashBot) tags and commits):
+  - Jan 2016: announced on Smashboards as ["Level 11 CPU"](https://smashboards.com/threads/level-11-cpu-the-ai-that-beats-you-at-melee.428232/).
+  - 2016: tournament builds for Genesis 3, Battlefield VII and SPC VII, then v1.0 in Sep 2016.
+  - Aug 2016: presented at DEF CON 24 ([talk](https://www.youtube.com/watch?v=_0Z_oN_CZyA), [Bishop Fox write-up](https://bishopfox.com/blog/reversing-video-games-to-create-smashbot-ai)).
+  - 31 Dec 2016: libmelee split out as "all the SmashBot stuff that is plumbing".
+  - 2017: played pros at JV5 ([compilation](https://www.youtube.com/watch?v=6CfPnK76B9A)).
+  - Oct 2020: ported to Slippi.
+  - Through 2021: matchup work against Sheik, Pikachu and Yoshi. It still plays only Fox; the last commit was in 2024.
+- **libmelee handover:** altf4 archived libmelee in 2026, and its README now says it "is being managed by xpilot".
+- **Fairness:** the FAQ says it "doesn't cheat": it presses a virtual controller, but with zero reaction time. It also says never to run it online.
 
-[repo](https://github.com/altf4/SmashBot), [Bishop Fox write-up](https://bishopfox.com/blog/reversing-video-games-to-create-smashbot-ai), [Hackaday](https://hackaday.com/2016/08/16/creating-unbeatable-videogame-ai/). It is still a good design reference for a rule-based or LLM-written bot, which is what our bot-writer track does.
+It is still a good design reference for a rule-based or LLM-written bot, which is what our bot-writer track does.
 
-### Phillip v1 (Firoiu, Whitney, Tenenbaum, 2017)
+### Phillip v1 (Firoiu, Whitney, Tenenbaum, 2016–2019)
 
-Paper: "Beating the World's Best at Super Smash Bros. Melee with Deep Reinforcement Learning" ([arXiv 1702.06230](https://arxiv.org/abs/1702.06230), [repo, archived](https://github.com/vladfi1/phillip)).
+Paper: "Beating the World's Best at Super Smash Bros. Melee with Deep Reinforcement Learning" ([arXiv 1702.06230](https://arxiv.org/abs/1702.06230), [repo, archived](https://github.com/vladfi1/phillip), [HN thread](https://news.ycombinator.com/item?id=13710253)).
 
 **Setup:**
-- RAM features as input. There were no projectiles, so it played Captain Falcon.
-- Acts at 30 Hz with 54 discrete actions: 9 stick positions × 5 single buttons, or none.
+- Input was RAM features. There were no projectiles, so it played Captain Falcon.
+- It acts at 30 Hz with 54 discrete actions: 9 stick positions × 5 single buttons, or none.
 - Reward is ±1 per KO plus a small weight on damage.
-- Trained with an actor-critic plus entropy bonus (also n-step SARSA), two 128-unit layers, and 50+ parallel Dolphins on the MGHPCC cluster.
+- Training:
+  - actor-critic with an entropy bonus (n-step SARSA was also tried);
+  - two 128-unit layers;
+  - 50+ parallel Dolphins on the MGHPCC cluster, using K20 and TITAN X GPUs ([NVIDIA](https://developer.nvidia.com/blog/self-taught-ai-bot-beat-professional-players-at-super-smash-bros/)).
+- New Scientist reports the team built on SmashBot's groundwork ([article](https://www.newscientist.com/article/2122452-ai-beats-professional-players-at-super-smash-bros-video-game/)).
 
-**Results:**
+**How it got strong:**
+- Firoiu "couldn't train Phillip to be as strong as the in-game bot" until he switched to self-play: "I just sort of forgot about it for a week… I tried playing it and I couldn't beat it."
+- He had entered Genesis 4 (San Jose, Jan 2017) as a player. Pros lined up to play the bot on "a clunky, four-year-old HP laptop" away from the main stage.
+- Gravy: "The AI is definitely godlike." ([Quartz](https://qz.com/917221/a-super-smash-bros-playing-ai-has-taught-itself-how-to-stomp-professional-players))
+
+**Results** (paper, Table 1):
 - It beat the level 9 CPU within a day.
-- After two weeks of self-play it took more stocks than it lost against ten ranked pros at Genesis 4: S2J, Gravy (8–5), Zhu, Mafia and others.
-- Coverage: [Quartz](https://qz.com/917221/a-super-smash-bros-playing-ai-has-taught-itself-how-to-stomp-professional-players), [MIT CSAIL](https://www.csail.mit.edu/news/ai-beats-pros-super-smash-bros).
+- Against ten ranked pros (ranks 16–70) across two major tournaments, every pro lost more stocks than they took.
+
+| Pro | Phillip kills–deaths |
+| --- | --- |
+| S2J | 4–2 |
+| Zhu | 4–1 |
+| Gravy | 8–5 |
+| Crush | 3–2 |
+| Mafia | 4–3 |
+| Slox | 6–4 |
+| Redd | 12–8 |
+| Darkrain | 12–5 |
+| Smuckers | 8–5 |
+| Kage | 4–1 |
+
+- The press named only Genesis 4; the second event is **[unverified]**.
+- Video: ["Phillip vs. Slox, Mafia"](https://www.youtube.com/watch?v=dXJUlqBsZtE) (Feb 2017).
+- Coverage: [MIT CSAIL](https://www.csail.mit.edu/news/ai-beats-pros-super-smash-bros), [TechCrunch](https://techcrunch.com/2017/02/24/super-smash-borg-melee-ai-takes-on-top-players-of-the-classic-nintendo-fighting-game).
 
 **Caveats:**
 - About 33 ms reaction time, against roughly 200 ms for a human.
 - Falcon dittos on Battlefield only.
-- An exploit: crouching at the ledge made it walk off.
+- An exploit: "If the opponent crouches in the corner… it freaks out and eventually suicides."
 
-**Follow-up:** "At Human Speed" ([arXiv 1810.07286](https://arxiv.org/abs/1810.07286)) puts a fixed delay queue on the actions. It calls 12 frames the lowest human-plausible delay. Plain deep RL collapses under delay; a learned predictive model, built on IMPALA, recovers.
+**Playing it before Slippi:**
+- The repo dates from Apr 2016.
+- From mid-2016 it supported ordinary Dolphin netplay, and a Twitch chat bot (Feb 2017) let viewers of [twitch.tv/x_pilot](https://twitch.tv/x_pilot) queue up against it. This comes from the repo's commit log.
+
+**Follow-up, "At Human Speed"** ([arXiv 1810.07286](https://arxiv.org/abs/1810.07286), 2018):
+- Puts a fixed delay queue on the actions, and calls 12 frames the lowest human-plausible delay.
+- Plain deep RL collapses under delay; a learned predictive model, built on IMPALA, recovers.
+- Delayed agents followed, e.g. ["Phillip (12 delay, 3 days) vs Professor Pro"](https://www.youtube.com/watch?v=nEpyB0FHoA4) (May 2018). The v1 README calls `delay18/FalcoBF` "the best human-like agent".
+
+**Why imitation learning replaced pure RL:**
+- Pure RL from scratch produced an alien style that broke down under human-like delay.
+- Slippi replays offered millions of human games. Starting from behaviour cloning "makes it play a lot more like a human" (slippi-ai README).
+- Firoiu credits Slippi replays with rekindling his interest "even prior to rollback netcode".
 
 ### slippi-ai / Phillip II (vladfi1, 2020–)
 
@@ -108,32 +156,82 @@ Paper: "Beating the World's Best at Super Smash Bros. Melee with Deep Reinforcem
 
 **Policy:** a recurrent network with an autoregressive controller head: a 728-way "joint" (buttons, shoulder, C-stick), then an 85-way main stick. Faynt reuses this codec.
 
+**Credits in the README:**
+- Fizzi wrote the fast-forward Gecko code and supplied the ranked collections.
+- Enzyme built "a decomp-based simulator that runs melee even faster than dolphin", and runs Doubles Phillip.
+- "my dad" provided the training hardware.
+
+**Milestones** (from the commit log):
+
+| Date | Milestone |
+| --- | --- |
+| Nov 2020 | Repo created. The first learner is an MLP predicting the next controller, trained on altf4's public dataset, Fox dittos first |
+| Jan 2023 | First RL fine-tuning |
+| Feb 2024 | Training with delayed actions (the d18 agents) |
+| May 2024 | Self-play RL and a new Twitch bot |
+| Nov 2024 | `fox_d18_ditto_v3` |
+| Aug 2025 | "Medium" agents added for weaker players |
+| Jan 2026 | Port to JAX |
+| Sep 2026 | Bronze to gm tiers made weaker |
+| Oct 2026 | ONNX export and a Windows GUI launcher (v0.3.4 by 31 Oct) |
+
 **Fairness is delay:**
 - Releases act 18–24 frames late. Firoiu describes the two setups as 18-frame delay with 7-frame masking of tech actions, or 21-frame delay with 4-frame masking ([Gaming Intelligence](https://gamingintelligence.ai/news/phillip-replay-opt-outs)).
 - The delay is also why it plays well over netplay at up to about 300 ms ping.
+- A [clip](https://www.youtube.com/watch?v=bXGvyRvLmE0) shows Ginger catching it reacting on exactly frame 18.
 
 **Public access:**
-- Type `!play` in the [x_pilot](https://twitch.tv/x_pilot) Twitch chat, then direct-connect to `PHAI#591`.
-- Tiers range from basic to gm to auto.
-- On 26 Oct 2026, agents trained on players who opted out of the dataset were removed.
+- Type `!play` in the [x_pilot](https://twitch.tv/x_pilot) Twitch chat, then direct-connect to `PHAI#591`. Tiers go basic → medium → gm → auto.
+- A second channel, x_pilot_bot, streams Phillip vs Phillip ([about](https://www.twitch.tv/x_pilot/about)).
+- Slippi marked "Work with xpilot to detect Phillip bots" as completed. The Slippi team also helped with replay extraction, faster training and lag-free play ([nolt #699](https://project-slippi.nolt.io/699)).
 
-**Against pros:**
-- Moky lost a first-to-10 Fox ditto 3–10 ([video](https://www.youtube.com/watch?v=1kviVflqXc4)).
-- Zain won a first-to-5, 5–3 ([video](https://www.youtube.com/watch?v=c8nRFAGvr2c)).
-- Cody and aMSa ([video](https://www.youtube.com/watch?v=WGsN7lWBQPw)) and Aklo ([video](https://www.youtube.com/watch?v=OGOEqhMptq0)) also played it.
-- In late Oct 2026 Cody streamed "Humanity vs AI: Top Players Crew Battle vs Phillip" ([VOD](https://www.twitch.tv/videos/2903721139)); **result [unverified]**.
-- A Manifold market on "a human beats a plausibly superhuman agent in a best-of-5 in 2025" resolved **NO** ([market](https://manifold.markets/NBAP/will-a-human-player-defeat-the-ssbm)).
+**Against top players:**
+
+| Date | Set | Result |
+| --- | --- | --- |
+| Jun 2024 | [Aklo](https://www.youtube.com/watch?v=OGOEqhMptq0), [Hungrybox](https://www.youtube.com/watch?v=8B0EuluDnww) | First reactions from top players |
+| Oct 2024 | [Wizzrobe](https://www.youtube.com/watch?v=g4DMF1ZFeB8) | Probes habits and weak spots |
+| Nov 2024 | [Zain, first to 5](https://www.youtube.com/watch?v=c8nRFAGvr2c) | Zain wins 5–3 |
+| Nov 2024 | [Cody and aMSa](https://www.youtube.com/watch?v=WGsN7lWBQPw) | |
+| Nov 2024 | [Moky, first to 10 Fox ditto](https://www.youtube.com/watch?v=1kviVflqXc4) | Phillip wins 10–3 |
+| Dec 2024 | [Hungrybox, first to 10](https://www.youtube.com/watch?v=Tpo2nq_eOO4), plus [Falcon/Fox vs Puff](https://www.youtube.com/watch?v=OMRP-jZcA4o) | A ditto-trained Falcon fails against Puff: a lesson in matchup generalisation |
+| Dec 2024 | Hungrybox, ["AI – The end of Smash Bros."](https://www.youtube.com/watch?v=qRhCvcAXfvY) | A top player's take on what Phillip means |
+| 2025 | Salt, [n0ne](https://www.youtube.com/watch?v=-5Y3rNNdufQ), Wizzrobe | Phillip YouTube channel |
+| 2026 | 404cray, Fiction, M2K, Goodie, Ginger ("2007 M2K" agent), [Cody vs v6](https://www.youtube.com/watch?v=BBK7qnnOfSs), [Zain vs four agents](https://www.youtube.com/watch?v=HPY94jqrZng), [Wizzrobe vs fox v6, puff v6, super-gm-dk](https://www.youtube.com/watch?v=JY6gRwI5zB0) | Newer agent generations |
+| 1 Oct 2026 | [Zain's "Humans vs Robots" crew battle](https://www.youtube.com/watch?v=Szm1y1JrNpQ): Hungrybox, Cody, Mew2King, Wizzrobe, Magi, Moky | Mew2King anchored a comeback for the humans ([his breakdown](https://www.youtube.com/watch?v=9b_2hzdTKNw)) |
+| 17 Oct 2026 | [Cody's "Humanity vs AI" crew battle](https://www.twitch.tv/videos/2903721139) | Result **[unverified]** |
+
+**Scoreboards** (Manifold):
+- "[A human beats a plausibly superhuman agent in a best-of-5 in 2025](https://manifold.markets/NBAP/will-a-human-player-defeat-the-ssbm)" resolved **NO**. It lists the qualifying agents and exploit rules, and Firoiu comments there.
+- "[Melee AI scandal in a tournament before 2027](https://manifold.markets/NBAP/will-super-smash-bros-melee-have-an)": about 11%.
+- "[Hobbyist agent beats Phillip in a Bo5 before 2028](https://manifold.markets/NBAP/before-2028-will-i-be-able-to-train-EQOLpsplq8)": about 45%.
+
+**Data consent (Oct 2026):**
+- Opt-outs are enforced when the dataset is loaded. By default an excluded player's own perspective is dropped, but they are kept as an opponent.
+- Well-known pros are excluded until they give permission. A 2024 commit excludes Mango's replays.
+- Opt-outs had been applied inconsistently to agents that were already trained. After a press query in early Oct 2026, Firoiu removed the affected agents: some Falcon and Puff agents and the -v2 multi-character ranked agents ([Gaming Intelligence](https://gamingintelligence.ai/news/phillip-replay-opt-outs)).
+- Pros use Phillip for practice but "do not regard it as a substitute".
 
 **Known exploits:**
 - Reacting to lasers with Marth's wavedash f-smash beats the Fox agent (Cody).
 - Some Samus agents can be stunlocked into missiles.
 - Fox agents have no answer to Puff's Rollout.
+- A Kirby player reportedly 4-stocked it in early 2025 (r/SSBM) **[unverified]**.
 
-### Project Nabla (Bryan Chen, 2022)
+### Project Nabla (Bryan Chen, Aug 2022)
 
-- Behaviour cloning on tournament replays with a GRU policy, then PPO fine-tuning.
-- Known for very human-like play, and admits it edgeguards poorly.
-- Write-ups: [part 1](https://bycn.github.io/2022/08/19/project-nabla.html), [part 2](https://bycn.github.io/2022/08/19/project-nabla-writeup.html).
+The original site is gone; these are Wayback copies: [overview](https://web.archive.org/web/20241121073045/https://bycn.github.io/2022/08/19/project-nabla.html), [technical write-up](https://web.archive.org/web/20240814082645/https://bycn.github.io/2022/08/19/project-nabla-writeup.html).
+
+- **Data:** about 100k tournament `.slp` files from altf4's Public SLP Database, plus vladfi1's filtered Fox set.
+- **Model:** a 256-unit GRU with an autoregressive head (2 buttons, sticks discretised into 17 parts), running at **2 frames of delay**.
+- **Training:**
+  - Behaviour cloning on an RTX 3070.
+  - Then PPO with a KL penalty toward the cloned policy, Sebulba-style, on a TPU v3-8 from Google's TRC.
+  - The Falco agent went from under 30% to over 80% stock wins against the level 9 CPU.
+- **Reception:**
+  - Hosted on Twitch (@rakkob) for "thousands of plays". iBDW (Cody) and KJH reacted on video.
+  - Some testers thought it was a human. Weaknesses were edgeguarding and spamming smash attacks.
+  - The code was never released.
 
 ### HAL (Eric Gu, 2025–2026)
 
@@ -146,20 +244,21 @@ Paper: "Beating the World's Best at Super Smash Bros. Melee with Deep Reinforcem
 - Lessons: first overfit a synthetic multishine episode, and build closed-loop evaluation early.
 
 **Part 2, Oct 2026** ([blog](https://ericyuegu.com/hillclimbing-melee/)):
-- A 247M transformer with 256-frame context, trained on a 1.3M-game dataset (published on HF) in 16 h on one B200.
+- A 247M transformer with 256-frame context, trained in 16 h on one B200 ([weights](https://huggingface.co/ericyuegu/hal-base-250m-rc)).
+- Data: [about 1.3M games, 13.5B frames](https://huggingface.co/datasets/ericyuegu/hal-mds-dataset): 821k anonymised ranked plus 474k from 38 pros.
 - **Steering:** conditioning on return (ask for the 90th–99th percentile) and on player identity, e.g. "Cody". That is our `return_target` and `identity` knobs.
 - **Action chunks:** it replans every few frames, which hides inference latency and netplay delay.
 - **Key finding:** "each additional frame of reaction delay hurts performance twice as much as each additional frame of open-loop action execution."
 - **Results:** about 2200 Elo on the Slippi ladder (top ~1%) with 3 frames of observation delay. Win rates: 97.4% vs level 9 CPU, 94.8% vs Phillip with behaviour cloning only, 25% vs Phillip with RL.
 - He writes: "I do not condone running bots on Slippi without permission."
-- Part 3 (self-play RL) is planned.
+- Part 3 (self-play RL) is planned. Compute was sponsored by Modal. Gu now works on VLAs at 1X, and is a co-author of Frisson's Sep 2026 post "Decoder-Only Transformer Optimization 101" ([Frisson blog](https://www.frisson-labs.com/blog)).
 
 ### MIMIC (erickfm, 2025–2026)
 
 [repo](https://github.com/erickfm/MIMIC), [HF](https://huggingface.co/erickfm/MIMIC)
-- **Models:** about 20M transformers, one per character or rank tier (e.g. `fox-master`, about 77k master Fox games), with a 180-frame window. Bootstrapped from HAL's recipe, with a 7-class button head so it can wavedash.
+- **Models:** about 20M transformers, one per character or rank tier (e.g. `fox-master`, about 97k master-rank Fox perspectives), with a 180-frame window. Bootstrapped from HAL's recipe, with a 7-class button head so it can wavedash.
 - **RLVR:** PPO on skill metrics the engine can verify, such as L-cancel rate.
-- **Strength:** pure behaviour-cloning `fox-master` wins 29% against hosted Phillip over netplay.
+- **Strength:** pure behaviour-cloning `fox-master` wins 29% against hosted Phillip over netplay. That is 4–10, only 14 games.
 - **Data:** published [erickfm/melee-ranked-replays](https://huggingface.co/datasets/erickfm/melee-ranked-replays), about 850k ranked replays, 1.43 TB, with about 90% duplication across per-character buckets.
 
 ### Faynt (Frisson Labs, Oct 2026)
@@ -175,7 +274,11 @@ Paper [arXiv 2610.02144](https://arxiv.org/abs/2610.02144), [site](https://www.f
 2. **Expert:** a "winner curriculum" that ends on 90% Master-winning data, plus 75M→10M distillation.
 3. **Arena:** PPO on Fox mirrors only, run on 96 Dolphins on one L4 GPU, with a KL penalty toward the supervised policy.
 
-**Results:** 240/244 mirror games against 14 slippi-ai releases, and 68/68 against a private zero-delay slippi-ai checkpoint.
+**Results:**
+- 240/244 mirror games against 14 frozen slippi-ai releases (which keep 21 or 24 frames of delay).
+- 68/68 against a private zero-delay slippi-ai checkpoint, 61 of them four-stocks.
+- RL took the 75M model from 25 to 58 wins.
+- Frisson describes itself as an AI-companions lab.
 
 **Caveat:** Faynt runs with **zero delay** while the slippi-ai opponents keep 21–24 frames. The authors say they "have not isolated the effect".
 
@@ -212,6 +315,14 @@ It is the closest published work to this repo's coach track: an LLM above a lear
   - [boxxfish smash-RL blog](https://boxxfish.github.io/blog/smash-rl-1).
   - [Athena](https://github.com/Sciguymjm/athena): a 2016 keras-rl stub.
   - [Sharma & Friedman 2017](https://www.yash-sharma.com/files/learning-play-super%20(3).pdf).
+- **[stomped.dev](https://stomped.dev/) ([FAQ](https://stomped.dev/faq)):** a ranked arena for Melee bots only, and a ready-made benchmark venue for this repo.
+  - Bots get the raw `.slp` event stream over WebSocket and must answer within 11 ms per frame.
+  - Rules: vanilla 1.02 with no UCF, wobbling legal, frozen Stadium; ratings use OpenSkill. It streams on the "stompedlive" Twitch channel.
+  - Launch date **[unverified]**.
+- **Simulators:**
+  - [melee-sim-light](https://github.com/kyhavlov/melee-sim-light), linked from the Reyn post.
+  - Enzyme's decomp-based simulator, used for slippi-ai training.
+- **[melee-unlocked](https://github.com/hero88go/melee-unlocked):** a PC source port with a "Fight a pro" mode built on Phillip agents **[unverified]**.
 - **[No Johns](https://github.com/ScavieFae/nojohns):** agents wagering on bot-vs-bot matches, using Phillip or SmashBot as fighters.
 - **Adjacent LLM game benchmarks:**
   - [LLM Colosseum](https://github.com/OpenGenerativeAI/llm-colosseum): Street Fighter III from text state. GPT-3.5 beat GPT-4 there, because speed won.
@@ -228,7 +339,8 @@ It is the closest published work to this repo's coach track: an LLM above a lear
   - **Cross-bot results only compare fairly at equal delay.** Faynt's 240/244 is zero delay against 21–24 frames.
 - **Precision.** Bots see exact coordinates and action IDs and have no stick noise. Firoiu concedes an "unrealistically precise execution" advantage.
 - **Platform rules.** No bots on Slippi Ranked or Unranked: libmelee, slippi-ai, MIMIC and Faynt all say so, and accounts get banned. A bot opt-in is "planned". Use Direct Connect or local play, as [netplay.md](netplay.md) does.
-  - Frisson's claim of reaching Platinum on ranked and Gu's 2200 Elo ladder test sit in tension with this rule.
+  - Gu's 2200 Elo ladder test sits in tension with this rule.
+  - For ranked bot-vs-bot play there is [stomped.dev](https://stomped.dev/) (see below).
 - **Data consent.** Players can opt out of having their replays used for training. Phillip pulled opted-out agents in Oct 2026.
 
 ## 4. Tooling and data
@@ -309,9 +421,10 @@ It is the closest published work to this repo's coach track: an LLM above a lear
 | [Manifold markets by NBAP](https://manifold.markets/NBAP/will-a-human-player-defeat-the-ssbm) | The community's running humans-vs-bots scoreboard |
 | [r/SSBM](https://www.reddit.com/r/SSBM) | Threads when pros beat or lose to Phillip |
 | [Smashboards](https://smashboards.com) | Older modding and frame-data threads (20XX, Training Mode, `.dat` formats) |
-| Blogs | [Eric Gu](https://ericyuegu.com/), [Frisson Labs](https://www.frisson-labs.com/), [bycn (Nabla)](https://bycn.github.io/) |
+| Blogs | [Eric Gu](https://ericyuegu.com/), [Frisson Labs](https://www.frisson-labs.com/blog) |
+| [Hacker News](https://news.ycombinator.com/item?id=13710253) | The 2017 Phillip thread is the main ML-crowd discussion; later Melee AI posts got little traction |
 
-No tournament has run an official AI exhibition since Genesis 4 in 2017 **[unverified absence]**. Pro-vs-bot sets now happen on stream: x_pilot, and Cody's own channel.
+No tournament has run an official AI exhibition since Genesis 4 in 2017 **[unverified absence]**. Pro-vs-bot play moved to streams instead: x_pilot, the players' own channels, and the Oct 2026 crew battles.
 
 ## 6. People
 
@@ -331,8 +444,8 @@ No tournament has run an official AI exhibition since Genesis 4 in 2017 **[unver
 | vinceau | vinceau | slp-realtime, Project Clippi |
 | UnclePunch | UnclePunch | Training Mode, Slippi contributions |
 | Achilles1515 | Achilles | 20XX Training Pack, including the CPU AI overhaul |
-| Enzyme | | Doubles Phillip; an Enzyme-built decomp-based simulator is credited in slippi-ai **[unverified]** |
-| Pros vs bots | Cody Schwab, Zain, Moky, aMSa, Aklo, Gravy, S2J | Recorded sets against Phillip |
+| Enzyme | | Doubles Phillip, and a decomp-based simulator faster than Dolphin (credited in slippi-ai) |
+| Pros vs bots | Cody Schwab, Zain, Hungrybox, Moky, aMSa, Aklo, Wizzrobe, Mew2King, Gravy, S2J | Recorded sets against Phillip |
 
 ## 7. What this means for this repo
 
@@ -347,9 +460,93 @@ No tournament has run an official AI exhibition since Genesis 4 in 2017 **[unver
   - doldecomp, IKneeData and frame-data tables to make LLM state summaries accurate.
   - TM-CE drills as unit scenarios.
 
+## 8. Best sources
+
+A short reading and watching list. Every link was opened on 2026-11-14.
+
+### Start here
+
+1. [SmashBot DEF CON 24 talk](https://www.youtube.com/watch?v=_0Z_oN_CZyA) (altf4, 2016): how a bot reads Melee's memory and drives a virtual controller.
+2. [Phillip paper](https://arxiv.org/abs/1702.06230) (2017) and [Quartz's Genesis 4 story](https://qz.com/917221/a-super-smash-bros-playing-ai-has-taught-itself-how-to-stomp-professional-players): pure RL, and how pros reacted.
+3. [At Human Speed](https://arxiv.org/abs/1810.07286) (2018): why delay is the fairness question.
+4. [slippi-ai README](https://github.com/vladfi1/slippi-ai): the current reference pipeline and its history.
+5. [HAL part 1](https://ericyuegu.com/behavior-cloning-melee/) (2025) and [part 2](https://ericyuegu.com/hillclimbing-melee/) (2026): the clearest modern write-ups on behaviour cloning and scaling.
+6. [Faynt](https://www.frisson-labs.com/faynt) and [Reyn](https://www.frisson-labs.com/reyn) (Oct–Nov 2026): the state of the art, and language steering.
+7. [Moky vs Phillip](https://www.youtube.com/watch?v=1kviVflqXc4) and [Zain vs Phillip](https://www.youtube.com/watch?v=c8nRFAGvr2c) (2024): what the agents look like against top players.
+
+### Watch
+
+| Date | Video | Why |
+| --- | --- | --- |
+| 2015-12 | [If a perfect bot entered a tournament (TAS)](https://www.youtube.com/watch?v=WDQS8fymeSQ), Practical TAS | The ceiling of frame-perfect play |
+| 2016-08 | [DEF CON 24: Game Over, Man!](https://www.youtube.com/watch?v=_0Z_oN_CZyA), altf4 | The start of Melee bot engineering |
+| 2017-02 | [Phillip vs Slox, Mafia](https://www.youtube.com/watch?v=dXJUlqBsZtE), vladfi1 | Pure-RL Phillip at Genesis 4: inhumanly fast and alien |
+| 2017-09 | [SmashBot vs pros at JV5](https://www.youtube.com/watch?v=6CfPnK76B9A), altf4 | A hand-written, frame-perfect bot against humans |
+| 2018-05 | [Phillip (12 delay) vs Professor Pro](https://www.youtube.com/watch?v=nEpyB0FHoA4), vladfi1 | The first human-speed agents |
+| 2024-06 | [I played a new Smash AI](https://www.youtube.com/watch?v=OGOEqhMptq0), Aklo | A top player's first reaction to the imitation-learning Phillip |
+| 2024-11 | [Ginger catches Phillip reacting on frame 18](https://www.youtube.com/watch?v=bXGvyRvLmE0) | The delay design, made visible |
+| 2024-11 | [Zain, first to 5](https://www.youtube.com/watch?v=c8nRFAGvr2c), BME | The reference human win (5–3) |
+| 2024-12 | [Moky, first to 10](https://www.youtube.com/watch?v=1kviVflqXc4), BME | Phillip wins 10–3, the most cited "superhuman" evidence |
+| 2024-12 | [Phillip (Falcon, Fox) vs Hungrybox](https://www.youtube.com/watch?v=OMRP-jZcA4o), vladfi1 | Matchup generalisation failing in practice |
+| 2024-12 | [AI – The end of Smash Bros.](https://www.youtube.com/watch?v=qRhCvcAXfvY), Hungrybox | A top player's take |
+| 2026-10 | [Humans vs Robots crew battle](https://www.youtube.com/watch?v=Szm1y1JrNpQ), Zain, and [How I Saved Humanity from A.I.](https://www.youtube.com/watch?v=9b_2hzdTKNw), Mew2King | The big 2026 exhibition and its anchor comeback |
+| 2026-11 | [Wizzrobe vs new agents](https://www.youtube.com/watch?v=JY6gRwI5zB0), vladfi1 | The newest generation: v6 agents and super-gm |
+| live | [twitch.tv/x_pilot](https://twitch.tv/x_pilot) | Play Phillip yourself |
+
+There are no public talks by Vlad Firoiu or Eric Gu, no podcasts and no documentary about Melee AI that we could find.
+
+### Read
+
+| Date | Post | Why |
+| --- | --- | --- |
+| 2016-08 | [Reversing video games to create SmashBot](https://bishopfox.com/blog/reversing-video-games-to-create-smashbot-ai), Bishop Fox | The written version of the DEF CON talk |
+| 2017-02 | [A Smash-playing AI taught itself to stomp pros](https://qz.com/917221/a-super-smash-bros-playing-ai-has-taught-itself-how-to-stomp-professional-players), Quartz | The best account of 2017 |
+| 2018-06 | [Project Slippi public release](https://medium.com/project-slippi/project-public-release-4080c81d7205), Fizzi | Why `.slp` replays exist; every dataset descends from this |
+| 2019-12 | [Fighting desyncs in Melee replays](https://medium.com/project-slippi/fighting-desyncs-in-melee-replays-370a830bf88b), Fizzi | How replay state and playback really work |
+| 2022-08 | [Project Nabla](https://web.archive.org/web/20241121073045/https://bycn.github.io/2022/08/19/project-nabla.html) and [technical post](https://web.archive.org/web/20240814082645/https://bycn.github.io/2022/08/19/project-nabla-writeup.html), Bryan Chen | The first strong imitation-plus-self-play agent (archived copies) |
+| 2024-02 | [Playing Smash with neural networks](https://boxxfish.github.io/blog/smash-rl-1), boxxfish | An approachable hobbyist RL write-up |
+| 2025-02 | [Training AI to play Melee](https://ericyuegu.com/behavior-cloning-melee/), Eric Gu | Behaviour cloning done carefully, on a small budget |
+| 2026-03 | [Human-like Fox v Fox bots](https://baishixi.blog/posts/melee-fox-bots/) | Does a pro-level imitation start beat an amateur one before RL? |
+| 2026-07 | [Qwen plays Smash](https://hgali.sh/reflex), Hareesh Gali | An LLM in the frame loop; the closest prior work to this repo |
+| 2026-10 | [Scaling pre-training on Melee](https://ericyuegu.com/hillclimbing-melee/), Eric Gu | Scaling, latency-aware inference, results against Phillip |
+| 2026-10 | [Faynt](https://www.frisson-labs.com/faynt), Frisson Labs | The current strongest learned policy |
+| 2026-10 | [Phillip's creator removed agents trained on opted-out players](https://gamingintelligence.ai/news/phillip-replay-opt-outs), Gaming Intelligence | Data consent for replay training |
+| 2026-11 | [Reyn](https://www.frisson-labs.com/reyn), Frisson Labs | Language steering over a policy; closest to our coach track |
+
+### Papers
+
+| Date | Paper | Why |
+| --- | --- | --- |
+| 2017-02 | [Beating the World's Best at SSBM with Deep RL](https://arxiv.org/abs/1702.06230), Firoiu, Whitney, Tenenbaum | The founding paper |
+| 2017-12 | [An "Untouchable" Agent](https://arxiv.org/abs/1712.03280), Parr, Dilipkumar, Liu | A small student project; its [HN thread](https://news.ycombinator.com/item?id=15919175) compares 20XX, SmashBot and Phillip |
+| 2018 | [Learning to Play SSBM with Delayed Actions](https://www.yash-sharma.com/files/learning-play-super%20(3).pdf), Sharma, Friedman | Early work on reaction delay |
+| 2018-10 | [At Human Speed](https://arxiv.org/abs/1810.07286), Firoiu, Ju, Tenenbaum | What made Phillip fair |
+| 2025 | [Stanford CS224R report](https://cs224r.stanford.edu/spring_2025/projects/pdfs/cs224rfinalprojectreport.pdf) | Small-compute baseline; good on failure modes such as recovery |
+| 2025 | [Transfer learning on matchups (Leiden MSc)](https://theses.liacs.nl/pdf/2025-2026-HamelinkJJosef.pdf), Hamelink | How agents transfer across matchups |
+| 2026-10 | [Faynt](https://arxiv.org/abs/2610.02144), Janati, Kuzmin, Swamy, Niu | The state of the art in scaling learned policies |
+
+### Code to read first
+
+- [SmashBot](https://github.com/altf4/SmashBot): the strategy → tactic → chain structure. The model for an LLM-written bot.
+- [slippi-ai](https://github.com/vladfi1/slippi-ai): the full pipeline, imitation learning then RL.
+- [hal](https://github.com/ericyuegu/hal): clean transformer behaviour cloning.
+- [MIMIC](https://github.com/erickfm/MIMIC): HAL with a fixed action head, and evaluation against Phillip.
+- [vladfi1/libmelee](https://github.com/vladfi1/libmelee): the bot API.
+- [peppi](https://github.com/hohav/peppi): replay parsing.
+- [SPEC.md](https://github.com/project-slippi/slippi-wiki/blob/master/SPEC.md): the replay format.
+- [doldecomp/melee](https://github.com/doldecomp/melee): ground truth for game mechanics.
+
+### Melee for newcomers
+
+- [The Smash Brothers, episode 1](https://www.youtube.com/watch?v=NSf2mgkRm7Q) (2013): the scene's history. [Metagame](https://www.ssbwiki.com/Metagame_(documentary)) (2020) covers the Five Gods era.
+- [Competitive mechanics explained](https://www.youtube.com/watch?v=YT1917eRGFw), False Swipe Gaming: wavedash, L-cancel, shine and the rest, in one video.
+- [Absolute beginner guide](https://www.youtube.com/watch?v=5307wx4fnTg), Ludvix: Slippi, controllers and getting started.
+- [Making Sense of Melee](https://planetbanatt.net/articles/ambistats.html), planetbanatt: a data-driven look at what wins games. Useful intuition for rewards and evaluation.
+
 ## Open questions (not resolved by this research)
 
-- The result of Cody's Oct 2026 crew battle against Phillip.
-- Whether Phillip has played Hungrybox or Mang0 on record.
-- Whether TypeSafe has published any Melee material of its own.
-- Melee's status at Evo 2025–2026.
+- The result of Cody's 17 Oct 2026 crew battle against Phillip. The VOD needs watching.
+- The second 2017 tournament where Phillip v1 played pros.
+- Whether TypeSafe has published Melee material of its own. Only third-party mentions and community builds were found.
+- The details of the Dec 2024 "humanity triumphs" human win on r/SSBM (Reddit is blocked from this machine).
+- When stomped.dev launched.
