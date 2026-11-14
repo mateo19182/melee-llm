@@ -48,7 +48,7 @@ Mateo wants all of it, with the LLM-playing side now lower priority and a modera
 
 | Thread | Covers | Next |
 |---|---|---|
-| **Melee A · Hub** (server) | Bench, coach deep-dive, write-up, simulator, web UI and deploys | Deep-dive ablation results ([coach-deepdive](coach-deepdive.md)); cheap non-LLM janky entrants (Jev with named features, MIMIC on Mateo's replays, random-command Reyn variants); write-up "Melee Bot Elo" (draft in `writeup/`, not finished on purpose); simulator next work ([simulator](simulator.md#next-work): scenario probes, Phillip exploit probes, learned bots in sim) |
+| **Melee A · Hub** (server) | Bench, coach deep-dive, write-up, simulator, web UI and deploys | Deep-dive ablation results ([coach-deepdive](coach-deepdive.md)); cheap non-LLM janky entrants (Jev with named features, MIMIC on Mateo's replays, random-command Reyn variants); write-up "Melee Bot Elo" (draft in `writeup/`, not finished on purpose); learned bots in the simulator |
 | **Melee B · Own bot** (server) | `train/`, `meleebot`, `data/train/` | Yoshi behaviour cloning: model design with Mateo, then training; the bot joins the bench |
 | **Melee D · Play** (laptop) | `human` player, `play.py`, [netplay](netplay.md) | `human` player type in the runner, then Mateo on the bench as `human:mateo` |
 
