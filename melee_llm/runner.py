@@ -218,18 +218,41 @@ def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BA
         for a in agents.values():
             a.ready()
         menu, results = melee.MenuHelper(), []
-        last, frames, t0, replay = None, 0, time.time(), None
+        last, frames, t0, replay, tiebreak = None, 0, time.time(), None, False
         seen = set(replay_dir.rglob("*.slp"))
+
+        def finish(final: melee.GameState) -> None:
+            results.append(_result(final, frames, t0, agents))
+            found = replay or _new_replay(replay_dir, seen)
+            seen.add(found)
+            results[-1].replay = str(found) if found else None
+            for a in agents.values():
+                a.on_game_end(final)
+            if pub:
+                pub.game_end(len(results) - 1, results[-1])
+            notify("game_end", {"game": len(results) - 1, "result": results[-1]})
+
         while len(results) < games:
             gs = console.step()
             if gs is None:
                 continue
-            if gs.menu_state == melee.Menu.SUDDEN_DEATH and last is None and results:
-                # tie-break of a timed-out game that was already scored (stocks, then percent): play it out uncounted
+            in_game = gs.menu_state in (melee.Menu.IN_GAME, melee.Menu.SUDDEN_DEATH)
+            if in_game and last is not None and gs.frame < last.frame:
+                # A timeout with tied stocks starts Sudden Death as a new game (frame -123, its own .slp), with no
+                # menu in between: score the timed-out game on its last frame (stocks, then percent).
+                finish(last)
+                last, tiebreak = None, True
+            if in_game and tiebreak:
+                # play the tie-break out uncounted: with nobody pressing anything it would never end
+                for a in stepping:
+                    a.begin(gs)
                 for a in stepping:
                     a.step(gs)
                 continue
-            if gs.menu_state in (melee.Menu.IN_GAME, melee.Menu.SUDDEN_DEATH):
+            if tiebreak:  # back in the menus: the tie-break's .slp must not be taken for the next game
+                seen.add(_new_replay(replay_dir, seen))
+                tiebreak = False
+            if in_game:
                 if last is None:
                     frames, t0 = 0, time.time()
                     wrong = {p: int(gs.players[p].cpu_level) for p, a in agents.items() if gs.players[p].cpu_level != a.cpu_level}
@@ -252,15 +275,7 @@ def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BA
                     observer("frame", {"gs": gs})
                 continue
             if last is not None:
-                results.append(_result(last, frames, t0, agents))
-                found = replay or _new_replay(replay_dir, seen)
-                seen.add(found)
-                results[-1].replay = str(found) if found else None
-                for a in agents.values():
-                    a.on_game_end(last)
-                if pub:
-                    pub.game_end(len(results) - 1, results[-1])
-                notify("game_end", {"game": len(results) - 1, "result": results[-1]})
+                finish(last)
                 last = None
             start = gs.menu_state != melee.Menu.CHARACTER_SELECT or _cpus_ready(gs, agents)
             for p, a in agents.items():
