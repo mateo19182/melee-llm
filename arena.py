@@ -1,8 +1,11 @@
 """Arena channel: learned bots (and CPU 9) play back to back on display :99 in lockstep.
 
 Each game picks the pair that has played least, random characters both bots support, and a legal stage.
-Writes the stream overlay (OVERLAY), every result to arena/results.jsonl and Elo standings to
-arena/standings.json (served at http://m19182:8767/arena).
+Writes the stream overlay and the live status (melee_llm.web.live), every result to arena/results.jsonl
+and Elo standings to arena/standings.json (shown at https://melee.m19182.dev/arena).
+
+The web worker (melee_llm/web/worker.py, unit melee-arena) runs it as the live slot's idle filler, one
+game per process (`--games 1`), so queued jobs get the slot between games. Standalone:
 
     DISPLAY=:99 uv run arena.py --iso ~/melee.iso [--games N]
 """
@@ -21,10 +24,10 @@ import melee
 
 from match import make
 from melee_llm.runner import play
+from melee_llm.web.live import LiveReporter
 
 ROOT = Path(__file__).parent
 DATA = ROOT / "arena"
-OVERLAY = Path("/tmp/melee-arena/overlay.txt")
 ENTRANTS = ["hal:MASTER", "phillip:gm", "mimic", "faynt", "cpu:9"]
 CHARACTERS = ["FOX", "FALCO", "MARTH", "CPTFALCON"]  # every bot (incl. MIMIC's per-character checkpoints) has these
 STAGES = ["BATTLEFIELD", "FINAL_DESTINATION", "YOSHIS_STORY", "DREAMLAND", "FOUNTAIN_OF_DREAMS"]
@@ -62,13 +65,6 @@ def standings(results: list[dict]) -> dict:
     return {"updated": time.strftime("%Y-%m-%d %H:%M:%S"), "games": len(results), "table": rows}
 
 
-def write_overlay(text: str) -> None:
-    OVERLAY.parent.mkdir(parents=True, exist_ok=True)
-    tmp = OVERLAY.with_suffix(".tmp")
-    tmp.write_text(text)
-    tmp.replace(OVERLAY)  # atomic, so ffmpeg's drawtext never reads a half-written file
-
-
 def pick(results: list[dict], rng: random.Random) -> tuple[str, str]:
     played = Counter(frozenset((r["p1"], r["p2"])) for r in results)
     pairs = list(itertools.combinations(ENTRANTS, 2))
@@ -81,6 +77,7 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--iso", required=True)
     p.add_argument("--games", type=int, default=0, help="0 = forever")
+    p.add_argument("--no-retry", action="store_true", help="exit 1 when a game fails (the worker decides what next)")
     a = p.parse_args()
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
     DATA.mkdir(exist_ok=True)
@@ -92,15 +89,22 @@ def main() -> None:
         p1, p2 = pick(results, rng)
         c1, c2, stage = rng.choice(CHARACTERS), rng.choice(CHARACTERS), rng.choice(STAGES)
         elo = {row["spec"]: row["elo"] for row in table["table"]}
-        write_overlay(f"{label(p1)} ({char_name(c1)}) {elo.get(p1, 1500)}  vs  {label(p2)} ({char_name(c2)}) {elo.get(p2, 1500)}"
-                      f"   |   {stage.replace('_', ' ').title()}   |   game {len(results) + 1}")
+        overlay = (f"{label(p1)} ({char_name(c1)}) {elo.get(p1, 1500)}  vs  {label(p2)} ({char_name(c2)}) {elo.get(p2, 1500)}"
+                   f"   |   {stage.replace('_', ' ').title()}   |   arena game {len(results) + 1}")
+        live = LiveReporter("arena", p1, p2, c1, c2, stage, "lockstep", overlay=overlay,
+                            extra={"elo": {"1": elo.get(p1, 1500), "2": elo.get(p2, 1500)}, "arena_game": len(results) + 1})
         t0 = time.time()
         try:
-            [res] = play({1: make(p1, c1), 2: make(p2, c2)}, a.iso, melee.Stage[stage], "lockstep", 1)
+            agents = {1: make(p1, c1), 2: make(p2, c2)}
+            [res] = play(agents, a.iso, melee.Stage[stage], "lockstep", 1, observer=live.observer(agents))
         except (RuntimeError, OSError) as e:
             print(f"game failed: {p1} vs {p2}: {e}", flush=True)
+            live.done(str(e))
+            if a.no_retry:
+                sys.exit(1)
             time.sleep(10)
             continue
+        live.done()
         row = {"time": time.strftime("%Y-%m-%dT%H:%M:%S"), "p1": p1, "p2": p2, "char1": c1, "char2": c2,
                "stage": stage, "winner": res.winner, "stocks": {str(k): int(v) for k, v in res.stocks.items()},
                "percent": {str(k): round(float(v), 1) for k, v in res.percent.items()}, "frames": res.frames,
