@@ -175,7 +175,7 @@ export default async function live(root, _params, signal) {
       gameKey = key;
       steerBox.replaceChildren();
       if (s.source !== "idle" && s.players) {
-        addEvent(h("div.ev.sys.divider", {}, `${s.source === "job" ? `Job #${s.job_id}` : "Arena"} · ${s.players["1"].label} vs ${s.players["2"].label} · game ${s.game + 1}/${s.games}`));
+        addEvent(h("div.ev.sys.divider", {}, `${s.source === "job" ? `Job #${s.job_id}` : s.source === "arena" ? "Arena" : s.label || s.source} · ${s.players["1"].label} vs ${s.players["2"].label} · game ${s.game + 1}/${s.games}`));
         const quiet = Object.values(s.players).every((p) => p.kind === "cpu" || p.kind === "bot" || p.kind === "shine" || p.kind === "idle");
         if (quiet) addEvent(h("div.ev.sys", {}, "No LLM in this game. Learned bots show their steer state above; CPUs show nothing."));
       }
@@ -214,7 +214,7 @@ export default async function live(root, _params, signal) {
       h("div.sb-mid", {},
         h("div.sb-game", {}, `Game ${s.game + 1}`, s.games > 1 ? h("span.of", {}, ` / ${s.games}`) : null),
         h("div.sb-stage", {}, s.stage_name),
-        h("div.sb-phase", {}, `${s.mode} · ${s.source === "job" ? `job #${s.job_id}` : `arena #${s.arena_game ?? ""}`} · ${phase}`)),
+        h("div.sb-phase", {}, `${s.mode} · ${s.source === "job" ? `job #${s.job_id}` : s.source === "arena" ? `arena #${s.arena_game ?? ""}` : s.label || s.source} · ${phase}`)),
       side("2"));
     if (s.phase === "finished" && s.error) addEvent(h("div.ev.sys.err", {}, `Stopped: ${s.error}`));
   }

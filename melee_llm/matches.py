@@ -45,6 +45,10 @@ def _guess_source(replay_dir: Path | None) -> tuple[str, str]:
     return "script", script
 
 
+def _plain(d: dict) -> dict:
+    return {k: v for k, v in d.items() if isinstance(v, (str, int, float, bool, type(None)))}
+
+
 class MatchPublisher:
     """Created by runner.play(); `frame(gs)` is called on every in-game frame and must stay cheap."""
 
@@ -65,7 +69,7 @@ class MatchPublisher:
             "argv": " ".join(sys.argv)[:300], "replay_dir": str(replay_dir) if replay_dir else None,
             "players": {str(p): {"name": a.name, "spec": specs.get(p) or specs.get(str(p)), "character": a.character.name,
                                  "cpu_level": a.cpu_level} for p, a in agents.items()},
-            "frame": None, "fps": None, "stocks": {}, "percent": {}, "logs": [], "replay": None, "results": [],
+            "frame": None, "fps": None, "stocks": {}, "percent": {}, "logs": [], "steer": {}, "replay": None, "results": [],
             "ring": [], **meta}
         self.ring: list = []
         self.ports = sorted(agents)
@@ -81,7 +85,7 @@ class MatchPublisher:
     def game_start(self, game: int, gs, replay) -> None:
         s = self.status
         s.update(phase="in_game", game=game, game_started=round(time.time(), 3), replay=str(replay) if replay else None,
-                 fps=None)
+                 fps=None, steer={})
         self.ring = []
         self.rate_t, self.rate_n = time.monotonic(), 0
         for p in self.ports:
@@ -155,6 +159,9 @@ class MatchPublisher:
                 s["percent"][str(p)] = round(float(ps.percent), 1)
         if not s["logs"]:
             s["logs"] = self._logs()
+        steer = self._steer()
+        if steer:
+            s["steer"] = {**s["steer"], **steer}
         if self.cost_n:
             s["overhead_us"] = round(self.cost_s / self.cost_n * 1e6, 1)
         self.last_write = now
@@ -182,6 +189,20 @@ class MatchPublisher:
             path = getattr(log, "path", None)
             if path is not None and hasattr(log, "suffix"):
                 out.append({"port": p, "kind": log.suffix, "path": str(path)})
+        return out
+
+    def _steer(self) -> dict:
+        """What each steerable bot is currently told to do (and by which coach command), for the Live page."""
+        out = {}
+        for p, a in self.agents.items():
+            steer = getattr(getattr(a, "body", a), "applied_steer", None)
+            if steer:
+                st = _plain(steer)
+                if isinstance(steer.get("reply"), dict):
+                    st["router"] = _plain(steer["reply"])
+                if hasattr(a, "current"):
+                    st["coach_command"] = a.current
+                out[str(p)] = st
         return out
 
     def write(self) -> None:

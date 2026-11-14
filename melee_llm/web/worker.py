@@ -21,7 +21,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from melee_llm.paths import DATA, HEADLESS_DISPLAY, HEADLESS_MAX, HEADLESS_PORTS, ISO, LIVE_DISPLAY, LIVE_PORT, ROOT, VENV_PY
-from melee_llm.util import port_free, read_jsonl
+from melee_llm.players import unthrottled
+from melee_llm.util import claim_slot, port_free, read_jsonl
 from melee_llm.web import jobs, live, logs
 
 ARENA_LOG = DATA / "arena.log"
@@ -36,6 +37,7 @@ class Proc:
     started: float = field(default_factory=time.time)
     term_at: float | None = None
     synced: float = 0.0
+    slot: object = None  # machine slot held by an unthrottled headless job
 
     def terminate(self) -> None:
         if self.term_at is None:
@@ -131,6 +133,8 @@ class Worker:
         for jid, proc in list(self.headless.items()):
             if proc.popen.poll() is not None:
                 self.sync(proc, final=True)
+                if proc.slot:
+                    proc.slot.close()
                 del self.headless[jid]
             elif time.time() - proc.synced > 5:
                 self.sync(proc)
@@ -141,7 +145,7 @@ class Worker:
                 self.arena_backoff = time.time() + 30
             self.live = None
             self.live_free_since = time.time()
-            live.idle()
+            live.write_overlay("")
         elif self.live and self.live.kind == "job" and time.time() - self.live.synced > 5:
             self.sync(self.live)
         if self.stopping:
@@ -154,8 +158,12 @@ class Worker:
             port = next((p for p in HEADLESS_PORTS if p not in used and port_free(p)), None)
             if port is None:
                 break
+            slot = None
+            if unthrottled(job["mode"], job["p1"], job["p2"]) and (slot := claim_slot(wait=False)) is None:
+                continue  # other tracks hold every slot: try again next tick, let waited-for LLM jobs through
             job["port"] = port
             self.headless[job["id"]] = self.start_job(job, port, is_live=False)
+            self.headless[job["id"]].slot = slot
         # live slot
         waiting = jobs.queued("live")
         if self.live is None:
@@ -180,7 +188,7 @@ class Worker:
                            "WHERE status = 'running'", (time.time(),)).rowcount
         if n:
             print(f"marked {n} interrupted jobs as failed", flush=True)
-        live.idle()
+        live.write_overlay("")
 
     def run(self) -> None:
         self.recover()
@@ -198,7 +206,7 @@ class Worker:
                 for p in procs:
                     p.terminate()
             time.sleep(0.5)
-        live.idle()
+        live.write_overlay("")
 
 
 def main() -> None:

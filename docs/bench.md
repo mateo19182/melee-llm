@@ -58,7 +58,7 @@ Port and stage are not in the model; the scheduler balances them per pairing.
 - bot-writer ladders (`ladders/*/games.jsonl`, fast mode): most of the imported games; forfeits and self-play are excluded.
 - coach and Jev pilots (`replays/{coach,jev}-pilot/*/results.jsonl`, lockstep): most coach games ran at 15-45 fps on the overloaded machine and are excluded; uncoached Reyn games count (a bot is unaffected by fps). Fixed-command Reyn and `interval=60` coaches are not bench entrants.
 - the LLM arena (`data/llm-arena/*/results.jsonl`): games were capped at one minute, so only the few that ended before the cap count.
-- the learned-bot arena (`arena/results.jsonl`): random characters and stages, so only its Fox dittos on BF/FD.
+- the learned-bot arena (`data/arena/results.jsonl`): random characters and stages, so only its Fox dittos on BF/FD.
 
 The page lists the excluded counts by reason under "Older games not imported".
 
@@ -71,7 +71,7 @@ The page lists the excluded counts by reason under "Older games not imported".
 3. Divide by the expected cost: each side's mean CLIProxy tokens per game so far (priors until it has games: 900k for `llm_paused`, 350k for `llm_live`, 80k for a coach, 0 for Jev and bots), plus 60k token-equivalents of machine time per game. Close ratings and wide intervals win; free games are played often; expensive LLMs play where they still need games and against opponents near their level.
 4. Skip pairings that do not fit the free resources, then start the best one (with ±15% jitter).
 
-Resources (defaults, `run --help`): at most 14 games; 3 unthrottled token-free games, 6 real-time and 8 untimed-LLM games at once; 6 LLM sides in flight per provider (`claude`, `gpt`) and 4 for Jev, which spreads load across the two subscriptions; 6 GPU bot processes and 1.5 GB free VRAM per GPU bot (Reyn, HAL, MIMIC, Phillip); a CPU-heavy game (real-time or unthrottled) only while the 1-minute load plus its own share stays under 36, an untimed LLM game (Dolphin mostly blocked on the API) up to 40, and always at least 2 games running, since other services set most of the load and 20 s after the previous start. While the `melee-llm-arena` unit runs, at most 3 token-spending games. Unthrottled bot games run under `nice`.
+Resources (defaults, `run --help`): at most 14 games; 3 unthrottled token-free games, 6 real-time and 8 untimed-LLM games at once; 6 LLM sides in flight per provider (`claude`, `gpt`) and 4 for Jev, which spreads load across the two subscriptions; 6 GPU bot processes and 1.5 GB free VRAM per GPU bot (Reyn, HAL, MIMIC, Phillip); a CPU-heavy game (real-time or unthrottled) only while the 1-minute load plus its own share stays under 36, an untimed LLM game (Dolphin mostly blocked on the API) up to 40, and always at least 2 games running, since other services set most of the load and 20 s after the previous start. While the `melee-llm-arena` unit runs, at most 3 token-spending games. Unthrottled bot games run under `nice`. Each also waits for one of the machine's slots for unthrottled games, shared with the bot-writer ladder and fast web jobs ([performance.md](performance.md)).
 
 It stops when every active entrant is converged, when the CLIProxy token budget is spent (games in flight count against it at their estimate), or when nothing fits and nothing runs for 30 minutes. An entrant whose last three bench games all failed (crash, CUDA OOM, API outage) sits out for an hour. Restarting resumes from `results.jsonl`, budget included.
 

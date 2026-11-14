@@ -13,9 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import signal
 import statistics
-import subprocess
 import sys
 import time
 from collections import Counter
@@ -25,6 +23,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+
+from melee_llm.util import append_jsonl, run_game_process  # noqa: E402
 
 
 def behaviour(slp: str, port: int, opp: int) -> dict:
@@ -112,30 +112,18 @@ def run(a) -> None:
             cmd = [sys.executable, __file__, "one", "--iso", a.iso, "--p1", cond, "--p2", a.p2, "--char1", a.char1,
                    "--char2", a.char2, "--stage", stage, "--mode", a.mode, "--port", str(port), "--out", str(gdir),
                    "--cond", cond]
-            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env, cwd=ROOT,
-                                 start_new_session=True)  # own process group: a timeout kills Dolphin and the bot too
-            try:
-                stdout, stderr = p.communicate(timeout=a.timeout)
-            except subprocess.TimeoutExpired:
-                os.killpg(p.pid, signal.SIGTERM)
-                try:
-                    p.communicate(timeout=20)
-                except subprocess.TimeoutExpired:
-                    os.killpg(p.pid, signal.SIGKILL)
-                raise
+            r, stdout, stderr, timed_out = run_game_process(cmd, a.timeout, env, grace=20)
+            if timed_out:
+                print(f"{cond} {stage} #{i}: TIMEOUT", flush=True)
+                return
             (gdir / "stderr.log").write_text(stderr + stdout)
-            line = next((ln for ln in reversed(stdout.splitlines()) if ln.startswith("{")), None)
-            if line:
-                with results.open("a") as f:
-                    f.write(line + "\n")
-                r = json.loads(line)
+            if r:
+                append_jsonl(results, r)
                 print(f"{cond:40s} {stage:18s} stocks {r['stocks']} pct {r['percent']} winner {r['winner']} "
                       f"{r['frames']}f {r['wall_s']}s", flush=True)
             else:
                 retry = attempt == 0 and "could not connect" in stderr
                 print(f"{cond} {stage} #{i}: FAILED{', retrying' if retry else ''} (see {gdir}/stderr.log)", flush=True)
-        except subprocess.TimeoutExpired:
-            print(f"{cond} {stage} #{i}: TIMEOUT", flush=True)
         finally:
             free.append(port)
         if retry:

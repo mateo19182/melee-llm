@@ -11,7 +11,23 @@ What a game costs, what limits throughput, what was changed and what is not wort
 | HAL vs Phillip in fast mode, frames per second | 89 | 98 |
 | Web UI game index rebuild (1,240 replays) | 0.74 s | 0.23 s |
 
-The machine, not the code, is the main limit on throughput: with every track running, 32 threads carried a load of 35 to 50. Running fewer things at once is worth more than anything below.
+The machine, not the code, is the main limit on throughput: with every track running, 32 threads carried a load of 35 to 50.
+
+## How many games at once
+
+Level-9 CPU against level-9 CPU in fast mode (Dolphin only, no bot, no GPU), N copies started together, frames per wall second over 25 s. The machine was already at load 30 to 40 from other work:
+
+| Games at once | Per game | All games together |
+|---|---|---|
+| 1 | 254 fps | 254 fps |
+| 4 | 231 fps | 925 fps |
+| 8 | 170 fps | 1,361 fps |
+| 16 | 84 fps | 1,348 fps |
+| 24 | 38 fps | 920 fps |
+
+One unthrottled Dolphin fills about two cores, so 8 of them fill the 16 physical cores. From 8 to 16 the total does not grow, each game only gets slower. At 24 the total falls by a third and every game runs below 60 fps: at that point a real-time game on the same machine cannot hold its speed, and the bench throws it away as `slow`. A run with 32 did not get all its games started in three minutes.
+
+So every track takes a machine-wide slot before it starts an unthrottled game (`util.claim_slot`): 8 slots here, `MELEE_UNTHROTTLED_GAMES` to change it. The bench (its bot-vs-bot games), the bot-writer ladder and fast web jobs wait for one; before, each track had only its own limit (3, 8 workers and 4), which add up to 15. Real-time games and LLM games where the emulator waits for the model take no slot, since their Dolphin is mostly idle. Bot-writer practice games take none either: the writing agent's tool call has a time limit that a wait would eat. Games between two learned bots count as one slot each although they are bound by inference, not by Dolphin (98 fps for HAL vs Phillip); how many of those fit was not measured.
 
 ## Starting a game
 
@@ -87,10 +103,9 @@ What does limit the bench is deliberate: one new game per 20 s (`stagger_s`, bec
 ## Not done, in order of expected payoff
 
 1. **Keep bots and Dolphin up across games.** `play(games=N)` already reuses both, but every scheduler starts one process per game, and the arena changes players each game. A fast bot-vs-bot game pays 5 to 20 s of start-up for 2 to 5 minutes of play, so by that arithmetic the ceiling is 5 to 10% more games per hour; for the live arena it would cut the 14 to 30 s gap between games to the menu time. It needs either batches of the same pairing per process (simple, but the bench picks one game at a time on purpose) or model servers that outlive a game (a real change to `bots/`).
-2. **One live-status channel instead of two** ([architecture.md](architecture.md), Known duplication). This is a simplification, not a speed-up: `live.json` costs one small file write five times per second.
-3. **Incremental game index**, when the replay count makes the rebuild slow.
-4. **Incremental token counts in the worker** (remember the byte offset per decision log). Today it re-reads each log every 5 s: 30 ms for the largest log seen. Only worth it with many long LLM jobs at once.
-5. **Per-frame micro-costs** in the macro executor and the controller writes (a few microseconds each against 3 to 10 ms frames): not worth the risk.
+2. **Incremental game index**, when the replay count makes the rebuild slow.
+3. **Incremental token counts in the worker** (remember the byte offset per decision log). Today it re-reads each log every 5 s: 30 ms for the largest log seen. Only worth it with many long LLM jobs at once.
+4. **Per-frame micro-costs** in the macro executor and the controller writes (a few microseconds each against 3 to 10 ms frames): not worth the risk.
 
 ## How to measure
 

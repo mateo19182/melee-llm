@@ -1,12 +1,14 @@
 """Small helpers every track used to carry its own copy of: jsonl files, atomic writes, ports, child games."""
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import signal
 import socket
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from melee_llm.paths import ROOT
@@ -49,18 +51,53 @@ def port_free(port: int) -> bool:
             return False
 
 
+SLOTS = Path("/tmp/melee-llm-slots")
+
+
+def unthrottled_games() -> int:
+    """How many unthrottled games the machine runs at once, over every track ($MELEE_UNTHROTTLED_GAMES).
+
+    Each one keeps a Dolphin flat out on about two cores. Past a quarter of the hardware threads the total
+    frames per second stop growing, and past half they fall (docs/performance.md)."""
+    return int(os.environ.get("MELEE_UNTHROTTLED_GAMES") or max(1, (os.cpu_count() or 4) // 4))
+
+
+def claim_slot(wait: bool = True):
+    """Take one of the machine's slots for an unthrottled game: fast mode with no player the game waits for.
+
+    Returns an open lock file: close it to give the slot back (the kernel does when the process dies). With
+    `wait=False`, None when every slot is taken."""
+    SLOTS.mkdir(exist_ok=True)
+    while True:
+        for i in range(unthrottled_games()):
+            f = open(SLOTS / f"{i}.lock", "w")
+            try:
+                fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return f
+            except BlockingIOError:
+                f.close()
+        if not wait:
+            return None
+        time.sleep(1)
+
+
 def exit_on_term(*extra: int) -> None:
     """Turn SIGTERM (a timeout, a cancelled job, a stopped unit) into SystemExit so play() stops its Dolphin."""
     for sig in (signal.SIGTERM, *extra):
         signal.signal(sig, lambda *_: sys.exit(143))
 
 
-def run_game_process(cmd: list[str], timeout: float, env: dict | None = None, grace: float = 30) -> tuple[dict | None, str, str, bool]:
+def run_game_process(cmd: list[str], timeout: float, env: dict | None = None, grace: float = 30,
+                     unthrottled: bool = False) -> tuple[dict | None, str, str, bool]:
     """Run one game as a child in its own process group, so a timeout kills its Dolphin and bots with it.
 
     Returns (result, stdout, stderr, timed_out): `result` is the last JSON line the child printed, None if it
-    printed none or was killed.
+    printed none or was killed. An `unthrottled` game first waits for a machine slot (claim_slot); the wait
+    does not count towards `timeout`.
     """
+    if unthrottled:
+        with claim_slot():
+            return run_game_process(cmd, timeout, env, grace)
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env, cwd=ROOT,
                          start_new_session=True)
     try:

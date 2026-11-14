@@ -75,6 +75,24 @@ def _view(m: dict) -> dict:
     return m
 
 
+LIVE_KEYS = ("id", "source", "label", "job_id", "phase", "mode", "stage", "stage_name", "game", "games", "started", "players",
+             "frame", "stocks", "percent", "logs", "steer", "replay", "results", "elo", "arena_game", "error", "updated")
+LINGER_S = 2  # an ended live game stays up this long, so the page gets to show why it stopped
+
+
+def live_status(matches: list[dict]) -> dict:
+    """What the live slot (display :99) is playing, for the Live page: the match flagged `live_slot`, or idle."""
+    live = [m for m in matches if m.get("live_slot")]
+    m = next((m for m in live if m.get("phase") not in ENDED), None) \
+        or next((m for m in live if time.time() - (m.get("finished") or 0) < LINGER_S), None)
+    if m is None:
+        return {"source": "idle", "phase": "idle", "updated": 0}
+    st = {k: m.get(k) for k in LIVE_KEYS}
+    if st["phase"] in ENDED:
+        st["phase"] = "finished"
+    return st
+
+
 _snap: tuple[float, list[dict]] = (0.0, [])
 
 

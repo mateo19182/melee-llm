@@ -29,6 +29,12 @@ KINDS = {
     "coach": "melee_llm.agents.coach:CoachedBot", "coach_jev": "melee_llm.agents.jev_coach:JevCoach",
     "jev_live": "melee_llm.agents.jev_player:JevLive", "jev_paused": "melee_llm.agents.jev_player:JevPaused",
 }
+WAITED_FOR = ("llm_paused", "jev_paused")  # the game stops for each of their decisions
+
+
+def unthrottled(mode: str, *specs: str) -> bool:
+    """A fast game nobody stops: needs a machine slot (util.claim_slot) wherever it is launched."""
+    return mode == "fast" and not any(s.partition(":")[0] in WAITED_FOR for s in specs)
 
 
 def make(spec: str, character: str | melee.Character, log_dir: Path | None = None) -> Agent:

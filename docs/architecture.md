@@ -10,7 +10,7 @@ Everything is built on one function, `runner.play()`: it boots a Slippi Dolphin,
 
 | Path | What |
 |---|---|
-| `melee_llm/paths.py` | Every location (repo root, `replays/`, `data/`, `arena/`, `vendor/`, the bot-writer home), the two X displays and each track's Slippi port block. Nothing else computes paths from `__file__` |
+| `melee_llm/paths.py` | Every location (repo root, `replays/`, `data/`, `vendor/`, the bot-writer home), the two X displays and each track's Slippi port block. Nothing else computes paths from `__file__` |
 | `melee_llm/players.py` | `make(spec, character, log_dir=None)`: the one place a spec string becomes an Agent. Classes are imported on first use |
 | `melee_llm/runner.py` | `play()`: Dolphin, controllers, menus, the frame loop, results. `replay_states()` yields game states from a `.slp` for tests without the ISO |
 | `melee_llm/matches.py` | The match registry: every `play()` publishes its status and recent frames to `data/matches/` for the All matches page |
@@ -30,7 +30,7 @@ Everything is built on one function, `runner.play()`: it boots a Slippi Dolphin,
 | `docs/` | These pages; the web UI's Docs tab renders every `docs/*.md` |
 | `patches/slippilab.patch` | Changes to Slippi Lab: load a replay by URL, keep CPU games, post the frame to the embedding page, the live 2D renderer |
 
-Gitignored, created by `scripts/setup.sh` or at run time: `bin/` (Dolphin AppImages, VirtualGL, mediamtx), `vendor/` (bot repos with their venvs, Slippi Lab, noVNC), `replays/`, `data/`, `arena/`.
+Gitignored, created by `scripts/setup.sh` or at run time: `bin/` (Dolphin AppImages, VirtualGL, mediamtx), `vendor/` (bot repos with their venvs, Slippi Lab, noVNC), `replays/`, `data/`.
 
 ## How a game runs
 
@@ -76,7 +76,7 @@ The web launcher keeps its own description of the kinds (`web/specs.py`: labels,
 |---|---|---|---|---|
 | Single match | `python -m melee_llm.match` | in process | stdout, `replays/` | none |
 | Web jobs | `web/worker.py` | `python -m melee_llm.web.runjob` per job | `data/web.sqlite`, `replays/jobs/<id>/` | none |
-| Learned-bot arena | `python -m melee_llm.arena` (started by the worker) | in process, one game per process | `arena/results.jsonl`, `arena/standings.json` | sequential Elo, K = 24 |
+| Learned-bot arena | `python -m melee_llm.arena` (started by the worker) | in process, one game per process | `data/arena/results.jsonl`, `data/arena/standings.json` | sequential Elo, K = 24 |
 | Melee Bench | `python -m melee_llm.bench run` | `python -m melee_llm.bench one` per game | `data/bench/`, `replays/bench/<id>/` | Bradley-Terry with a Gaussian prior, CPU 9 = 1500, bootstrap intervals |
 | LLM arena | `python -m melee_llm.llm_arena run` | `python -m melee_llm.llm_arena one` per game | `data/llm-arena/<name>/` | the same fit, anchored to the CPUs |
 | Bot-writer ladder | `python -m melee_llm.botwriter.ladder run` | worker processes, `games_per_side` games per Dolphin | `~/.local/share/melee-llm/botwriter/ladders/<name>/` | Bradley-Terry by MM with a virtual draw, no prior |
@@ -105,6 +105,8 @@ The three rating methods give different numbers on purpose (the arena's Elo is o
 
 The Slippi spectator port is the only resource parallel Dolphins share; libmelee gives each one its own temporary home. The port blocks are constants in `paths.py`. Only the bot-writer block is claimed across processes; the other tracks hand out ports from one scheduler process each, so two schedulers of the same track must not run at once.
 
+CPU is shared too. An unthrottled game (fast mode, no player the game waits for) keeps a Dolphin flat out on about two cores, so every track takes a machine-wide slot before starting one: `util.claim_slot`, a lock file in `/tmp/melee-llm-slots/`, 8 slots on this machine (`MELEE_UNTHROTTLED_GAMES`, default a quarter of the hardware threads). The bench's bot-vs-bot games, the bot-writer ladder and fast web jobs take one; real-time games, LLM games the emulator waits for and bot-writer practice games do not. See [performance.md](performance.md).
+
 ## Services
 
 Transient systemd user units, all started from the repo root (`--working-directory=$PWD`):
@@ -125,10 +127,9 @@ The code is imported from the working tree, not installed: a running scheduler s
 | Location | Content |
 |---|---|
 | `replays/**/*.slp` | One replay per game. Next to it, `<replay>.p<port>.llm.jsonl` or `.coach.jsonl`: the player's decision log |
-| `data/matches/*.json` | Match registry, one file per running `play()`; ended ones are pruned by the web server |
-| `data/live.json` | What the live slot shows right now |
+| `data/matches/*.json` | Match registry, one file per running `play()`; ended ones are pruned by the web server. The Live page shows the one flagged `live_slot` |
 | `data/web.sqlite` | Web jobs, their results and token counts, settings |
-| `data/bench/`, `data/llm-arena/<name>/`, `arena/` | `results.jsonl` (append-only, one line per game) and `standings.json` |
+| `data/bench/`, `data/llm-arena/<name>/`, `data/arena/` | `results.jsonl` (append-only, one line per game) and `standings.json` |
 | `~/.local/share/melee-llm/botwriter/` | Sandboxes, sessions and ladders (`BOTWRITER_HOME` overrides) |
 
 Results files are append-only jsonl; readers skip a line that was cut by a crash or is still being written (`util.read_jsonl`). Status files that a page polls are written to a temporary name and renamed.
@@ -153,7 +154,5 @@ Results files are append-only jsonl; readers skip a line that was cut by a crash
 
 ## Known duplication, left in place
 
-- **Two live-status channels.** `web/live.py` writes `data/live.json` for the Live page, and `matches.py` writes the registry for All matches. Both sample the same game. The registry already marks the live slot (`live_slot`), so the Live page could read it and `live.json` could go; the stream overlay and the steer state would have to move with it.
 - **Three rating implementations** (see Tracks). Merging the ladder or the arena into the bench's fit would change published numbers.
-- **The pilots keep their own launch loop** (`scripts/coach_pilot.py`, `scripts/perception_pilot.py`): a 20-second kill grace and a retry on "could not connect" that `util.run_game_process` does not have.
 - **Spec knowledge in two places**: `players.KINDS` builds players, `web/specs.py` labels and validates them.

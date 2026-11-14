@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 
 from melee_llm.bench.entrants import BOTWRITER, Entrant, by_id, resolve
-from melee_llm.paths import ROOT
+from melee_llm.paths import ARENA, ROOT
 from melee_llm.util import read_jsonl as _jsonl
 
 STAGES = ("BATTLEFIELD", "FINAL_DESTINATION")
@@ -90,7 +90,7 @@ def load() -> tuple[list[dict], dict[str, int]]:
             c.add(src, n, r["p1"], r["p2"], r, stage=r["stage"], chars=(r.get("char1"), r.get("char2")),
                   mode=r.get("mode", "lockstep"), ts=Path(f).stat().st_mtime, replay=r.get("replay"))
     # learned-bot arena on the live slot (random characters and stages: only the Fox dittos on BF/FD qualify)
-    for n, r in enumerate(_jsonl(ROOT / "arena/results.jsonl")):
+    for n, r in enumerate(_jsonl(ARENA / "results.jsonl")):
         c.add("arena", n, r["p1"], r["p2"], r, stage=r["stage"], chars=(r["char1"], r["char2"]), mode="lockstep",
               ts=_ts(r.get("time")), replay=r.get("replay"))
     # bot-writer ladders (fast mode, Fox ditto BF/FD, full games)

@@ -1,6 +1,6 @@
 """Where everything lives, and which X display and Slippi port block each track owns.
 
-Code, vendored bots and results all hang off the repo root. `replays/`, `data/`, `arena/`, `bin/` and `vendor/`
+Code, vendored bots and results all hang off the repo root. `replays/`, `data/`, `bin/` and `vendor/`
 are gitignored; the bot-writer keeps its sandboxes outside the repo (BOTWRITER).
 """
 from __future__ import annotations
@@ -13,9 +13,8 @@ VENDOR = ROOT / "vendor"  # learned bots (each with its own venv), Slippi Lab, n
 REPLAYS = ROOT / "replays"  # .slp files and the decision logs written next to them
 DATA = Path(os.environ.get("MELEE_WEB_DATA", ROOT / "data"))
 DB = DATA / "web.sqlite"
-LIVE = DATA / "live.json"  # what the live slot is playing right now (written by the job/arena process)
 JOBS = REPLAYS / "jobs"  # one dir per web job: replays, decision logs, results.jsonl, output.log
-ARENA = ROOT / "arena"  # learned-bot arena: results.jsonl, standings.json
+ARENA = DATA / "arena"  # learned-bot arena: results.jsonl, standings.json
 BOTWRITER = Path(os.environ.get("BOTWRITER_HOME", Path.home() / ".local/share/melee-llm/botwriter"))
 ISO = os.environ.get("MELEE_ISO", str(Path.home() / "melee.iso"))
 VENV_PY = ROOT / ".venv/bin/python"

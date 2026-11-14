@@ -1,5 +1,6 @@
 """Offline tests for the shared modules: player specs, jsonl helpers, child game processes."""
 import sys
+import time
 
 import melee
 import pytest
@@ -81,3 +82,43 @@ def test_port_free():
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
         s.bind(("127.0.0.1", 0))
         assert not util.port_free(s.getsockname()[1])
+
+
+def test_unthrottled_is_fast_mode_with_nobody_to_wait_for():
+    assert players.unthrottled("fast", "hal:MASTER", "cpu:9")
+    assert players.unthrottled("fast", "coach:haiku,body=reyn", "llm_live:x")
+    assert not players.unthrottled("fast", "llm_paused:x", "cpu:9")
+    assert not players.unthrottled("realtime", "hal", "cpu:9")
+
+
+def test_claim_slot_caps_the_machine(tmp_path, monkeypatch):
+    monkeypatch.setattr(util, "SLOTS", tmp_path / "slots")
+    monkeypatch.setenv("MELEE_UNTHROTTLED_GAMES", "2")
+    a, b = util.claim_slot(wait=False), util.claim_slot(wait=False)
+    assert a and b and util.claim_slot(wait=False) is None
+    a.close()
+    res, *_ = util.run_game_process([sys.executable, "-c", "print('{}')"], timeout=30, unthrottled=True)  # takes the free slot
+    assert res == {}
+    with util.claim_slot(wait=False) as c:
+        assert c
+    b.close()
+
+
+def test_live_status_is_the_live_slot_match_or_idle():
+    from melee_llm.web import registry
+    other = {"id": "a", "phase": "in_game", "live_slot": False}
+    live = {"id": "b", "phase": "in_game", "live_slot": True, "source": "arena", "frame": 7, "ring": [[1]], "fps": 60}
+    assert registry.live_status([other])["source"] == "idle"
+    st = registry.live_status([other, live])
+    assert (st["id"], st["frame"], st["source"]) == ("b", 7, "arena") and "ring" not in st and "fps" not in st
+    ended = {**live, "phase": "failed", "error": "boom", "finished": time.time()}
+    st = registry.live_status([ended])
+    assert (st["phase"], st["error"]) == ("finished", "boom")
+    assert registry.live_status([{**ended, "finished": time.time() - 60}])["phase"] == "idle"
+
+
+def test_overlay_text():
+    from melee_llm.web import live
+    assert live.match_text("cpu:9", "cpu:3", "FOX", "MARTH", "BATTLEFIELD", "job #4", 1, 3) == \
+        "CPU 9 (Fox)  vs  CPU 3 (Marth)   |   Battlefield   |   job #4   |   game 2/3"
+    assert live.match_text("cpu:9", "cpu:3", "FOX", "MARTH", "BATTLEFIELD", "job #4").endswith("job #4")

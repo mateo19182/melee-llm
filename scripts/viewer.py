@@ -15,6 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / "vendor/slippilab/dist"
 REPLAYS = ROOT / "replays"
+ARENA = Path(os.environ.get("MELEE_WEB_DATA", ROOT / "data")) / "arena"
 HOST, PORT = os.environ.get("BIND", "100.83.166.6"), int(os.environ.get("PORT", "8767"))
 DISPLAY, SCREEN, OUT = os.environ.get("LIVE_DISPLAY", ":99"), "1280x960", "960:720"
 
@@ -109,11 +110,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 for f in files)
             return self._send(f'<p><a href="/arena">arena standings</a> · live: <a href="http://m19182:8889/live/">WebRTC (H.264, smooth)</a> · <a href="/watch">MJPEG fallback</a></p><h1>Replays</h1><ul>{rows or "<li>none yet</li>"}</ul>'.encode())
         if self.path == "/arena":
-            path = ROOT / "arena/standings.json"
+            path = ARENA / "standings.json"
             data = json.loads(path.read_text()) if path.exists() else {"table": [], "games": 0, "updated": "never"}
             rows = "".join(f"<tr><td>{html.escape(r['entrant'])}</td><td>{r['elo']}</td><td>{r['wins']}-{r['losses']}"
                            f"{'-' + str(r['draws']) if r['draws'] else ''}</td></tr>" for r in data["table"])
-            recent = (ROOT / "arena/results.jsonl").read_text().splitlines()[-15:] if (ROOT / "arena/results.jsonl").exists() else []
+            recent = (ARENA / "results.jsonl").read_text().splitlines()[-15:] if (ARENA / "results.jsonl").exists() else []
             games = "".join(
                 f"<li>{html.escape(g['p1'])} ({g['char1'].title()}) vs {html.escape(g['p2'])} ({g['char2'].title()}), "
                 f"{g['stage'].replace('_', ' ').title()}: winner P{g['winner']} {g['stocks']}"

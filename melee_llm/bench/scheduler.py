@@ -363,7 +363,7 @@ class Bench:
         base.update(dir=str(gdir), ts=round(t0, 1))
         rec = None
         try:
-            res, stdout, stderr, timed_out = run_game_process(cmd, timeout, env)
+            res, stdout, stderr, timed_out = run_game_process(cmd, timeout, env, unthrottled=job["kind"] == "fast")
             (gdir / "stderr.log").write_text(stderr[-200_000:] + stdout[-20_000:])
             if res is not None:
                 rec = {**base, **res}

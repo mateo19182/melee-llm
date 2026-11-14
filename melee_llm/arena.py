@@ -1,8 +1,8 @@
 """Arena channel: learned bots (and CPU 9) play back to back on display :99 in lockstep.
 
 Each game picks the pair that has played least, random characters both bots support, and a legal stage.
-Writes the stream overlay and the live status (melee_llm.web.live), every result to arena/results.jsonl
-and Elo standings to arena/standings.json (shown at https://melee.m19182.dev/arena).
+Writes the stream overlay (melee_llm.web.live), every result to data/arena/results.jsonl
+and Elo standings to data/arena/standings.json (shown at https://melee.m19182.dev/arena).
 
 The web worker (melee_llm/web/worker.py, unit melee-arena) runs it as the live slot's idle filler, one
 game per process (`--games 1`), so queued jobs get the slot between games. Standalone:
@@ -23,7 +23,7 @@ from melee_llm.paths import ARENA as DATA
 from melee_llm.players import make
 from melee_llm.runner import play
 from melee_llm.util import append_jsonl, exit_on_term, read_jsonl, write_atomic
-from melee_llm.web.live import LiveReporter
+from melee_llm.web.live import write_overlay
 from melee_llm.web.specs import char_name
 
 ENTRANTS = ["hal:MASTER", "phillip:gm", "mimic", "faynt", "cpu:9"]
@@ -73,7 +73,7 @@ def main() -> None:
     p.add_argument("--no-retry", action="store_true", help="exit 1 when a game fails (the worker decides what next)")
     a = p.parse_args()
     exit_on_term()
-    DATA.mkdir(exist_ok=True)
+    DATA.mkdir(parents=True, exist_ok=True)
     rng = random.Random()
     played = 0
     while not a.games or played < a.games:
@@ -84,22 +84,19 @@ def main() -> None:
         elo = {row["spec"]: row["elo"] for row in table["table"]}
         overlay = (f"{label(p1)} ({char_name(c1)}) {elo.get(p1, 1500)}  vs  {label(p2)} ({char_name(c2)}) {elo.get(p2, 1500)}"
                    f"   |   {stage.replace('_', ' ').title()}   |   arena game {len(results) + 1}")
-        live = LiveReporter("arena", p1, p2, c1, c2, stage, "lockstep", overlay=overlay,
-                            extra={"elo": {"1": elo.get(p1, 1500), "2": elo.get(p2, 1500)}, "arena_game": len(results) + 1})
+        write_overlay(overlay)
         t0 = time.time()
         try:
             agents = {1: make(p1, c1), 2: make(p2, c2)}
-            [res] = play(agents, a.iso, melee.Stage[stage], "lockstep", 1, observer=live.observer(agents),
+            [res] = play(agents, a.iso, melee.Stage[stage], "lockstep", 1,
                          meta={"source": "arena", "label": f"arena game {len(results) + 1}", "specs": {1: p1, 2: p2},
-                               "elo": {"1": elo.get(p1, 1500), "2": elo.get(p2, 1500)}})
+                               "arena_game": len(results) + 1, "elo": {"1": elo.get(p1, 1500), "2": elo.get(p2, 1500)}})
         except (RuntimeError, OSError) as e:
             print(f"game failed: {p1} vs {p2}: {e}", flush=True)
-            live.done(str(e))
             if a.no_retry:
                 sys.exit(1)
             time.sleep(10)
             continue
-        live.done()
         row = {"time": time.strftime("%Y-%m-%dT%H:%M:%S"), "p1": p1, "p2": p2, "char1": c1, "char2": c2,
                "stage": stage, "winner": res.winner, "stocks": {str(k): int(v) for k, v in res.stocks.items()},
                "percent": {str(k): round(float(v), 1) for k, v in res.percent.items()}, "frames": res.frames,

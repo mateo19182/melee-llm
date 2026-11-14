@@ -15,11 +15,8 @@ from __future__ import annotations
 import argparse
 import base64
 import json
-import os
 import random
-import signal
 import statistics
-import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -30,6 +27,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from melee_llm.paths import PERCEPTION_PORTS as PORTS  # noqa: E402
+from melee_llm.util import append_jsonl, run_game_process  # noqa: E402
 
 
 class Capped(Exception):
@@ -100,30 +98,18 @@ def run(a) -> None:
             cmd = [sys.executable, __file__, "one", "--iso", a.iso, "--p1", cond, "--p2", a.p2, "--char1", a.char1,
                    "--char2", a.char2, "--stage", a.stage, "--mode", a.mode, "--port", str(port), "--out", str(gdir),
                    "--cond", cond, "--cap", str(a.cap)]
-            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=ROOT,
-                                 start_new_session=True)
-            try:
-                stdout, stderr = p.communicate(timeout=a.timeout)
-            except subprocess.TimeoutExpired:
-                os.killpg(p.pid, signal.SIGTERM)
-                try:
-                    p.communicate(timeout=20)
-                except subprocess.TimeoutExpired:
-                    os.killpg(p.pid, signal.SIGKILL)
-                raise
+            r, stdout, stderr, timed_out = run_game_process(cmd, a.timeout, grace=20)
+            if timed_out:
+                print(f"{cond} #{i}: TIMEOUT", flush=True)
+                return
             (gdir / "stderr.log").write_text(stderr + stdout)
-            line = next((ln for ln in reversed(stdout.splitlines()) if ln.startswith("{")), None)
-            if line:
-                with results.open("a") as f:
-                    f.write(line + "\n")
-                r = json.loads(line)
+            if r:
+                append_jsonl(results, r)
                 print(f"{cond:60s} #{i} stocks {r['stocks']} pct {[round(v) for v in r['percent'].values()]} "
                       f"winner {r['winner']} {r['frames']}f {r['wall_s']}s{' capped' if r['capped'] else ''}", flush=True)
             else:
                 retry = attempt == 0 and "could not connect" in stderr
                 print(f"{cond} #{i}: FAILED{', retrying' if retry else ''} (see {gdir}/stderr.log)", flush=True)
-        except subprocess.TimeoutExpired:
-            print(f"{cond} #{i}: TIMEOUT", flush=True)
         finally:
             free.append(port)
         if retry:
