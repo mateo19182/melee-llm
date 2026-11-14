@@ -69,6 +69,6 @@ https://melee.m19182.dev (Cloudflare Tunnel + Access, owner only) serves `melee_
 
 ```sh
 uv sync                 # includes pytest and ruff (dev group)
-uv run pytest -q        # offline: no ISO, no network; two files need replays/sample-slippi-js-itemExport.slp
+uv run pytest -q        # offline: no ISO, no network; tests needing the git-ignored replays/sample-slippi-js-*.slp skip without them
 uv run ruff check .
 ```

@@ -42,6 +42,7 @@ def play(tmp_path, obs, answer='{"action": "fair", "dir": "toward"}', clip=1, n=
     return calls, [json.loads(ln) for ln in log.read_text().splitlines()], log
 
 
+@pytest.mark.replays
 def test_text_mode_is_unchanged(tmp_path):
     calls, recs, _ = play(tmp_path, "text")
     system, user, images = calls[0]
@@ -50,6 +51,7 @@ def test_text_mode_is_unchanged(tmp_path):
     assert "images" not in d and d["invalid"] is False
 
 
+@pytest.mark.replays
 def test_image_mode_sends_legend_and_saves_frames(tmp_path):
     calls, recs, log = play(tmp_path, "image", clip=3)
     system, user, images = calls[0]
@@ -63,12 +65,14 @@ def test_image_mode_sends_legend_and_saves_frames(tmp_path):
     assert recs[0]["obs_mode"] == "image" and recs[-1]["obs_mode"] == "image"
 
 
+@pytest.mark.replays
 def test_both_mode_keeps_text(tmp_path):
     calls, _, _ = play(tmp_path, "both")
     system, user, images = calls[0]
     assert "YOU " in user and len(images) == 1 and C.READ_BOTH in system
 
 
+@pytest.mark.replays
 def test_invalid_actions_are_counted(tmp_path):
     _, recs, _ = play(tmp_path, "text", answer='{"action": "teleport"}')
     assert all(r["invalid"] for r in recs if r["type"] == "decision") and recs[-1]["invalid"] > 0

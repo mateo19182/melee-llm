@@ -8,6 +8,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path[:0] = [str(Path(__file__).resolve().parent.parent), str(Path(__file__).parent)]
 
 from fakesim import FakeSim  # noqa: E402
@@ -39,6 +41,7 @@ def sample_renderings(n=3):
     return out
 
 
+@pytest.mark.replays
 def test_render_on_replays():
     for slp in sorted(REPLAYS.glob("sample-slippi-js-*.slp")):
         gss = _frames(slp, every=7)
@@ -53,6 +56,7 @@ def test_render_on_replays():
             assert len(txt) < 1400, txt  # ≈ ≤350 tokens
 
 
+@pytest.mark.replays
 def test_events_detect_stock_loss_and_hits():
     gss = _frames()
     p1, p2 = sorted(gss[0].players)
@@ -113,6 +117,7 @@ def test_jab_from_dash_stops_first():
     assert any("neutral_attack_1" in line for line in tr) and not any("dash_attack" in line for line in tr), tr
 
 
+@pytest.mark.replays
 def test_every_action_runs_on_replay_states():
     """Each macro, started on varied real replay states, yields valid Inputs and never raises."""
     gss = _frames(every=3)
