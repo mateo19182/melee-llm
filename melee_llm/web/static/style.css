@@ -286,6 +286,8 @@ td.when { color: var(--dim); white-space: nowrap; }
 .ev.cm-line { --c: var(--live); display: flex; gap: 9px; align-items: baseline; color: var(--text); font-size: 14px; line-height: 1.4;
   background: linear-gradient(90deg, rgba(255, 59, 85, .1), transparent 70%); }
 .cm-tag { flex: none; font: italic 600 11px var(--display); letter-spacing: .12em; text-transform: uppercase; color: var(--live); }
+.ev.cm-line.cm-b { --c: var(--p2); }
+.ev.cm-line.cm-b .cm-tag { color: var(--p2); }
 .ev.err .ev-action { color: var(--bad); }
 .ev-head { display: flex; gap: 8px; align-items: center; min-width: 0; }
 .ev-call { font: italic 600 13px var(--display); letter-spacing: .05em; text-transform: uppercase; color: var(--c, var(--dim)); white-space: nowrap; flex: none; }

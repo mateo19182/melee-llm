@@ -3,15 +3,16 @@
 `PlayTracker` turns frames into events (combo strings, stocks, offstage hits, shield breaks). `Commentary`
 writes the notable ones to a JSONL the Live page tails (kind "commentary"; matches.MatchPublisher starts one per
 game of the live-slot match and lists it in the registry's logs), and, while the `commentator`
-setting is on, a background thread turns recent events into one or two lines of LLM commentary. Nothing here
+setting is on, a background thread turns recent events into a short exchange between two casters (CASTERS):
+one LLM call writes both parts. Nothing here
 blocks the game loop: update() is a few comparisons per frame and the LLM call runs on its own thread.
 
 While someone on the Live page has the voice on (it sends a heartbeat that touches paths.VOICE_HEARTBEAT), each line
-is also spoken with ElevenLabs and saved as <log>.audio/<n>.mp3; ELEVENLABS_API_KEY comes from the environment or
+is also spoken with ElevenLabs in its caster's voice and saved as <log>.audio/<n>.mp3; ELEVENLABS_API_KEY comes from the environment or
 ~/.config/melee-llm/elevenlabs.env. Nobody listening, nothing is synthesized.
 
 Records: {"type": "event", "text", "frame", "big", "ts"} and {"type": "line", "text", "frame", "model",
-"latency_s", "audio", "audio_s", "ts"} (audio: path of the MP3, audio_s: its length). `ts` is when the moment happened (a line carries the ts of the newest event it covers),
+"speaker", "latency_s", "audio", "audio_s", "ts"} (speaker: the caster's name; audio: path of the MP3, audio_s: its length). `ts` is when the moment happened (a line carries the ts of the newest event it covers),
 so the page shows both when the video reaches that moment.
 """
 from __future__ import annotations
@@ -19,8 +20,10 @@ from __future__ import annotations
 import json
 import os
 import queue
+import re
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -33,8 +36,13 @@ FPS = 60
 STRING_END = 30  # frames the victim must be actionable (and not hit) before a combo string counts as over
 SELF_DESTRUCT = 240  # a stock lost this long after the last hit taken is a self-destruct
 DEFAULT_MODEL = "claude-haiku-5-5"
-DEFAULT_VOICE = "IKne3meq5aSn9XLyUdCD"  # ElevenLabs "Charlie": deep, confident, energetic
-TTS_MODEL = "eleven_flash_v2_5"  # the low-latency one (~1 s for a line)
+# The booth: name → (ElevenLabs voice id, what the LLM is told about them). The first is the play-by-play caster.
+CASTERS = {
+    "Charlie": ("IKne3meq5aSn9XLyUdCD", "play-by-play: loud, fast, loses his mind on big moments"),
+    "Laura": ("FGY2WhTYpPnrIDTdsKH5", "colour analyst: quick, dry wit, reads momentum and habits, teases Charlie"),
+}
+TTS_MODEL = "eleven_v4_turbo"  # emotive and fast (~1.3 s for a line); takes [audio tags] such as [shouting]
+TAG = re.compile(r"\s*\[[^\]\n]{1,30}\]\s*")  # an audio tag: spoken with, never shown
 TTS_KBPS = 64  # mp3_44100_64: duration = bytes * 8 / 64000
 VOICE_FRESH_S = 15  # the Live page beats every 5 s while its voice is on
 ELEVENLABS_ENV = Path.home() / ".config/melee-llm/elevenlabs.env"
@@ -60,7 +68,7 @@ class _String:
 
 class PlayTracker:
     def __init__(self, names: dict[int, str]):
-        self.names = names  # port → "Faynt's Marth"
+        self.names = names  # port → "Faynt (Marth)"
         self.prev: dict[int, tuple] = {}
         self.strings: dict[int, _String] = {}  # victim port → current string
         self.last_hit: dict[int, int] = {}  # victim port → frame of the last hit taken
@@ -93,7 +101,7 @@ class PlayTracker:
                     if s.hits >= 3 or s.damage >= 35:
                         out.append(Event(f, f"{self.names[s.attacker]}: {s.hits}-hit string, {s.damage:.0f}% on {name}", big=True))
                     elif s.hits:
-                        out.append(Event(f, f"{self.names[s.attacker]} hits {name} ({s.damage:.0f}%)"))
+                        out.append(Event(f, f"{self.names[s.attacker]} hits {name}"))
                     self.strings.pop(p, None)
             if ps.action != act:
                 a = ps.action
@@ -113,13 +121,13 @@ class PlayTracker:
         return out
 
     def _stock_lost(self, p: int, opp: int | None, f: int, pct: float, left: int, s: _String | None) -> Event:
-        name, tail = self.names[p], f"({left} left)" if left else "(that's the game)"
+        name, tail = self.names[p], "" if left else " (that's the game)"
         if f - self.last_hit.get(p, -10**9) > SELF_DESTRUCT or opp is None:
-            return Event(f, f"{name} self-destructs at {pct:.0f}% {tail}", big=True)
+            return Event(f, f"{name} self-destructs at {pct:.0f}%{tail}", big=True)
         killer = self.names[opp]
         if s and s.start_pct < 5 and s.hits >= 3:
-            return Event(f, f"Zero-to-death! {killer} takes {name}'s stock with a {s.hits}-hit string {tail}", big=True)
-        return Event(f, f"{killer} takes {name}'s stock at {pct:.0f}% {tail}", big=True)
+            return Event(f, f"Zero-to-death! {killer} KOs {name} with a {s.hits}-hit string{tail}", big=True)
+        return Event(f, f"{killer} KOs {name} at {pct:.0f}%{tail}", big=True)
 
 
 def commentator_enabled() -> bool:
@@ -159,7 +167,7 @@ def elevenlabs_key() -> str | None:
     return None
 
 
-def speak(text: str, key: str, voice: str = DEFAULT_VOICE, timeout: float = 8.0) -> bytes:
+def speak(text: str, key: str, voice: str, timeout: float = 8.0) -> bytes:
     """One line as MP3 (ElevenLabs text-to-speech). Raises on HTTP errors."""
     import httpx
     r = httpx.post(f"https://api.elevenlabs.io/v1/text-to-speech/{voice}", params={"output_format": "mp3_44100_64"},
@@ -168,16 +176,50 @@ def speak(text: str, key: str, voice: str = DEFAULT_VOICE, timeout: float = 8.0)
     return r.content
 
 
-SYSTEM = """You are the play-by-play commentator for a live exhibition of Super Smash Bros. Melee where AI bots \
-play each other. Write ONE short line (at most 25 words) for the viewers about what just happened, in the voice of \
-an energetic but knowledgeable Melee caster. Stay accurate: only describe what the events and score say, never \
-invent specific moves or techniques. Vary your phrasing, don't repeat earlier lines, and when nothing big \
-happened, talk about momentum, the score, or the matchup instead."""
-SPOKEN = "\n\nThis line is read aloud live, so keep it to at most 15 words."
+SYSTEM = """You write the commentary booth for a live exhibition of Super Smash Bros. Melee where AI bots play \
+each other. Two casters share the desk:
+{casters}
+
+Write what they say next about what just happened: one turn, or two when there is something to react to. Each turn is one short sentence of at most 16 words, the way people talk over a \
+fast game. Small moments get one turn from one caster.
+
+Sound like a real tournament broadcast:
+- React, don't report. The viewers see the percent and stock counters on screen, so do not read them out. Mention a \
+number only when it is the story: a kill at an absurdly low or high percent, a last-stock situation, a comeback.
+- Never summarise the score, never list stocks or percent for both players, and do not count the stocks left \
+after a KO.
+- Use short names: the bot ("Phillip") or the character ("Fox"), not both every time.
+- Call the moment (the punish, the edgeguard, the escape, the momentum swing), then let the other caster add a \
+reaction, a joke or what it means for the game. They may disagree, and say each other's name only now and then.
+- Build storylines across the game: who is adapting, who looks rattled, what the favourite needs to do. In quiet \
+stretches one caster fills with the matchup or the players, briefly.
+- Stay accurate. In each event the first player named did it to the second: "A KOs B" means B lost the stock. \
+Describe only what the events say: never invent moves, techniques, counts ("the third time") or habits, and \
+if the events do not say how something happened, do not say how. With nothing new to call, talk about the matchup, \
+the two bots or what is at stake, not about play you were not shown.
+- Vary the phrasing: never reuse a sentence the booth already said, and do not open twice the same way."""
+SPOKEN = """
+
+These turns are read aloud live, so keep each to at most 14 words. Start a turn with one audio tag in square \
+brackets when the delivery matters, such as [shouting], [excited], [gasps], [laughs], [groans], [deadpan] or \
+[whispers]; save [shouting] for stocks and big punishes. Write no other brackets."""
 
 TOOL = {"type": "function", "function": {
-    "name": "say", "description": "Say one commentary line on stream.",
-    "parameters": {"type": "object", "properties": {"line": {"type": "string"}}, "required": ["line"]}}}
+    "name": "say", "description": "The casters' next turns on stream, in order.",
+    "parameters": {"type": "object", "required": ["turns"], "properties": {"turns": {
+        "type": "array", "minItems": 1, "maxItems": 2, "items": {
+            "type": "object", "required": ["speaker", "line"],
+            "properties": {"speaker": {"type": "string", "enum": list(CASTERS)}, "line": {"type": "string"}}}}}}}}
+
+
+def turns_of(args: dict | None) -> list[tuple[str, str]]:
+    """(caster, line) pairs from the model's reply; an unknown speaker becomes the play-by-play caster."""
+    out = []
+    for t in (args or {}).get("turns") or []:
+        if isinstance(t, dict) and str(t.get("line") or "").strip():
+            who = t.get("speaker") if t.get("speaker") in CASTERS else next(iter(CASTERS))
+            out.append((who, str(t["line"]).strip()))
+    return out[:2]
 
 
 def for_match(status: dict, replay) -> "Commentary":
@@ -192,7 +234,7 @@ def for_match(status: dict, replay) -> "Commentary":
         who = label(spec) if spec else f"CPU {v['cpu_level']}" if v.get("cpu_level") else v.get("name") or f"P{p}"
         kind = kind_of(spec) if spec else "cpu" if v.get("cpu_level") else "player"
         players[int(p)] = (who, kind, char_name(v.get("character") or ""))
-    names = {p: f"{who}'s {char}" for p, (who, _, char) in players.items()}
+    names = {p: f"{who} ({char})" for p, (who, _, char) in players.items()}  # unambiguous in "A KOs B"
     vs = " vs ".join(f"{who} ({kind}, {char}{f', {elo[str(p)]} Elo' if str(p) in elo else ''})"
                      for p, (who, kind, char) in sorted(players.items()))
     games = f", game {s['game'] + 1} of {s['games']}" if s.get("games", 1) > 1 else ""
@@ -219,6 +261,7 @@ class Commentary:
         self.inbox: queue.Queue = queue.Queue()
         self.score = ""
         self.stop_ev = threading.Event()
+        self.clips = 0
         self.thread = threading.Thread(target=self._run, daemon=True, name="commentator")
         self.thread.start()
 
@@ -255,6 +298,24 @@ class Commentary:
     def join(self, timeout: float = 12) -> None:
         self.thread.join(timeout)
 
+    def _voice(self, turns: list[tuple[str, str]], key: str) -> list[dict]:
+        """Synthesize every turn at once (each in its caster's voice); one dict of audio fields per turn, in order."""
+        def one(who: str, line: str) -> dict:
+            t0 = time.perf_counter()
+            try:
+                mp3 = speak(line, key, CASTERS[who][0])
+            except Exception as e:  # noqa: BLE001 - the text line still goes out
+                return {"tts_error": f"{type(e).__name__}: {e}"[:200]}
+            with self.lock:
+                self.clips += 1
+                out = self.audio_dir / f"{self.clips:03d}.mp3"
+            self.audio_dir.mkdir(exist_ok=True)
+            out.write_bytes(mp3)
+            return {"audio": str(out), "audio_s": round(len(mp3) * 8 / (TTS_KBPS * 1000), 2),
+                    "tts_s": round(time.perf_counter() - t0, 2)}
+        with ThreadPoolExecutor(len(turns)) as pool:
+            return list(pool.map(lambda t: one(*t), turns))
+
     def _run(self) -> None:
         try:
             self._loop()
@@ -265,7 +326,8 @@ class Commentary:
     def _loop(self) -> None:
         llm, model, said, pending = None, "", [], []
         last_line, last_check, enabled, voice_key = 0.0, 0.0, False, None
-        speaking_until, clips = 0.0, 0
+        speaking_until = 0.0
+        system = SYSTEM.format(casters="\n".join(f"- {name}, {role}" for name, (_, role) in CASTERS.items()))
         while True:
             try:
                 pending.append(self.inbox.get(timeout=0.25))
@@ -296,31 +358,25 @@ class Commentary:
                     return
                 continue
             events, pending = pending, []
-            user = (f"Match: {self.context}\nScore now: {self.score or 'game starting'}\n"
+            user = (f"Match: {self.context}\n"
+                    f"On-screen counters, for your orientation only: {self.score or 'game starting'}\n"
                     f"What just happened (oldest first):\n" + "\n".join(f"- {e.text}" for e in events[-20:]) +
-                    ("\nEarlier lines you said:\n" + "\n".join(f"- {s}" for s in said[-4:]) if said else ""))
-            rep = llm.choose(SYSTEM + (SPOKEN if voice_key else ""), user, TOOL)
-            line = (rep.args or {}).get("line", "").strip()
+                    ("\nWhat the booth said last:\n" + "\n".join(f"- {s}" for s in said[-6:]) if said else ""))
+            rep = llm.choose(system + (SPOKEN if voice_key else ""), user, TOOL)
+            turns = turns_of(rep.args)
             last_line = time.time()
-            if line:
-                said.append(line)
-                rec = {"type": "line", "text": line, "frame": max(e.frame for e in events), "model": rep.model,
-                       "latency_s": round(rep.latency_s, 2), "prompt_tokens": rep.prompt_tokens,
-                       "completion_tokens": rep.completion_tokens, "ts": round(max(e.ts for e in events), 3)}
-                if voice_key:
-                    t0 = time.perf_counter()
-                    try:
-                        mp3 = speak(line, voice_key)
-                        self.audio_dir.mkdir(exist_ok=True)
-                        clips += 1
-                        out = self.audio_dir / f"{clips:03d}.mp3"
-                        out.write_bytes(mp3)
-                        secs = len(mp3) * 8 / (TTS_KBPS * 1000)
-                        rec |= {"audio": str(out), "audio_s": round(secs, 2), "tts_s": round(time.perf_counter() - t0, 2)}
-                        speaking_until = time.time() + secs
-                    except Exception as e:  # noqa: BLE001 - the text line still goes out
-                        rec["tts_error"] = f"{type(e).__name__}: {e}"[:200]
-                self.write(rec)
+            if turns:
+                frame, ts = max(e.frame for e in events), round(max(e.ts for e in events), 3)
+                audio = self._voice(turns, voice_key) if voice_key else [{}] * len(turns)
+                for n, ((who, line), clip) in enumerate(zip(turns, audio)):
+                    text = TAG.sub(" ", line).strip()
+                    said.append(f"{who}: {text}")
+                    rec = {"type": "line", "speaker": who, "text": text, "frame": frame, "model": rep.model, "ts": ts}
+                    if n == 0:
+                        rec |= {"latency_s": round(rep.latency_s, 2), "prompt_tokens": rep.prompt_tokens,
+                                "completion_tokens": rep.completion_tokens}
+                    self.write(rec | clip)
+                speaking_until = time.time() + sum(c.get("audio_s", 0) for c in audio)
             elif rep.error:
                 self.write({"type": "error", "text": rep.error[:200], "ts": round(time.time(), 3)})
             if finishing:
