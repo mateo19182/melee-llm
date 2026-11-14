@@ -25,9 +25,13 @@ class PausedLLM(LLMAgent):
         due = self.ex.idle or (gs.frame - self.last_decision >= self.interval and self.ex.interruptible)
         if due and self.can_decide(me):
             obs, user = self.snapshot(gs)
+            shots = self.capture(int(gs.frame))  # the game is blocked on our input, so this is frame gs.frame
+            self.next_images = [s.data_uri() for s in shots]
             t0 = time.perf_counter()
             rep = self.think(user)
             self.apply(gs, obs, user, rep, int(gs.frame), think_s=round(time.perf_counter() - t0, 3),
-                       latency_frames=0, stale_frames=0)
+                       latency_frames=0, stale_frames=0, shots=shots)
             self.last_decision = gs.frame
+        elif self.camera and self.clip > 1:
+            self.camera.tick(int(gs.frame), self.clip_every)
         self.ex.step(gs)

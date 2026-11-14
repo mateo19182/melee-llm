@@ -74,9 +74,13 @@ class LLM:
         self.client = openai.OpenAI(base_url=base_url or os.environ.get("MELEE_LLM_BASE_URL", DEFAULT_BASE_URL),
                                     api_key=api_key(), timeout=timeout, max_retries=0)
 
-    def choose(self, system: str, user: str, tool: dict) -> Reply:
-        """Ask for one call of `tool`. mode='tool' uses function calling, 'json' asks for a bare JSON object."""
-        msgs = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+    def choose(self, system: str, user: str, tool: dict, images: list[str] | None = None) -> Reply:
+        """Ask for one call of `tool`. mode='tool' uses function calling, 'json' asks for a bare JSON object.
+        `images` are data URIs (or URLs), sent before the text as OpenAI `image_url` parts."""
+        content: str | list = user
+        if images:
+            content = [{"type": "image_url", "image_url": {"url": u}} for u in images] + [{"type": "text", "text": user}]
+        msgs = [{"role": "system", "content": system}, {"role": "user", "content": content}]
         kw: dict = {"model": self.model, "max_tokens": self.max_tokens}
         if self.temperature is not None:
             kw["temperature"] = self.temperature

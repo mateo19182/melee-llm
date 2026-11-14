@@ -28,6 +28,7 @@ class LiveLLM(LLMAgent):
         self.inflight = False
         self.pending = None  # reply waiting for a non-interruptible macro to finish
         self.last_asked = -10**9
+        self.seen_frame = 0  # latest game frame, read by the worker thread to label screenshots
 
     def _worker(self) -> None:
         while not self._stop.is_set():
@@ -35,7 +36,11 @@ class LiveLLM(LLMAgent):
                 job = self._req.get(timeout=.2)
             except queue.Empty:
                 continue
-            self._res.put((job, self.think(job[2])))
+            # Screenshot here, off the game thread (a grab costs ~10-25 ms, step() has 16): it shows the game a
+            # frame or two after job[0]; each Shot carries the frame step() last saw when it was grabbed.
+            shots = self.capture(self.seen_frame) if self.camera else []
+            self.next_images = [s.data_uri() for s in shots]
+            self._res.put(((*job, shots), self.think(job[2])))
 
     def _default(self, gs: melee.GameState) -> dict:
         me, op = gs.players[self.port], gs.players[self.opponent_port]
@@ -46,6 +51,9 @@ class LiveLLM(LLMAgent):
 
     def step(self, gs: melee.GameState) -> None:
         self.begin_frame(gs)
+        self.seen_frame = int(gs.frame)
+        if self.camera and self.clip > 1 and not self.camera.ring_running:
+            self.camera.start_ring(lambda: self.seen_frame, self.clip_every / 60)
         me = gs.players[self.port]
         try:
             self.pending = (*self._res.get_nowait(), int(gs.frame))
@@ -53,11 +61,11 @@ class LiveLLM(LLMAgent):
         except queue.Empty:
             pass
         if self.pending and self.ex.interruptible and self.can_decide(me):
-            (asked, obs, user), rep, arrived = self.pending
+            (asked, obs, user, shots), rep, arrived = self.pending
             self.pending = None
             stale = int(gs.frame) - asked
             if stale <= self.max_stale:
-                self.apply(gs, obs, user, rep, asked, latency_frames=arrived - asked, stale_frames=stale)
+                self.apply(gs, obs, user, rep, asked, latency_frames=arrived - asked, stale_frames=stale, shots=shots)
             else:
                 self.log.write({"type": "dropped", "frame": int(gs.frame), "asked_frame": asked, "stale_frames": stale,
                                 "decision": rep.args, "latency_s": round(rep.latency_s, 3)})
@@ -75,5 +83,7 @@ class LiveLLM(LLMAgent):
         super().on_game_end(gs)
 
     def close(self) -> None:
+        if self.camera:
+            self.camera.stop_ring()
         self._stop.set()
         self._thread.join(timeout=2)
