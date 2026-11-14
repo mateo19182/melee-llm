@@ -38,19 +38,30 @@ def blocking(fn, *a, **kw):
 
 # --------------------------------------------------------------------------- pages and assets
 
-class RevalidatedStatic(StaticFiles):
-    """Without Cache-Control, browsers cache JS heuristically and keep running old modules after a deploy."""
+class CachedStatic(StaticFiles):
+    """Static files with an explicit Cache-Control. Without one, Cloudflare's edge and browsers cache JS/CSS
+    heuristically and keep serving copies from earlier deploys."""
+
+    def __init__(self, *a, cache: str, **kw):
+        super().__init__(*a, **kw)
+        self.cache = cache
 
     def file_response(self, *a, **kw) -> Response:
         resp = super().file_response(*a, **kw)
-        resp.headers["Cache-Control"] = "no-cache"
+        resp.headers["Cache-Control"] = self.cache
         return resp
 
 
+def static_version() -> str:
+    return str(max(int(p.stat().st_mtime) for p in STATIC.rglob("*") if p.suffix in (".js", ".css")))
+
+
 async def index(_: Request) -> Response:
-    # Version the entry module by the newest static file, so a deploy also replaces copies cached before RevalidatedStatic.
-    version = max(int(p.stat().st_mtime) for p in STATIC.rglob("*.js"))
-    html = (STATIC / "index.html").read_text().replace('src="/static/app.js"', f'src="/static/app.js?v={version}"')
+    # The entry module and stylesheet load from /static/v<newest mtime>/, so every relative import is versioned too:
+    # a deploy changes every URL, and those URLs can be cached forever.
+    v = static_version()
+    html = (STATIC / "index.html").read_text()
+    html = html.replace('"/static/app.js"', f'"/static/v{v}/app.js"').replace('"/static/style.css"', f'"/static/v{v}/style.css"')
     return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
 
 
@@ -348,7 +359,9 @@ routes = [
     Route("/api/docs", api_docs),
     Route("/api/docs/search", api_docs_search),
     Route("/api/docs/{name}", api_doc),
-    Mount("/static", RevalidatedStatic(directory=STATIC)),
+    # Any version serves the current files; a stale version in a cached index.html then still gets working code.
+    Mount("/static/v{version:int}", CachedStatic(directory=STATIC, cache="public, max-age=31536000, immutable")),
+    Mount("/static", CachedStatic(directory=STATIC, cache="no-cache")),
     # Slippi Lab's build references its assets from the site root
     Mount("/assets", StaticFiles(directory=SLIPPILAB / "assets", check_dir=False)),
     Mount("/zips", StaticFiles(directory=SLIPPILAB / "zips", check_dir=False)),
