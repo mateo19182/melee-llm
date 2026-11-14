@@ -31,7 +31,7 @@ HEADLESS_MAX = 4  # fast web jobs at once
 # Slippi spectator ports: the one resource parallel Dolphins share. Each track draws from its own block.
 BOTWRITER_PORTS = range(51500, 51600)  # default of $MELEE_SLIPPI_PORTS (botwriter/dolphin.py, flock-claimed)
 HEADLESS_PORTS = range(51700, 51800)  # web jobs in fast mode
-JEV_PORTS = range(51840, 51860)
+# scripts/coach_pilot.py takes --port0 (default 51480; the Jev pilot used 51840-51859)
 PERCEPTION_PORTS = range(51860, 51880)
 LLM_ARENA_PORTS = range(51880, 51920)
 BENCH_PORTS = range(51920, 52000)

@@ -24,6 +24,7 @@ import struct
 
 _LEN = struct.Struct(">I")
 
+
 def send(f, obj) -> None:
     data = pickle.dumps(obj, protocol=5)
     f.write(_LEN.pack(len(data)) + data)

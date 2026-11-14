@@ -3,11 +3,11 @@
 [Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev) is a "System One" model: structured state and typed questions in, typed answers with calibrated probabilities out, no free text. Here it replaces the LLM in two places: picking the next macro (`jev_live`, `jev_paused`) and picking Reyn's command (`coach_jev`).
 
 ```sh
-uv run match.py --iso ~/melee.iso --p1 jev_live --p2 cpu:5 --mode lockstep
-uv run match.py --iso ~/melee.iso --p1 "jev_paused:,interval=30" --p2 cpu:5 --mode paused
-uv run match.py --iso ~/melee.iso --p1 "coach_jev:,interval=300" --p2 cpu:9 --mode lockstep
-uv run --with pytest pytest -q tests/test_jev.py          # offline
-uv run --with pytest python tests/test_jev_bench.py       # live latency/throughput, about $0.02
+uv run -m melee_llm.match --iso ~/melee.iso --p1 jev_live --p2 cpu:5 --mode lockstep
+uv run -m melee_llm.match --iso ~/melee.iso --p1 "jev_paused:,interval=30" --p2 cpu:5 --mode paused
+uv run -m melee_llm.match --iso ~/melee.iso --p1 "coach_jev:,interval=300" --p2 cpu:9 --mode lockstep
+uv run pytest -q tests/test_jev.py          # offline
+uv run python tests/test_jev_bench.py       # live latency/throughput, about $0.02
 ```
 
 Specs (the text after `:` is `[model][,key=value...]`; leave the model empty for `jev-latest`, keep the colon):

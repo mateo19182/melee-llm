@@ -108,7 +108,7 @@ Entrant("reyn:lasers", "Reyn lasers", "learned", "both", "reyn:Keep your distanc
         "Reyn holding one command all game.", gpu=True),
 ```
 
-Any spec `match.py` understands works, plus the bot-writer's `bot:PATH` and `baseline:NAME`. A wall-clock kind (`llm_live`, `jev_live`, `coach`, `coach_jev`) makes the entrant real-time automatically. New bot-writer sessions show up as `written:` entrants on the next start.
+Any spec `melee_llm/players.py` understands works, including the bot-writer's `bot:PATH` and `baseline:NAME`. A wall-clock kind (`llm_live`, `jev_live`, `coach`, `coach_jev`) makes the entrant real-time automatically. New bot-writer sessions show up as `written:` entrants on the next start.
 
 ## Mateo via netplay
 

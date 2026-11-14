@@ -69,7 +69,7 @@ uv run python -m melee_llm.netplay screenshot  # PNG of :98
 
 Then on the laptop: Launcher → Play → Online → **Direct** → type the bot's code. Pick your character and press Start. Who picks the stage is up to Slippi; if it's the bot, it picks `--stage`. After a game you both go back to the character screen, still connected, and the bot readies up again.
 
-- **Players**: every `match.py` spec except `cpu:N` (a CPU level is a local VS setting) and `llm_paused` (it blocks the game, which would freeze you too). Speed matters: the game runs at the bot's pace for both of you.
+- **Players**: every player spec (`melee_llm/players.py`) except `cpu:N` (a CPU level is a local VS setting) and `llm_paused` (it blocks the game, which would freeze you too). Speed matters: the game runs at the bot's pace for both of you.
   - HAL (4 ms per frame), Phillip (2 ms) and MIMIC are real time.
   - Faynt 10M on the CPU (8 ms) is borderline.
   - Reyn and `coach:` (35 ms) run at about 20 fps.

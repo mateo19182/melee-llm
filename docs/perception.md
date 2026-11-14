@@ -7,8 +7,8 @@ Short answer from the pilot (2026-11-14): **a screenshot alone hurts; adding one
 ## Usage
 
 ```sh
-uv run match.py --iso ~/melee.iso --mode paused --p1 "llm_paused:claude-haiku-4-5-20251001,obs=image" --p2 cpu:5
-uv run match.py --iso ~/melee.iso --p1 "llm_live:claude-haiku-4-5-20251001,obs=both,clip=3" --p2 cpu:5
+uv run -m melee_llm.match --iso ~/melee.iso --mode paused --p1 "llm_paused:claude-haiku-4-5-20251001,obs=image" --p2 cpu:5
+uv run -m melee_llm.match --iso ~/melee.iso --p1 "llm_live:claude-haiku-4-5-20251001,obs=both,clip=3" --p2 cpu:5
 ```
 
 Spec keys for `llm_paused` and `llm_live`:

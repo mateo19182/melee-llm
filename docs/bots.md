@@ -3,7 +3,7 @@
 `melee_llm/bots/` wraps five published Melee policies as `Agent`s, so they can play on the ladder and a coach can steer them.
 
 ```sh
-uv run match.py --iso ~/melee.iso --p1 hal:MASTER --char1 FOX --p2 phillip:gm --char2 MARTH --mode fast
+uv run -m melee_llm.match --iso ~/melee.iso --p1 hal:MASTER --char1 FOX --p2 phillip:gm --char2 MARTH --mode fast
 ```
 
 The spec after the colon picks the style or model. Leave it out to use the default:
@@ -53,7 +53,7 @@ Latency below is the parent→child→parent round trip per frame. It comes from
 | Startup | about 12 s (CUDA-graph capture) | about 2 s | 5 to 13 s (torch.compile with CUDA graphs) | about 3 s |
 | Steering | `identity`, `return_target`, `temperature` | `name`, `rating`, `temperature` | `temperature`, `top_k`, `top_p` | `temperature` |
 
-Two bots in one match step one after the other in `runner.play`. HAL plus Phillip takes 6.3 ms p50 and 7.6 ms p99 per frame. MIMIC plus Faynt takes 12.4 ms p50 and 16.6 ms p99, which is too slow for `watch` mode.
+These sums were measured when two bots in one match stepped one after the other: HAL plus Phillip took 6.3 ms p50 and 7.6 ms p99 per frame, MIMIC plus Faynt 12.4 ms p50 and 16.6 ms p99, too slow for `watch` mode. Since 2026-11-14 `runner.play` gives both bots the frame before reading either answer, so a frame costs about the slower bot ([performance.md](performance.md)); the pairs have not been re-measured on an idle machine.
 
 ### Steering knobs and when they take effect
 
