@@ -24,6 +24,9 @@ def main() -> None:
     r.add_argument("--max-games", type=int, default=0)
     r.add_argument("--only", action="append", default=[], help="restrict to these entrant ids (repeatable)")
     r.add_argument("--stagger", type=float, default=d.stagger_s)
+    r.add_argument("--ports", default=f"{d.ports[0]}-{d.ports[1]}", help="Slippi port range [start-stop)")
+    r.add_argument("--context", action="append", default=[], help="another results.jsonl whose games join the fit")
+    r.add_argument("--gpu-slots", type=int, default=d.gpu_slots)
     r.add_argument("--out", default=str(scheduler.DATA))
     o = sub.add_parser("one", help="internal: play one game, print the result as JSON")
     o.add_argument("--iso", required=True)
@@ -47,7 +50,8 @@ def main() -> None:
         kv = lambda s: {k: int(v) for k, v in (x.split("=") for x in s.split(",") if x)}  # noqa: E731
         cfg = scheduler.Config(iso=a.iso, budget_tokens=int(a.budget * 1e6), target=a.target, max_parallel=a.parallel,
                                load_cap=a.load_cap, defer_unit=a.defer_unit, max_games=a.max_games, only=a.only,
-                               stagger_s=a.stagger)
+                               stagger_s=a.stagger, ports=tuple(int(x) for x in a.ports.split("-")), context=a.context,
+                               gpu_slots=a.gpu_slots)
         cfg.slots.update(kv(a.slots))
         cfg.provider_slots.update(kv(a.provider_slots))
         scheduler.Bench(cfg, Path(a.out)).run()

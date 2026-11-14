@@ -4,7 +4,7 @@ One Choice per call over Reyn's command ids plus `keep` and `none` (108 options 
 Jev's 255 limit). Same prompt state, interval, history and .coach.jsonl log as `coach:`; each decision record
 also carries the top-k probabilities and the answer's confidence.
 
-match.py spec: coach_jev[:<model>][,interval=60,command=<id>,top_k=5,shuffle=1,timeout=3,history=4]
+match.py spec: coach_jev[:<model>][,interval=60,command=<id>,top_k=5,shuffle=1,timeout=3,history=4,menu=a|b,features=1]
 """
 from __future__ import annotations
 
@@ -58,7 +58,11 @@ class JevCoach(CoachedBot):
             self.qrng.shuffle(items)
         q = {"command": J.choice(dict(items), "Which strategy command should the bot (YOU) follow for the next "
                                               "few seconds to win?")}
-        rep = self.jev.ask({"role": self.brief, "situation": user.removesuffix("\nChoose.")}, q)
+        situation, _, feats = user.removesuffix("\nChoose.").partition("\nFEATURES:\n")
+        state = {"role": self.brief, "situation": situation}
+        if feats:  # named fields, as Jev's docs advise (features=1)
+            state["features"] = dict(ln.split(": ", 1) for ln in feats.splitlines() if ": " in ln)
+        rep = self.jev.ask(state, q)
         out = Reply(None, model=rep.model, latency_s=rep.latency_s, prompt_tokens=rep.input_tokens,
                     completion_tokens=rep.output_tokens, mode="jev", error=rep.error, text=rep.error[:400])
         if not rep.ok:

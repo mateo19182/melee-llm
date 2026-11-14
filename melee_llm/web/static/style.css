@@ -225,12 +225,35 @@ td.when { color: var(--dim); white-space: nowrap; }
 .sb-idle { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 22px;
   border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
 .sb-idle b { font: italic 700 22px var(--display); text-transform: uppercase; letter-spacing: .04em; }
-.video-wrap { position: relative; background: #000; border-radius: var(--radius); overflow: hidden; aspect-ratio: 960 / 760; max-height: calc(100vh - 230px);
-  margin: 0 auto; border: 1px solid var(--line); box-shadow: 0 0 0 1px rgba(0, 0, 0, .6), 0 20px 50px rgba(0, 0, 10, .5), 0 0 60px rgba(70, 100, 255, .08); }
+/* Live player: the stream is 960x760 (game + overlay line). Width follows the viewport height so the frame
+   never letterboxes, and it stays centred in its column. */
+.video-wrap { position: relative; width: min(100%, calc((100vh - 230px) * 960 / 760)); aspect-ratio: 960 / 760; margin: 0 auto;
+  background: #000; border-radius: var(--radius); overflow: hidden; outline: none; cursor: pointer;
+  border: 1px solid var(--line); box-shadow: 0 0 0 1px rgba(0, 0, 0, .6), 0 20px 50px rgba(0, 0, 10, .5), 0 0 60px rgba(70, 100, 255, .08); }
 .video-wrap video { width: 100%; height: 100%; display: block; object-fit: contain; }
+.video-wrap:fullscreen { width: 100%; height: 100%; aspect-ratio: auto; border: 0; border-radius: 0; }
 .video-msg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--dim); pointer-events: none;
   font: italic 600 15px var(--display); letter-spacing: .12em; text-transform: uppercase; }
 .video-msg:empty { display: none; }
+.video-wrap.loading::after { content: "Loading Dolphin…"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 45%, #10173f, #000 75%); color: var(--dim); pointer-events: none;
+  font: italic 600 15px var(--display); letter-spacing: .12em; text-transform: uppercase; }
+.vp-bar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 1; display: flex; align-items: center; gap: 10px; padding: 26px 12px 10px;
+  background: linear-gradient(transparent, rgba(4, 6, 20, .85)); font-size: 12.5px; color: var(--dim); cursor: default;
+  opacity: 0; transform: translateY(4px); transition: opacity .2s var(--ease), transform .2s var(--ease); }
+.video-wrap.active .vp-bar, .video-wrap.paused .vp-bar, .video-wrap:focus-visible .vp-bar, .vp-bar:hover { opacity: 1; transform: none; }
+.video-wrap:not(.active):not(.paused) { cursor: none; }
+.vp-bar .lag { font-variant-numeric: tabular-nums; }
+.vp-btn { display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text); cursor: pointer; }
+.vp-btn::before { display: none; }
+.vp-btn:hover:not(:disabled) { transform: none; background: rgba(255, 255, 255, .1); }
+.vp-btn svg { width: 20px; height: 20px; fill: currentColor; }
+.vp-live { display: inline-flex; align-items: center; gap: 7px; height: 26px; padding: 0 12px; font-size: 13px; letter-spacing: .12em; color: var(--text); }
+.vp-live::before { background: rgba(255, 59, 85, .16); border-color: rgba(255, 59, 85, .5); }
+.vp-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--live); box-shadow: 0 0 8px var(--live); }
+.vp-live.behind { color: var(--dim); }
+.vp-live.behind::before { background: transparent; border-color: var(--line-hi); }
+.vp-live.behind .vp-dot { background: var(--faint); box-shadow: none; }
 .video-bar { display: flex; gap: 14px; align-items: center; margin-top: 10px; font-size: 12.5px; color: var(--dim); flex-wrap: wrap; }
 .video-bar .lag { font-variant-numeric: tabular-nums; }
 .queue-strip { margin-top: 18px; }
@@ -545,7 +568,7 @@ mark { background: rgba(243, 189, 79, .28); color: inherit; border-radius: 2px; 
   .live-layout, .game-layout { grid-template-columns: 1fr; }
   .panel { height: 70vh; position: static; }
   .replay-frame { height: 70vh; }
-  .video-wrap { max-height: none; }
+  .video-wrap { width: 100%; }
 }
 @media (max-width: 900px) {
   .doc-layout { grid-template-columns: 1fr; gap: 0; }

@@ -125,7 +125,35 @@ def registry() -> list[Entrant]:
         Entrant("human:mateo", "Mateo", "human", "realtime", None,
                 "Mateo over Slippi netplay (docs/netplay.md). Slot reserved; no games yet.", active=False),
     ]
+    e += ablations()
     return e
+
+
+JEV_TOP6 = "stock_protection|edgeguard_from_the_stage|defensive_play|left_side_move_there|landing_punish|right_side_move_there"
+
+
+def ablations() -> list[Entrant]:
+    """Coach deep-dive variants (docs/coach-deepdive.md). Inactive: run with `bench run --only ...`."""
+    i = f"interval={COACH_INTERVAL}"
+    rows = [
+        ("coach:random,fixed", "Random coach, one command", f"coach:random,{i},p_change=0", "none",
+         "One random command, set at the start and held all game."),
+        ("coach:random,sticky", "Random coach, sticky", f"coach:random,{i},p_change=0.25", "none",
+         "A random command, changed on a quarter of the calls (Jev's effective change rate)."),
+        ("coach:random,jev6", "Random coach, Jev's top 6", f"coach:random,{i},menu={JEV_TOP6}", "none",
+         "A random pick every 5 s among the six commands Jev holds most (or none)."),
+        ("coach_jev,interval=60", "Jev coach, 1 s", "coach_jev:,interval=60", "jev", "Jev picks every second."),
+        ("coach_jev,interval=900", "Jev coach, 15 s", "coach_jev:,interval=900", "jev", "Jev picks every 15 s."),
+        ("coach_jev,features", "Jev coach + features", f"coach_jev:,{i},features=1", "jev",
+         "Jev every 5 s, with named features computed in code (distance, states, percent bands, last window)."),
+        ("coach:claude-haiku-4-5-20251001,features", "Haiku coach + features",
+         f"coach:claude-haiku-4-5-20251001,{i},features=1", "claude", "Haiku every 5 s, with the same named features."),
+    ]
+    out = [Entrant(eid, label, "coach", "realtime", spec, about, provider=prov, active=False, gpu=True)
+           for eid, label, spec, prov, about in rows]
+    out.append(Entrant("reyn:stock_protection", "Reyn, fixed \"Don't die.\"", "learned", "both", "reyn:Don't die.",
+                       "Reyn holding Jev's favourite command all game, no coach.", active=False, gpu=True))
+    return out
 
 
 def by_id() -> dict[str, Entrant]:
@@ -162,7 +190,7 @@ def resolve(name: str, entrants: dict[str, Entrant] | None = None) -> str | None
     if kind in ("coach", "coach_jev"):
         if any(o.startswith(("body=", "body_arg=")) and o not in ("body=reyn",) for o in opts):
             return None
-        if f"interval={COACH_INTERVAL}" not in opts:
+        if f"interval={COACH_INTERVAL}" not in opts or set(opts) - {f"interval={COACH_INTERVAL}", "body=reyn"}:
             return None
         model = {"haiku": "claude-haiku-4-5-20251001", "sonnet": "claude-sonnet-5-5"}.get(head, head)
         return "coach_jev" if kind == "coach_jev" else (f"coach:{model}" if f"coach:{model}" in entrants else None)

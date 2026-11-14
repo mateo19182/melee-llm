@@ -5,8 +5,11 @@ since its last call and the body's valid commands, and the LLM answers with stri
 (or "keep"/"none") plus a one-line rationale. step() never blocks. Each decision is logged to
 <replay>.p<port>.coach.jsonl. See docs/coach.md.
 
-match.py spec: coach:<model>[,body=reyn|hal,interval=60,body_arg=...,command=<id>,timeout=10]
-<model> "random" picks a uniformly random valid command at the same interval, without an LLM.
+match.py spec: coach:<model>[,body=reyn|hal,interval=60,body_arg=...,command=<id>,timeout=10,menu=a|b,features=1]
+<model> "random" picks a uniformly random valid command at the same interval, without an LLM; `p_change=0.4` makes
+it keep the current command with probability 0.6 (0: one random command held all game).
+`menu=id1|id2|...` restricts the command menu (plus keep/none); `features=1` adds named features computed in code
+(docs/coach-deepdive.md).
 """
 from __future__ import annotations
 
@@ -27,7 +30,7 @@ from melee_llm.bots import HAL, ReynBot
 from melee_llm.bots.agent import VENDOR
 from melee_llm.llm import LLM, Reply
 from melee_llm.runner import ROOT
-from melee_llm.state import EventTracker, observe, render, stage_text
+from melee_llm.state import AERIALS, LEDGE, SHIELDING, EventTracker, attack_phase, in_hitstun, observe, render, stage_text
 
 MODELS = {"haiku": "claude-haiku-4-5-20251001", "sonnet": "claude-sonnet-5-5"}
 REYN_DOCS = VENDOR / "Reyn/docs/commands.md"
@@ -118,11 +121,94 @@ HAL_SCHEMA = {"type": "object", "required": ["return_target", "temperature", "wh
               "properties": {"return_target": {"type": ["number", "null"]}, "temperature": {"type": "number"}, "why": WHY}}
 
 
+def _band(pct: float) -> str:
+    return "low (<40%)" if pct < 40 else "mid (40-90%)" if pct < 90 else "kill range (90%+)"
+
+
+def _dist(d: float) -> str:
+    return "touching (<20)" if d < 20 else "close (20-40)" if d < 40 else "mid (40-80)" if d < 80 else "far (80+)"
+
+
+def _situation(ps: melee.PlayerState) -> str:
+    if ps.action in LEDGE:
+        return "on ledge"
+    if ps.off_stage:
+        return "offstage"
+    if in_hitstun(ps):
+        return "in hitstun"
+    if ps.action in SHIELDING:
+        return "shielding"
+    phase = attack_phase(ps)
+    if phase:
+        return {"startup": "attack startup", "ACTIVE": "attacking", "endlag": "attack endlag (punishable)"}[phase]
+    return "grounded" if ps.on_ground else "airborne"
+
+
+class WindowStats:
+    """Per-frame tallies between two coach calls (for `features=1`)."""
+
+    def __init__(self):
+        self.n = 0
+        self.c: dict[str, int] = {}
+        self.start: tuple | None = None
+        self.last: tuple | None = None
+
+    def update(self, me: melee.PlayerState, op: melee.PlayerState) -> None:
+        self.n += 1
+        dx, dy = float(op.position.x - me.position.x), float(op.position.y - me.position.y)
+        tags = [_dist((dx * dx + dy * dy) ** .5)]
+        tags += [f"opp {t}" for t, on in (("shielding", op.action in SHIELDING), ("offstage", op.off_stage),
+                                          ("endlag", attack_phase(op) == "endlag"), ("aerial", op.action in AERIALS),
+                                          ("hitstun", in_hitstun(op))) if on]
+        tags += [f"me {t}" for t, on in (("offstage", me.off_stage), ("shielding", me.action in SHIELDING),
+                                         ("hitstun", in_hitstun(me))) if on]
+        for t in tags:
+            self.c[t] = self.c.get(t, 0) + 1
+        now = (float(me.percent), int(me.stock), float(op.percent), int(op.stock))
+        self.start = self.start or now
+        self.last = now
+
+    def share(self, tag: str) -> float:
+        return self.c.get(tag, 0) / self.n if self.n else 0.0
+
+
+def features(me: melee.PlayerState, op: melee.PlayerState, w: WindowStats) -> dict:
+    """Named, pre-computed facts for the coach: no arithmetic left to the model."""
+    dx, dy = float(op.position.x - me.position.x), float(op.position.y - me.position.y)
+    lead = int(me.stock) - int(op.stock)
+    f = {"distance_now": _dist((dx * dx + dy * dy) ** .5), "you_now": _situation(me), "opponent_now": _situation(op),
+         "your_percent": _band(float(me.percent)), "opponent_percent": _band(float(op.percent)),
+         "stock_lead": "even" if not lead else f"you lead by {lead}" if lead > 0 else f"you trail by {-lead}"}
+    if w.n and w.start and w.last:
+        dist = max(("touching (<20)", "close (20-40)", "mid (40-80)", "far (80+)"), key=w.share)
+        f["usual_distance_last_window"] = dist
+        for tag, name in (("opp shielding", "opponent_shielding"), ("opp offstage", "opponent_offstage"),
+                          ("opp endlag", "opponent_in_endlag"), ("opp aerial", "opponent_using_aerials"),
+                          ("me offstage", "you_offstage"), ("me hitstun", "you_in_hitstun"),
+                          ("opp hitstun", "opponent_in_hitstun")):
+            s = w.share(tag)
+            f[f"{name}_last_window"] = "often" if s > .25 else "sometimes" if s > .08 else "rarely"
+        mp0, mk0, op0, ok0 = w.start
+        mp1, mk1, op1, ok1 = w.last
+        dealt = op1 if ok1 < ok0 else op1 - op0
+        took = mp1 if mk1 < mk0 else mp1 - mp0
+        f["last_window"] = (f"you dealt {max(0, dealt):.0f}% and took {max(0, took):.0f}%"
+                            + (f"; you took {ok0 - ok1} stock" if ok1 < ok0 else "")
+                            + (f"; you lost {mk0 - mk1} stock" if mk1 < mk0 else ""))
+        f["exchange_trend"] = ("winning" if dealt - took > 10 or ok1 < ok0 else
+                               "losing" if took - dealt > 10 or mk1 < mk0 else "even")
+    return f
+
+
 class CoachedBot(Agent):
     def __init__(self, spec: str | None = None, *, model: str = "haiku", body: str = "reyn", interval: int = 60,
                  body_arg: str | None = None, command: str | None = None, timeout: float = 10.0,
-                 history: int = 4, seed: int | None = None, log_dir: Path | None = None, body_config: dict | None = None):
+                 history: int = 4, seed: int | None = None, log_dir: Path | None = None, body_config: dict | None = None,
+                 menu: str | None = None, features: bool = False, p_change: float = 1.0):
         kw = parse_spec(spec)
+        self.menu = [m for m in str(kw.get("menu", menu) or "").split("|") if m]
+        self.features = bool(int(kw.get("features", features)))
+        self.p_change = float(kw.get("p_change", p_change))
         model = MODELS.get(kw.get("model", model), kw.get("model", model))
         body, interval = kw.get("body", body), int(kw.get("interval", interval))
         body_arg, command = kw.get("body_arg", body_arg), kw.get("command", command)
@@ -166,6 +252,8 @@ class CoachedBot(Agent):
         self.tracker = EventTracker(self.port, self.opponent_port)
         me, op = gs.players[self.port], gs.players[self.opponent_port]
         self.commands = {c.id: c for c in reyn_commands(me.character, gs.stage)} if self.kind == "reyn" else {}
+        if self.menu:
+            self.commands = {k: c for k, c in self.commands.items() if k in self.menu}
         if self.kind == "reyn":
             knobs, schema = REYN_KNOBS.format(menu=command_menu(list(self.commands.values()))), REYN_SCHEMA
         else:
@@ -178,10 +266,12 @@ class CoachedBot(Agent):
         self.pending_log: dict | None = None
         self.inflight, self.last_asked = False, -10**9
         self.records = []
+        self.window = WindowStats()
         self.log = DecisionLog(self.log_dir, f"p{self.port}-coach", replay=replay, port=self.port, suffix="coach")
         self.log.write({"type": "game_start", "coach": "random" if self.random else self.model, "body": self.body.name,
                         "port": self.port, "character": me.character.name, "opponent": op.character.name,
                         "stage": gs.stage.name, "interval": self.interval, "commands": len(self.commands),
+                        "menu": self.menu or None, "features": self.features, "p_change": self.p_change,
                         "system_prompt": self.system})
         if self.initial:
             self._apply({"command": self.initial, "why": "initial"}, int(gs.frame), None, "")
@@ -231,6 +321,8 @@ class CoachedBot(Agent):
         self.tracker.update(gs)
         if self.log is None:
             return
+        if self.features:
+            self.window.update(gs.players[self.port], gs.players[self.opponent_port])
         if self.pending_log is not None:  # the router answered on this frame's step
             self.pending_log["router"] = self.body.applied_steer.get("reply") if self.kind == "reyn" else None
             self.pending_log["active"] = self.body.applied_steer.get("active")
@@ -255,7 +347,12 @@ class CoachedBot(Agent):
         past = [f"f{h['frame']} set {h['cmd']} → then: {h.get('events', 'running')}" for h in self.history[-self.history_len:]]
         if past:
             text += "\nYOUR RECENT COMMANDS:\n" + "\n".join(past)
-        return text + f"\nCURRENT COMMAND: {self.current}\nChoose."
+        text += f"\nCURRENT COMMAND: {self.current}"
+        if self.features:  # last, so JevCoach can split it off into named fields
+            feats = features(gs.players[self.port], gs.players[self.opponent_port], self.window)
+            self.window = WindowStats()
+            text += "\nFEATURES:\n" + "\n".join(f"{k}: {v}" for k, v in feats.items())
+        return text + "\nChoose."
 
     # ------------------------------------------------------------------ coach thread
 
@@ -270,6 +367,9 @@ class CoachedBot(Agent):
     def _decide(self, user: str) -> tuple[dict, Reply | None]:
         if self.random:
             if self.kind == "reyn":
+                first = not self.history
+                if not first and self.rng.random() >= self.p_change:
+                    return {"command": "keep", "why": "random keep"}, None
                 return {"command": self.rng.choice([*self.commands, "none"]), "why": "random"}, None
             return {"return_target": round(self.rng.uniform(-20, 140), 1),
                     "temperature": round(self.rng.uniform(.8, 1.1), 2), "why": "random"}, None

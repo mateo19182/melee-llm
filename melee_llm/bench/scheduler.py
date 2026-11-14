@@ -65,7 +65,9 @@ class Config:
     boot: int = 300
     display: str = ":98"
     max_games: int = 0  # stop after this many started games (0 = no limit); for smoke runs
-    only: list = field(default_factory=list)  # restrict to these entrant ids (smoke runs)
+    only: list = field(default_factory=list)  # restrict to these entrant ids (inactive ones allowed: ablations)
+    ports: tuple = (PORTS.start, PORTS.stop)  # Slippi ports [start, stop)
+    context: list = field(default_factory=list)  # other results.jsonl files whose ok games join the fit (not the spend)
 
 
 def read_results(path: Path) -> list[dict]:
@@ -137,7 +139,8 @@ class Bench:
         self.lock = threading.Lock()
         self.load = 0.0
         self.running: dict[str, dict] = {}
-        self.free_ports = [p for p in PORTS]
+        self.free_ports = list(range(*cfg.ports))
+        self.context = [r for path in cfg.context for r in read_results(Path(path)) if r.get("status") == "ok"]
         self.events: deque = deque(maxlen=40)
         self.started = 0
         self.last_start = 0.0
@@ -176,12 +179,13 @@ class Bench:
             self.imported, self.excluded = imports.load()
             self.imported_at = time.time()
         with self.lock:
-            return [r for r in self.results if r.get("status") == "ok"] + self.imported
+            return [r for r in self.results if r.get("status") == "ok"] + self.context + self.imported
 
     def active(self) -> list[Entrant]:
         now = time.time()
-        return [e for e in self.entrants.values() if e.active and e.spec and self.suspended.get(e.id, 0) < now
-                and (not self.cfg.only or e.id in self.cfg.only)]
+        if self.cfg.only:
+            return [e for e in self.entrants.values() if e.id in self.cfg.only and e.spec and self.suspended.get(e.id, 0) < now]
+        return [e for e in self.entrants.values() if e.active and e.spec and self.suspended.get(e.id, 0) < now]
 
     # ------------------------------------------------------------------ choosing a game
 
@@ -413,7 +417,7 @@ class Bench:
         with self.lock:
             results = list(self.results)
             self.dirty = False
-        st = ratings.standings(recount.apply(results, recount.load(self.out / "recount.json")), self.imported,
+        st = ratings.standings(recount.apply(results, recount.load(self.out / "recount.json")), self.imported + self.context,
                                self.excluded, boot=self.cfg.boot, target=self.cfg.target)
         self.standings, self.standings_at = st, time.time()
         _write_json(self.out / "standings.json", st)

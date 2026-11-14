@@ -20,10 +20,16 @@ export default async function live(root, _params, signal) {
 
   // ---------------------------------------------------------------- layout
   const scorebug = h("div.scorebug", {}, h("div.sb-idle", {}, h("span.dim", {}, "Connecting…")));
-  const video = h("video", { muted: true, autoplay: true, playsInline: true, controls: true });
+  const video = h("video", { muted: true, autoplay: true, playsInline: true, disablePictureInPicture: true });
   const videoMsg = h("div.video-msg", {}, "Starting stream…");
   const delayInfo = h("span.lag", {}, "");
-  const goLive = h("button.small.ghost", { onclick: () => { if (hls?.liveSyncPosition) video.currentTime = hls.liveSyncPosition; video.play(); } }, "Jump to live");
+  const jumpLive = () => { if (hls?.liveSyncPosition) video.currentTime = hls.liveSyncPosition; video.play().catch(() => {}); };
+  const playBtn = h("button.vp-btn", { title: "Play / pause (space)", onclick: () => (video.paused ? video.play().catch(() => {}) : video.pause()) });
+  const liveBtn = h("button.vp-live", { title: "Jump to live", onclick: jumpLive }, h("span.vp-dot"), "Live");
+  const fsBtn = h("button.vp-btn", { title: "Fullscreen (f)", onclick: () => toggleFullscreen() });
+  const videoWrap = h("div.video-wrap", { tabIndex: 0 },
+    video, videoMsg,
+    h("div.vp-bar", {}, playBtn, liveBtn, delayInfo, h("span.spacer"), fsBtn));
   const syncToggle = h("div.toggle", {},
     h("button", { onclick: () => setInstant(false), title: "Hold each decision until the video shows that moment" }, "Synced"),
     h("button", { onclick: () => setInstant(true), title: "Show decisions as they arrive, ahead of the video" }, "Instant"));
@@ -40,8 +46,8 @@ export default async function live(root, _params, signal) {
   mount(root, h("div.live-layout", {},
     h("div.live-main", {},
       scorebug,
-      h("div.video-wrap", {}, video, videoMsg),
-      h("div.video-bar", {}, delayInfo, goLive, h("span.spacer"),
+      videoWrap,
+      h("div.video-bar", {}, h("span.spacer"),
         h("label.check", {}, arenaToggle, "Arena fills idle time"), link("/launch", h("button.primary.small", {}, "Launch a match"))),
       h("div.queue-strip", {}, h("h3", {}, "Up next"), queueBox)),
     h("div.card.panel", {},
@@ -57,6 +63,37 @@ export default async function live(root, _params, signal) {
   setInstant(instant);
 
   // ---------------------------------------------------------------- video
+  const ICON = {
+    play: '<svg viewBox="0 0 24 24"><path d="M7 4.5v15l13-7.5z"/></svg>',
+    pause: '<svg viewBox="0 0 24 24"><path d="M6 4h4.5v16H6zM13.5 4H18v16h-4.5z"/></svg>',
+    full: '<svg viewBox="0 0 24 24"><path d="M4 9V4h5v2H6v3zm11-5h5v5h-2V6h-3zM6 15v3h3v2H4v-5zm12 0h2v5h-5v-2h3z"/></svg>',
+    exit: '<svg viewBox="0 0 24 24"><path d="M7 4h2v5H4V7h3zm8 0h2v3h3v2h-5zM4 15h5v5H7v-3H4zm11 0h5v2h-3v3h-2z"/></svg>',
+  };
+  const syncControls = () => {
+    playBtn.innerHTML = video.paused ? ICON.play : ICON.pause;
+    fsBtn.innerHTML = document.fullscreenElement === videoWrap ? ICON.exit : ICON.full;
+    videoWrap.classList.toggle("paused", video.paused);
+  };
+  for (const ev of ["play", "pause", "playing"]) video.addEventListener(ev, syncControls);
+  document.addEventListener("fullscreenchange", syncControls, { signal });
+  syncControls();
+  const toggleFullscreen = () => (document.fullscreenElement ? document.exitFullscreen() : videoWrap.requestFullscreen()).catch(() => {});
+  video.addEventListener("click", () => playBtn.click());
+  video.addEventListener("dblclick", toggleFullscreen);
+  videoWrap.addEventListener("keydown", (e) => {
+    if (e.key === " " || e.key === "k") { e.preventDefault(); playBtn.click(); }
+    else if (e.key === "f") toggleFullscreen();
+  });
+  // Controls fade out while the mouse rests on a playing video.
+  let idleTimer = 0;
+  const wake = () => {
+    videoWrap.classList.add("active");
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => videoWrap.classList.remove("active"), 2500);
+  };
+  videoWrap.addEventListener("mousemove", wake);
+  videoWrap.addEventListener("mouseleave", () => { clearTimeout(idleTimer); videoWrap.classList.remove("active"); });
+
   let hls = null;
   function startVideo() {
     if (signal.aborted) return;
@@ -102,7 +139,9 @@ export default async function live(root, _params, signal) {
     const t = releaseClock();
     while (queue.length && queue[0].ts <= t) queue.shift().apply();
     const v = videoClock();
-    delayInfo.textContent = v ? `Video ${(serverNow() - v).toFixed(1)} s behind the game` : "Video not playing";
+    const lag = v ? serverNow() - v : null;
+    delayInfo.textContent = lag !== null ? `${lag.toFixed(1)} s behind the game` : "";
+    liveBtn.classList.toggle("behind", lag === null || lag > (hls?.targetLatency ?? 2) + 1.5);
     pending.textContent = queue.length && !instant ? `${queue.length} waiting for the video to catch up` : instant ? "Instant: entries ahead of the video are dimmed" : "";
     markOnScreen(v);
   }, 100);
@@ -152,6 +191,7 @@ export default async function live(root, _params, signal) {
       old ? old.replaceWith(card) : steerBox.append(card);
     }
     if (s.source === "idle" || !s.players) {
+      videoWrap.classList.remove("loading");
       mount(scorebug, h("div.sb-idle", {}, h("div", {}, h("b", {}, "Nothing on the live slot"), s.next ? h("div.dim", {}, s.next) : null),
         link("/launch", h("button.primary.small", {}, "Launch a match"))));
       if (!events.children.length) mount(empty, emptyState("Idle", "Launch a match, or turn the arena on to fill the slot."));
@@ -168,6 +208,7 @@ export default async function live(root, _params, signal) {
         h("div.sb-score", {}, h("div.sb-pct", {}, pct !== undefined ? [String(Math.round(pct)), h("small", {}, "%")] : "–"),
           st !== undefined ? stocks(st, color) : null));
     };
+    videoWrap.classList.toggle("loading", s.phase === "starting");
     const phase = { starting: "loading Dolphin", in_game: s.frame ? fmt.frames(s.frame) : "in game", between: "between games", finished: "finished" }[s.phase] || s.phase;
     mount(scorebug, side("1"),
       h("div.sb-mid", {},
