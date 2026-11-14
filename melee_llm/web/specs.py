@@ -168,6 +168,52 @@ def catalog() -> dict:
     }
 
 
+PUBLIC_GAMES = 3  # most games one visitor's job may ask for
+PUBLIC_QUEUE = 2  # visitors may queue a match while fewer jobs than this are waiting
+OPERATOR_KINDS = {"jev_live", "jev_paused", "coach_jev"}  # paid API outside the proxy
+
+
+def public_model(m: str) -> bool:
+    return "haiku" in m or "sonnet" in m or m == "random"  # the coach's "random" calls no LLM
+
+
+def public_catalog(cat: dict) -> dict:
+    """The launcher as visitors see it: cheap models only, no Jev, no free-form player options."""
+    kinds = []
+    for k in cat["kinds"]:
+        if k["kind"] in OPERATOR_KINDS:
+            continue
+        k = {key: v for key, v in k.items() if key != "options"}
+        if k["kind"] in ("llm_paused", "llm_live", "coach"):
+            options = [m for m in k["arg"]["options"] if public_model(m)]
+            default = k["arg"]["default"] if public_model(k["arg"]["default"]) else (options[0] if options else "")
+            k["arg"] = {**k["arg"], "options": options, "default": default}
+        kinds.append(k)
+    return {**cat, "kinds": kinds, "models": [m for m in cat["models"] if public_model(m)],
+            "limits": {"games": PUBLIC_GAMES, "queue": PUBLIC_QUEUE}}
+
+
+def public_errors(spec: dict, waiting: int) -> list[str]:
+    """Extra rules for a match a visitor queues: what it may cost and how much of the live slot it may take."""
+    errors = []
+    if spec["games"] > PUBLIC_GAMES:
+        errors.append(f"visitors can queue up to {PUBLIC_GAMES} games at a time")
+    if waiting >= PUBLIC_QUEUE:
+        errors.append(f"the queue is full ({waiting} matches waiting); try again after the next one starts")
+    for port in (1, 2):
+        kind, _, arg = spec[f"p{port}"].partition(":")
+        head, *opts = arg.split(",")
+        who = f"P{port} ({label(spec[f'p{port}'])})"
+        if kind in OPERATOR_KINDS:
+            errors.append(f"{who}: Jev players are operator-only")
+        elif kind in ("llm_paused", "llm_live", "coach"):
+            if head and not public_model(head):
+                errors.append(f"{who}: visitors can pick Haiku and Sonnet models")
+            if any(o not in ("body=reyn", "body=hal") for o in opts if o):
+                errors.append(f"{who}: player options are operator-only")
+    return errors
+
+
 def validate(p1: str, p2: str, char1: str, char2: str, stage: str, mode: str, games: int) -> tuple[list[str], list[str]]:
     """(errors, warnings) for a match request."""
     errors, warnings = [], []

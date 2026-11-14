@@ -1,15 +1,16 @@
 // Arena: Elo standings, head-to-head scores and recent games.
 import { navigate } from "../app.js";
-import { api, every, fmt, h, heat, link, mount, resultText, table, toast } from "../lib.js";
+import { api, every, fmt, h, heat, isAdmin, link, mount, resultText, table, toast } from "../lib.js";
 
 export default async function arena(root, _p, signal) {
   const box = h("div.stack");
   mount(root, box);
+  const admin = await isAdmin();
   every(15000, async () => {
     const [a, s] = await Promise.all([api("/api/arena"), api("/api/settings")]);
     const maxElo = Math.max(...a.table.map((r) => r.elo), 1600), minElo = Math.min(...a.table.map((r) => r.elo), 1400);
     const specs = a.table.map((r) => r.spec);
-    const toggle = h("label.check", {}, h("input", { type: "checkbox", checked: s.arena, onchange: async (e) => {
+    const toggle = admin && h("label.check", {}, h("input", { type: "checkbox", checked: s.arena, onchange: async (e) => {
       await api("/api/settings", { method: "POST", body: { arena: e.target.checked } });
       toast(e.target.checked ? "Arena on" : "Arena paused after the current game");
     } }), "Arena fills the live slot when the queue is empty");

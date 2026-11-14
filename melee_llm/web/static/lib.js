@@ -31,6 +31,13 @@ export function mount(el, ...children) {
   return el;
 }
 
+// Visitors browse and queue limited matches; the operator (signed in at /login, or on this machine) gets the controls.
+let mePromise = null;
+export function isAdmin() {
+  mePromise ??= fetch("/api/me").then((r) => r.json()).then((d) => !!d.admin).catch(() => false);
+  return mePromise;
+}
+
 export async function api(path, opts = {}) {
   const init = { headers: {}, ...opts };
   if (opts.body && typeof opts.body !== "string") {

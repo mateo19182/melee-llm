@@ -5,12 +5,13 @@
 // Events wait in a queue until the video reaches them; "instant" shows them on arrival.
 import Hls from "../vendor/hls.min.mjs";
 import { recordCard, steerCard } from "../decisions.js";
-import { api, emptyState, every, fmt, h, link, mount, statusBadge, stocks, toast } from "../lib.js";
+import { api, emptyState, every, fmt, h, isAdmin, link, mount, statusBadge, stocks, toast } from "../lib.js";
 
 const MAX_EVENTS = 300;
 
 export default async function live(root, _params, signal) {
   root.className = "";
+  const admin = await isAdmin();
   let instant = localStorage.getItem("melee.instant") === "1";
   let offset = 0; // server clock - browser clock, seconds
   const serverNow = () => Date.now() / 1000 + offset;
@@ -54,9 +55,9 @@ export default async function live(root, _params, signal) {
       scorebug,
       videoWrap,
       h("div.video-bar", {}, h("span.spacer"),
-        h("label.check", { title: "An LLM commentates the live game in the feed (uses tokens)" }, castToggle, "Commentator"),
+        admin && h("label.check", { title: "An LLM commentates the live game in the feed (uses tokens)" }, castToggle, "Commentator"),
         h("label.check", { title: "Speak the commentator's lines out loud in this browser (ElevenLabs; only while on). Also the speaker button or v" }, voiceToggle, "Voice"),
-        h("label.check", {}, arenaToggle, "Arena fills idle time"), link("/launch", h("button.primary.small", {}, "Launch a match"))),
+        admin && h("label.check", {}, arenaToggle, "Arena fills idle time"), link("/launch", h("button.primary.small", {}, "Launch a match"))),
       h("div.queue-strip", {}, h("h3", {}, "Up next"), queueBox)),
     h("div.card.panel", {},
       h("div.panel-head", {}, h("h2", {}, "Decisions"), h("span.spacer"), syncToggle, pending),
@@ -82,11 +83,13 @@ export default async function live(root, _params, signal) {
     clips.length = 0;
     if (!on) player.pause();
     clearInterval(beat);
-    if (on) {
+    if (on && admin) {
       const ping = () => api("/api/live/listen", { method: "POST" }).catch(() => {});
       ping();
       beat = setInterval(ping, 5000);
       if (!castToggle.checked) toast("Turn the commentator on to hear it");
+    } else if (on && !castToggle.checked) {
+      toast("The commentator is off right now");
     }
     syncControls();
   }

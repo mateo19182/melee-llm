@@ -1,15 +1,17 @@
 // Match launcher and the job list (queued, running, finished; cancel).
 import { navigate } from "../app.js";
-import { api, every, fmt, h, link, mount, resultText, statusBadge, table, toast } from "../lib.js";
+import { api, every, fmt, h, isAdmin, link, mount, resultText, statusBadge, table, toast } from "../lib.js";
 
 const STORE = "melee.launch";
 
 export default async function launch(root, _params, signal) {
-  const cat = await api("/api/catalog");
+  const [cat, admin] = await Promise.all([api("/api/catalog"), isAdmin()]);
+  const maxGames = cat.limits?.games ?? 50;
   const kinds = Object.fromEntries(cat.kinds.map((k) => [k.kind, k]));
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(STORE) || "null"); } catch { /* ignore */ }
   if (saved && !(kinds[saved.players?.[1]?.kind] && kinds[saved.players?.[2]?.kind])) saved = null;
+  if (saved && !admin) Object.assign(saved, { games: Math.min(saved.games, maxGames), preempt: false });
   const state = saved || {
     players: { 1: { kind: "llm_paused", arg: kinds.llm_paused.arg.default, options: "", char: "FOX" },
                2: { kind: "cpu", arg: "5", options: "", char: "FALCO" } },
@@ -93,9 +95,9 @@ export default async function launch(root, _params, signal) {
         h("div", {}, h("h3", {}, "Stage"), h("div.tiles.stage-tiles", {}, cat.stages.map((st) =>
           h(`button.tile${st.id === state.stage ? ".on" : ""}`, { type: "button", onclick: () => { state.stage = st.id; renderAll(); } }, st.name))),
           h("div.launch-foot", {},
-            h("label.field", {}, "Games", h("input", { type: "number", min: 1, max: 50, value: state.games,
+            h("label.field", {}, "Games", h("input", { type: "number", min: 1, max: maxGames, value: state.games,
               oninput: (e) => { state.games = +e.target.value || 1; changed(); } })),
-            live ? h("label.check", { style: { paddingBottom: "9px" } }, h("input", { type: "checkbox", checked: state.preempt,
+            live && admin ? h("label.check", { style: { paddingBottom: "9px" } }, h("input", { type: "checkbox", checked: state.preempt,
               onchange: (e) => { state.preempt = e.target.checked; changed(); } }), "Start now (abort the running arena game)") : null,
             h("span.spacer"), submit, msgs)),
         h("div", {}, h("h3", {}, "Mode"), h("div.modes", {}, cat.modes.map((m) => h(`div.mode${state.mode === m.id ? ".on" : ""}`, {
@@ -161,13 +163,14 @@ export default async function launch(root, _params, signal) {
       { label: "When", render: (j) => j.status === "queued" ? `queued ${fmt.ago(j.created)}`
         : j.finished ? `${fmt.ago(j.finished)} · ${fmt.secs(j.finished - j.started)}` : j.started ? `running ${fmt.secs(Date.now() / 1000 - j.started)}` : "–" },
       { label: "", render: (j) => (j.status === "queued" || j.status === "running")
-        ? h("button.small.danger", { onclick: (e) => { e.stopPropagation(); cancel(j); }, disabled: !!j.cancel }, j.cancel ? "cancelling…" : "Cancel")
+        ? admin && h("button.small.danger", { onclick: (e) => { e.stopPropagation(); cancel(j); }, disabled: !!j.cancel }, j.cancel ? "cancelling…" : "Cancel")
         : j.error ? h("span.dim", { title: j.error }, "error ⓘ") : "" },
     ], jobs, { empty: "No jobs yet. Queue one above." }));
   }
 
   mount(root, h("div.pagehead", {}, h("h1", {}, "Launch a match"),
-    h("div.lede", {}, "Live jobs take display :99 in order; the arena fills the slot when the queue is empty. Fast jobs run headless, up to 4 at once.")),
+    h("div.lede", {}, "Live jobs take display :99 in order; the arena fills the slot when the queue is empty. Fast jobs run headless, up to 4 at once.",
+      admin ? null : ` Anyone can queue a match: up to ${maxGames} games, Haiku or Sonnet for the LLM players, while fewer than ${cat.limits.queue} are waiting.`)),
   h("div.launch-grid", {}, p1, h("div.vs-mark", {}, "VS"), p2), matchBox,
   h("div.section-title", {}, h("h2", {}, "Queue & history")), h("div.card", {}, jobsBox));
   renderAll();
