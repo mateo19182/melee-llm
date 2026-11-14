@@ -42,22 +42,26 @@ Elo is relative to CPU 9 = 1500, ± the 95% half-width.
   - Live GPT-6.1 Sol discards ~95% of its replies because they arrive more than 2 s late, so its live rating is mostly the fallback behaviour.
   - The overnight run counted 100.1M CLIProxy tokens, but discarded replies weren't counted then: real spend was **115.1M** (recounted from the logs; `spent_recounted` in `data/bench/status.json`). Fixed: every call's tokens now count ([bench](bench.md#scheduler-active-sampling-under-a-budget)).
 
-## What's left (rough priority)
+## Lanes (who works on what)
 
-1. **Coach deep-dive (running).** Why does the Jev coach beat random? Ablations on interval, prompt, named features (e.g. "opponent in endlag") and Jev vs LLM. Cheap: Jev costs cents. The bench writes to `data/bench-deepdive/` (target 300 games).
-2. **Janky entrants**, dropped into the bench:
-   - Jev with named features
-   - two LLMs sharing one character
-   - an image-only player
-   - MIMIC trained on your replays
-   - random-command Reyn variants
-3. **Netplay with you.** Blocked on a bot Slippi account and a controller; this takes the `human:mateo` slot.
-4. **Bot-writer round 2.** 3 runs per model plus GPT, longer sessions, harder scripted opponents. Also fix the tool loop that quits after 3 idle replies.
-5. **Write-up "Melee Bot Elo".**
-   - Draft at `writeup/`. Not finished on purpose.
-   - Decided: name the models, SVG figures, include a 2D replay render.
-   - Regenerate the numbers with `python3 writeup/make_figures.py`.
-6. **Longer bets:** a fast local brain (a small model trained on our logs, ~50 ms decisions), Melee puzzles (savestate scenarios), a world model / V-JEPA. The simulator could make bot-only games much cheaper once it can run learned bots.
+Mateo wants all of these; the LLM-playing side is now lower priority. Budget: moderate, ~10-20M LLM tokens in total, mostly lane A. One T3 thread per lane, titled "Melee <letter> · ...".
+
+| Lane | Owns | Now | Next |
+|---|---|---|---|
+| **A · Hub** | this map, the bench (`melee_llm/bench*`, `ratings.py`, `entrants.py`), the coach, `scripts/coach_deepdive.py`, `writeup/`, `data/bench*` | Coach deep-dive bench running (`coach-deepdive.service`, `data/bench-deepdive/`); log-mining half in [coach-deepdive](coach-deepdive.md) | Ablation results; cheap non-LLM janky entrants (Jev with named features, MIMIC on Mateo's replays, random-command Reyn variants); write-up "Melee Bot Elo" (draft in `writeup/`, not finished on purpose) |
+| **B · Own bot** | `train/`, `meleebot`, `data/train/` | Yoshi behaviour-cloning dataset built from ranked replays | Model design with Mateo, then training; the bot joins the bench through lane A. This is the "fast local brain" bet |
+| **C · Simulator** | `--mode sim`, melee-sim-light, [simulator](simulator.md) | PR #4 open | Run learned bots in the sim so bot-only games (and B's training) get cheap. This is the "world model" bet |
+| **D · Play** | `human` player, `play.py`, [netplay](netplay.md) | Local play on the laptop works (Phillip); server netplay built but not played | `human` player type in the runner, then Mateo on the bench as `human:mateo` |
+| **E · Show** | `melee_llm/web/`, commentator, services, live checkout, deploys | Commentator duo + voice shipped | AI caster, web UI |
+
+Parked: bot-writer round 2 (3 runs per model plus GPT; also fix the tool loop that quits after 3 idle replies), two LLMs sharing a character, image-only player, Melee puzzles.
+
+**Rules for every lane**
+1. Work in a worktree under `~/.t3/worktrees/melee-llm/<slug>`. The live checkout `~/projects/ai/melee-llm` is production: only lane E changes it or restarts services, and never while a bench is running (bench games import the live checkout).
+2. Open PRs freely; merge only after Mateo says so in that lane's thread.
+3. For files another lane owns, keep PRs small and name the owning lane in the PR body.
+4. The machine is shared: check `uptime` and `systemctl --user list-units 'melee*' 'coach*'` before heavy jobs (training, dataset builds, benches).
+5. Each lane edits only its own row here.
 
 ## Running services (user units)
 
