@@ -143,8 +143,9 @@ def _cost_from_transcript(harness: str, path: Path) -> dict:
             ev = json.loads(line)
         except ValueError:
             continue
-        if harness == "claude" and ev.get("type") == "result":  # one per invocation; sum over continuations
-            out["cost_usd"] = round(out.get("cost_usd", 0) + (ev.get("total_cost_usd") or 0), 6)
+        if harness == "claude" and ev.get("type") == "result":  # one per invocation; usage is per invocation
+            # but total_cost_usd is cumulative over --resume, so keep the latest value instead of summing
+            out["cost_usd"] = round(max(out.get("cost_usd", 0), ev.get("total_cost_usd") or 0), 6)
             out["num_turns"] = out.get("num_turns", 0) + (ev.get("num_turns") or 0)
             out["invocations"] = out.get("invocations", 0) + 1
             u = out.setdefault("usage", {})
@@ -265,7 +266,7 @@ def main() -> None:
         return
     meta = run_session(a.harness, a.model, a.minutes, a.name or f"{a.model}/{int(time.time())}", a.iso,
                        a.budget_usd, a.effort, a.base_url, a.max_tokens, a.slippi_ports)
-    print(json.dumps({k: meta.get(k) for k in ("id", "name", "exit", "wall_s", "cost_usd", "usage", "validation", "smashbot_similarity")}, indent=1, default=str))
+    print(json.dumps({k: meta.get(k) for k in ("id", "name", "exit", "wall_s", "cost_usd", "num_turns", "usage", "bot_lines", "validation", "smashbot_similarity")}, indent=1, default=str))
 
 
 if __name__ == "__main__":

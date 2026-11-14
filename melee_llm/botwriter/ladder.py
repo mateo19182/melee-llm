@@ -8,13 +8,14 @@ Config (JSON):
    "roster": ["cpu:1", ..., "cpu:9", "baseline:rusher", ...],        # main score
    "hard_tier": ["agent:melee_llm.bots:HAL:MASTER", ...],            # learned bots, scored separately
    "stages": ["FINAL_DESTINATION", "BATTLEFIELD"], "character": "FOX", "allowed_characters": ["FOX"],
-   "games_per_side": 2, "workers": 8, "budget_ms": 16, "iso": "...", "out": "DIR",
+   "games_per_side": 2, "hard_games_per_side": 1, "workers": 8, "budget_ms": 16, "iso": "...", "out": "DIR",
    "entrants_play_each_other": false, "calibrate_roster": false, "anchor": "cpu:1", "job_timeout_s": 1800}
 
 Games append to DIR/games.jsonl (re-running resumes); DIR/leaderboard.json holds the scores.
 Primary score = mean over roster opponents of the entrant's win rate (draw = half), so it does
 not depend on who else is in the field. `hard_score` is the same over the hard tier (learned bots).
-A Bradley-Terry fit over all games gives Elo-scale ratings.
+A Bradley-Terry fit over all games gives Elo-scale ratings. `hard_games_per_side` (default: same as
+`games_per_side`) lets the hard tier run fewer games. Raising either later just plays the extra games.
 """
 from __future__ import annotations
 
@@ -33,7 +34,7 @@ from pathlib import Path
 
 DEFAULTS = {"stages": ["FINAL_DESTINATION", "BATTLEFIELD"], "character": "FOX", "allowed_characters": ["FOX"],
             "games_per_side": 2, "workers": 4, "budget_ms": 16.0, "entrants_play_each_other": False,
-            "calibrate_roster": False, "anchor": "cpu:1", "job_timeout_s": 1800,
+            "calibrate_roster": False, "hard_games_per_side": None, "anchor": "cpu:1", "job_timeout_s": 1800,
             "roster": [f"cpu:{i}" for i in range(1, 10)] + ["baseline:laser", "baseline:rusher", "baseline:shine"],
             "hard_tier": ["agent:melee_llm.bots:HAL:MASTER", "agent:melee_llm.bots:Phillip:gm",
                           "agent:melee_llm.bots:MIMIC", "agent:melee_llm.bots:Faynt"]}
@@ -59,13 +60,14 @@ def make_jobs(cfg: dict) -> list[dict]:
         pairs += [(a, b) for i, a in enumerate(entrants) for b in entrants[i + 1:]]
     if cfg["calibrate_roster"]:
         pairs += [(a, b) for i, a in enumerate(roster) for b in roster[i + 1:]]
-    jobs = []
+    jobs, hard = [], set(cfg["hard_tier"])
     for a, b in pairs:
+        games = (cfg["hard_games_per_side"] or cfg["games_per_side"]) if b in hard else cfg["games_per_side"]
         for stage in cfg["stages"]:
             for a_port in (1, 2):
                 key = f"{a}|{b}|{stage}|p{a_port}"
                 jobs.append({"key": key, "a": a, "b": b, "stage": stage, "a_port": a_port,
-                             "games": cfg["games_per_side"], "id": hashlib.sha1(key.encode()).hexdigest()[:12]})
+                             "games": games, "id": hashlib.sha1(key.encode()).hexdigest()[:12]})
     return jobs
 
 
@@ -217,7 +219,7 @@ def leaderboard(cfg: dict, games: list[dict]) -> dict:
                     "hard_score_mean": round(statistics.fmean(r["hard_score"] or 0 for r in rs), 1),
                     "elo_mean": round(statistics.fmean(r["elo"] or 0 for r in rs), 1),
                     "best_run_score": max(r["roster_score"] for r in rs)} for m, rs in models.items()}
-    return {"updated": time.strftime("%Y-%m-%dT%H:%M:%S"), "config": {k: cfg[k] for k in ("stages", "character", "games_per_side", "budget_ms", "roster", "hard_tier", "anchor")},
+    return {"updated": time.strftime("%Y-%m-%dT%H:%M:%S"), "config": {k: cfg[k] for k in ("stages", "character", "games_per_side", "hard_games_per_side", "budget_ms", "roster", "hard_tier", "anchor")},
             "games": len(played), "errors": len(games) - len(played),
             "models": dict(sorted(by_model.items(), key=lambda kv: -kv[1]["roster_score_mean"])),
             "entrants": dict(sorted(rows.items(), key=lambda kv: -kv[1]["roster_score"])),

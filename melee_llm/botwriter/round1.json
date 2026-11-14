@@ -1,0 +1,15 @@
+{"minutes": 30, "concurrency": 3, "ports_start": 51560, "ports_per_slot": 4, "max_retries": 2,
+ "runs": [
+  {"name": "gpt-6-astra/run1", "harness": "openai", "model": "gpt-6-astra"},
+  {"name": "gpt-6.1-sol/run1", "harness": "openai", "model": "gpt-6.1-sol"},
+  {"name": "opus-5.5/run2", "harness": "claude", "model": "claude-opus-5-5", "budget_usd": 40},
+  {"name": "sonnet-5.5/run2", "harness": "claude", "model": "claude-sonnet-5-5", "budget_usd": 15},
+  {"name": "haiku-4.5/run2", "harness": "claude", "model": "claude-haiku-4-5", "budget_usd": 5},
+  {"name": "gpt-6-astra/run2", "harness": "openai", "model": "gpt-6-astra"},
+  {"name": "gpt-6.1-sol/run2", "harness": "openai", "model": "gpt-6.1-sol"},
+  {"name": "opus-5.5/run3", "harness": "claude", "model": "claude-opus-5-5", "budget_usd": 40},
+  {"name": "sonnet-5.5/run3", "harness": "claude", "model": "claude-sonnet-5-5", "budget_usd": 15},
+  {"name": "haiku-4.5/run3", "harness": "claude", "model": "claude-haiku-4-5", "budget_usd": 5},
+  {"name": "gpt-6-astra/run3", "harness": "openai", "model": "gpt-6-astra"},
+  {"name": "gpt-6.1-sol/run3", "harness": "openai", "model": "gpt-6.1-sol"}
+ ]}
