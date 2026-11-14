@@ -5,8 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Melee × LLM</title>
   <link rel="icon" href="/static/img/smash-emblem.svg" type="image/svg+xml">
-  <meta name="theme-color" content="#0a0e2c">
-  <link rel="preload" href="/static/vendor/fonts/barlow-condensed-700-italic.woff2" as="font" type="font/woff2" crossorigin>
+  <meta name="theme-color" content="#070926">
+  <link rel="preload" href="/static/vendor/fonts/archivo-var-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/vendor/fonts/archivo-var-italic.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/static/vendor/fonts/barlow-400-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/static/style.css">
   <script type="module" src="/static/app.js"></script>
@@ -15,20 +16,25 @@
   <header class="topbar">
     <a class="brand" href="/live" data-link aria-label="Melee"><svg class="logo" viewBox="0 0 275 275" aria-hidden="true"><clipPath id="smash-c"><path d="m0,0h54v155H0m0,25h54v92H0M115,0h160v155H115m0,25h160v92H115"/></clipPath><circle clip-path="url(#smash-c)" cx="137" cy="137" r="130" fill="currentColor"/></svg></a>
     <nav id="nav">
-      <a href="/bench" data-link>Bench</a>
-      <a href="/live" data-link>Live</a>
-      <a href="/matches" data-link>All matches</a>
-      <a href="/launch" data-link>Launch</a>
-      <a href="/games" data-link>Games</a>
-      <a href="/arena" data-link>Arena</a>
-      <a href="/coach" data-link>Coach</a>
-      <a href="/botwriter" data-link>Bot-writer</a>
-      <a href="/play" data-link>Play vs bot</a>
-      <a href="/training" data-link>Training</a>
-      <a href="/docs" data-link>Docs</a>
+      <a href="/bench" data-link data-desc="One leaderboard for every kind of player. CPU 9 = 1500.">Bench</a>
+      <a href="/live" data-link data-desc="Watch the live game, and every decision as it is made.">Live</a>
+      <a href="/matches" data-link data-desc="Every match running on this host right now.">All matches</a>
+      <a href="/launch" data-link data-desc="Pick two players and a stage, then queue a match.">Launch</a>
+      <a href="/games" data-link data-desc="Every finished game, with replays and decision logs.">Games</a>
+      <a href="/arena" data-link data-desc="Learned bots play each other while the live slot is free.">Arena</a>
+      <a href="/coach" data-link data-desc="LLMs coach Reyn, one command every few seconds.">Coach</a>
+      <a href="/botwriter" data-link data-desc="Coding agents write a Melee bot, then play a ladder.">Bot-writer</a>
+      <a href="/play" data-link data-desc="Netplay against the bots from your own Slippi Dolphin.">Play vs bot</a>
+      <a href="/training" data-link data-desc="Our own bot, cloned from ranked replays.">Training</a>
+      <a href="/docs" data-link data-desc="How it all works, and what we found.">Docs</a>
     </nav>
     <a id="onair" class="onair" href="/live" data-link></a>
   </header>
-  <main id="app"></main>
+  <div class="frame" id="frame">
+    <span class="frame-stripes" aria-hidden="true"></span>
+    <div class="frame-title" id="frame-title" aria-hidden="true"></div>
+    <main id="app"></main>
+  </div>
+  <div class="descbar"><div class="desc" id="desc"></div></div>
 </body>
 </html>
