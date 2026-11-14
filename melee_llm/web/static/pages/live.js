@@ -1,11 +1,11 @@
-// Live page: LL-HLS video of display :99, the now-playing header and the LLM interaction panel.
+// Live page: LL-HLS video of display :99, a broadcast scorebug and the decision feed.
 //
 // Sync: every SSE event carries the server wall-clock time it happened (`ts`). mediamtx stamps HLS segments
 // with EXT-X-PROGRAM-DATE-TIME from the same clock, so hls.playingDate is "server time currently on screen".
 // Events wait in a queue until the video reaches them; "instant" shows them on arrival.
 import Hls from "../vendor/hls.min.mjs";
 import { recordCard, steerCard } from "../decisions.js";
-import { api, every, fmt, h, link, mount, stocks, toast } from "../lib.js";
+import { api, emptyState, every, fmt, h, link, mount, statusBadge, stocks, toast } from "../lib.js";
 
 const MAX_EVENTS = 300;
 
@@ -19,33 +19,33 @@ export default async function live(root, _params, signal) {
   let gameKey = null;
 
   // ---------------------------------------------------------------- layout
-  const header = h("div.card.nowplaying", {}, h("div.dim", {}, "Connecting…"));
+  const scorebug = h("div.scorebug", {}, h("div.sb-idle", {}, h("span.dim", {}, "Connecting…")));
   const video = h("video", { muted: true, autoplay: true, playsInline: true, controls: true });
   const videoMsg = h("div.video-msg", {}, "Starting stream…");
-  const delayInfo = h("span", {}, "");
-  const goLive = h("button.small", { onclick: () => { if (hls?.liveSyncPosition) video.currentTime = hls.liveSyncPosition; video.play(); } }, "Jump to live");
+  const delayInfo = h("span.lag", {}, "");
+  const goLive = h("button.small.ghost", { onclick: () => { if (hls?.liveSyncPosition) video.currentTime = hls.liveSyncPosition; video.play(); } }, "Jump to live");
   const syncToggle = h("div.toggle", {},
-    h("button", { onclick: () => setInstant(false) }, "Synced to video"),
-    h("button", { onclick: () => setInstant(true) }, "Instant"));
-  const steerBox = h("div", { style: { display: "flex", flexDirection: "column", gap: "8px" } });
-  const events = h("div", { style: { display: "flex", flexDirection: "column-reverse", gap: "8px" } });
+    h("button", { onclick: () => setInstant(false), title: "Hold each decision until the video shows that moment" }, "Synced"),
+    h("button", { onclick: () => setInstant(true), title: "Show decisions as they arrive, ahead of the video" }, "Instant"));
+  const steerBox = h("div.steer-box");
+  const events = h("div.feed");
   const empty = h("div.panel-empty", {}, "Waiting for the live game…");
-  const pending = h("span.dim", { style: { fontSize: "12px" } });
-  const queueBox = h("div.queue-mini");
+  const pending = h("div.panel-sub");
+  const queueBox = h("div");
   const arenaToggle = h("input", { type: "checkbox", onchange: async (e) => {
     await api("/api/settings", { method: "POST", body: { arena: e.target.checked } });
     toast(e.target.checked ? "Arena will fill the live slot when the queue is empty" : "Arena paused after the current game");
   } });
 
   mount(root, h("div.live-layout", {},
-    h("div", {},
-      header,
+    h("div.live-main", {},
+      scorebug,
       h("div.video-wrap", {}, video, videoMsg),
       h("div.video-bar", {}, delayInfo, goLive, h("span.spacer"),
         h("label.check", {}, arenaToggle, "Arena fills idle time"), link("/launch", h("button.primary.small", {}, "Launch a match"))),
-      h("div.card", { style: { marginTop: "12px" } }, h("h3", {}, "Queue"), queueBox)),
+      h("div.queue-strip", {}, h("h3", {}, "Up next"), queueBox)),
     h("div.card.panel", {},
-      h("div.panel-head", {}, h("h2", {}, "LLM interaction"), pending, h("span.spacer"), syncToggle),
+      h("div.panel-head", {}, h("h2", {}, "Decisions"), h("span.spacer"), syncToggle, pending),
       h("div.panel-body", {}, steerBox, empty, events))));
 
   function setInstant(v) {
@@ -103,15 +103,30 @@ export default async function live(root, _params, signal) {
     while (queue.length && queue[0].ts <= t) queue.shift().apply();
     const v = videoClock();
     delayInfo.textContent = v ? `Video ${(serverNow() - v).toFixed(1)} s behind the game` : "Video not playing";
-    pending.textContent = queue.length && !instant ? `${queue.length} pending until the video catches up` : "";
+    pending.textContent = queue.length && !instant ? `${queue.length} waiting for the video to catch up` : instant ? "Instant: entries ahead of the video are dimmed" : "";
+    markOnScreen(v);
   }, 100);
   signal.addEventListener("abort", () => clearInterval(tick));
 
-  function addEvent(el) {
+  // Entries whose moment the video has reached; per port, the newest of them is what's acting on screen now.
+  let shown = [];
+  function addEvent(el, ts, port) {
     if (!el) return;
     empty.remove();
     events.append(el);
+    if (ts && port && !el.classList.contains("sys")) shown.push({ el, ts, port });
     while (events.children.length > MAX_EVENTS) events.firstChild.remove();
+    if (shown.length > MAX_EVENTS) shown = shown.filter((x) => x.el.isConnected);
+  }
+  function markOnScreen(v) {
+    const newest = {};
+    for (const x of shown) {
+      const reached = v !== null && x.ts <= v;
+      x.el.classList.toggle("ahead", v !== null && !reached);
+      if (reached && (!newest[x.port] || x.ts >= newest[x.port].ts)) newest[x.port] = x;
+    }
+    const on = new Set(Object.values(newest).map((x) => x.el));
+    for (const x of shown) x.el.classList.toggle("onscreen", on.has(x.el));
   }
 
   function renderStatus(s) {
@@ -121,10 +136,9 @@ export default async function live(root, _params, signal) {
       gameKey = key;
       steerBox.replaceChildren();
       if (s.source !== "idle" && s.players) {
-        addEvent(h("div.ev.sys", {}, h("b", {}, s.source === "job" ? `Job #${s.job_id}` : "Arena"),
-          ` · ${s.players["1"].label} vs ${s.players["2"].label} · ${s.stage_name} · game ${s.game + 1}/${s.games}`));
+        addEvent(h("div.ev.sys.divider", {}, `${s.source === "job" ? `Job #${s.job_id}` : "Arena"} · ${s.players["1"].label} vs ${s.players["2"].label} · game ${s.game + 1}/${s.games}`));
         const quiet = Object.values(s.players).every((p) => p.kind === "cpu" || p.kind === "bot" || p.kind === "shine" || p.kind === "idle");
-        if (quiet) addEvent(h("div.ev.sys", {}, "No LLM in this game: learned bots show their steer state above, CPUs show nothing."));
+        if (quiet) addEvent(h("div.ev.sys", {}, "No LLM in this game. Learned bots show their steer state above; CPUs show nothing."));
       }
     }
     for (const [port, st] of Object.entries(s.steer || {})) {
@@ -138,29 +152,29 @@ export default async function live(root, _params, signal) {
       old ? old.replaceWith(card) : steerBox.append(card);
     }
     if (s.source === "idle" || !s.players) {
-      mount(header, h("div.np-side", {}, h("div.np-name", {}, "Nothing on the live slot")),
-        h("div.np-mid", {}, s.next || ""), h("div.np-side.right", {}, link("/launch", "Launch a match →")));
-      if (!events.children.length) mount(empty, "Idle. Launch a match or turn the arena on.");
+      mount(scorebug, h("div.sb-idle", {}, h("div", {}, h("b", {}, "Nothing on the live slot"), s.next ? h("div.dim", {}, s.next) : null),
+        link("/launch", h("button.primary.small", {}, "Launch a match"))));
+      if (!events.children.length) mount(empty, emptyState("Idle", "Launch a match, or turn the arena on to fill the slot."));
       return;
     }
-    const side = (p, right) => {
+    const side = (p) => {
       const pl = s.players[p];
       const pct = s.percent?.[p];
       const st = s.stocks?.[p];
       const color = p === "1" ? "var(--p1)" : "var(--p2)";
-      const score = h("div.np-score", {}, h("span.np-pct", { style: { color } }, pct !== undefined ? `${Math.round(pct)}%` : "–"),
-        st !== undefined ? stocks(st, color) : null);
-      if (right) score.style.flexDirection = "row-reverse";
-      return h(`div.np-side${right ? ".right" : ""}`, {},
-        h("div.np-name", {}, h(`span.port.p${p}`, {}, `P${p}`), " ", pl.label, s.elo ? h("span.dim", {}, ` ${s.elo[p]}`) : null),
-        h("div.np-char", {}, pl.char_name), score);
+      return h(`div.sb-side.p${p}`, {},
+        h("div.sb-who", {}, h("div.sb-name", { title: pl.spec || "" }, pl.label),
+          h("div.sb-sub", {}, pl.char_name, s.elo ? h("span.elo", {}, ` · ${s.elo[p]} Elo`) : null)),
+        h("div.sb-score", {}, h("div.sb-pct", {}, pct !== undefined ? [String(Math.round(pct)), h("small", {}, "%")] : "–"),
+          st !== undefined ? stocks(st, color) : null));
     };
-    const phase = { starting: "loading Dolphin…", in_game: "in game", between: "between games", finished: "finished" }[s.phase] || s.phase;
-    mount(header, side("1", false),
-      h("div.np-mid", {}, h("div.vs", {}, "VS"), h("div", {}, s.stage_name),
-        h("div", {}, `${s.mode} · ${s.source === "job" ? `job #${s.job_id}` : `arena game ${s.arena_game ?? ""}`}`),
-        h("div", {}, s.games > 1 ? `game ${s.game + 1}/${s.games} · ` : "", phase, s.frame ? ` · ${fmt.frames(s.frame)}` : "")),
-      side("2", true));
+    const phase = { starting: "loading Dolphin", in_game: s.frame ? fmt.frames(s.frame) : "in game", between: "between games", finished: "finished" }[s.phase] || s.phase;
+    mount(scorebug, side("1"),
+      h("div.sb-mid", {},
+        h("div.sb-game", {}, `Game ${s.game + 1}`, s.games > 1 ? h("span.of", {}, ` / ${s.games}`) : null),
+        h("div.sb-stage", {}, s.stage_name),
+        h("div.sb-phase", {}, `${s.mode} · ${s.source === "job" ? `job #${s.job_id}` : `arena #${s.arena_game ?? ""}`} · ${phase}`)),
+      side("2"));
     if (s.phase === "finished" && s.error) addEvent(h("div.ev.sys.err", {}, `Stopped: ${s.error}`));
   }
 
@@ -169,6 +183,7 @@ export default async function live(root, _params, signal) {
     es.addEventListener("hello", (e) => {
       offset = JSON.parse(e.data).server_time - Date.now() / 1000;
       queue = [];
+      shown = [];
       events.replaceChildren();
       gameKey = null;
     });
@@ -179,7 +194,7 @@ export default async function live(root, _params, signal) {
     });
     es.addEventListener("log", (e) => {
       const { port, kind, rec } = JSON.parse(e.data);
-      enqueue(rec.ts, () => addEvent(recordCard(rec, port, kind)));
+      enqueue(rec.ts, () => addEvent(recordCard(rec, port, kind), rec.ts, port));
     });
     signal.addEventListener("abort", () => es.close());
   }
@@ -190,9 +205,11 @@ export default async function live(root, _params, signal) {
     const { jobs, arena } = await api("/api/jobs?limit=5");
     arenaToggle.checked = arena === "on";
     const active = jobs.filter((j) => j.status === "running" || j.status === "queued");
-    mount(queueBox, active.length ? h("ul", {}, active.map((j) => h("li", {},
-      link(`/job/${j.id}`, `#${j.id}`), " ", h("span", { class: `badge ${j.status === "running" ? "live" : "warn"}` }, j.status), " ",
-      `${j.label1} (${j.char1_name}) vs ${j.label2} (${j.char2_name})`, h("span.dim", {}, ` · ${j.mode} · ${j.lane}`))))
-      : h("div.dim", {}, arena === "on" ? "Queue empty: the arena is playing." : "Queue empty."));
+    mount(queueBox, active.length ? active.map((j) => h("div.queue-item", {},
+      link(`/job/${j.id}`, `#${j.id}`), statusBadge(j.status),
+      h("span", {}, h("span.port.p1", {}, "P1"), ` ${j.label1} `, h("span.dim", {}, j.char1_name), h("span.faint", {}, "  vs  "),
+        h("span.port.p2", {}, "P2"), ` ${j.label2} `, h("span.dim", {}, j.char2_name)),
+      h("span.spacer"), h("span.dim", {}, `${j.mode}${j.lane === "headless" ? " · headless" : ""}`)))
+      : h("div.dim", {}, arena === "on" ? "Queue empty. The arena is playing." : "Queue empty."));
   }, signal);
 }

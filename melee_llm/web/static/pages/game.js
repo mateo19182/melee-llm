@@ -3,7 +3,7 @@
 // The patched Slippi Lab (patches/slippilab.patch) posts {type: "slippilab:frame", frame} on every frame
 // and accepts {type: "slippilab:seek", frame}. Without the patch, clicks reload the embed at #<frame index>.
 import { recordCard } from "../decisions.js";
-import { fmt, h, link, mount, playerLine, resultText, api } from "../lib.js";
+import { api, fmt, h, link, mount, resultText } from "../lib.js";
 
 const FIRST_FRAME = -123; // Slippi frame numbers start at -123; Slippi Lab's #N is an index from there
 
@@ -32,7 +32,7 @@ export default async function game(root, { id }, signal) {
   }
 
   const cards = decisions.map((d) => {
-    const el = recordCard(d.r, d.port, d.kind, { onclick: () => seek(d.r.asked_frame ?? d.r.frame) });
+    const el = recordCard(d.r, d.port, d.kind, { onclick: () => seek(d.r.asked_frame ?? d.r.frame), callsign: d.kind === "coach" ? "coach" : null });
     d.el = el;
     return el;
   });
@@ -44,13 +44,13 @@ export default async function game(root, { id }, signal) {
     seek(Math.round(FIRST_FRAME + ((e.clientX - r.left) / r.width) * span));
   } }, decisions.map((d) => h(`div.tick${d.r.changed ? ".changed" : ""}`, {
     style: { left: pos(d.r.frame), "--c": d.port == 1 ? "var(--p1)" : "var(--p2)" } })), cursor);
-  const frameInfo = h("span.dim.mono", {}, "");
+  const frameInfo = h("span.faint", { style: { fontSize: "12px" } }, "");
   const list = h("div.panel-body", {}, others.filter((x) => x.r.type === "game_start").map((x) => recordCard(x.r, x.port, x.kind)),
     cards, others.filter((x) => x.r.type === "game_end").map((x) => recordCard(x.r, x.port, x.kind)));
 
   function onFrame(frame) {
     cursor.style.left = pos(frame);
-    frameInfo.textContent = `frame ${frame} · ${fmt.frames(Math.max(0, frame))}`;
+    frameInfo.textContent = `f${frame} · ${fmt.frames(Math.max(0, frame))}`;
     let idx = -1;
     for (let i = 0; i < decisions.length && decisions[i].r.frame <= frame; i++) idx = i;
     const d = decisions[idx];
@@ -70,28 +70,31 @@ export default async function game(root, { id }, signal) {
   signal.addEventListener("abort", () => window.removeEventListener("message", onMsg));
 
   const t = g.tokens;
-  const head = h("div.pagehead", {},
-    h("h1", {}, playerLine(g, 1), h("span.dim", {}, " vs "), playerLine(g, 2)),
-    h("span.badge", {}, g.stage_name), g.mode ? h("span.badge", {}, g.mode) : null,
-    h("span", {}, resultText(g)), h("span.dim", {}, `${g.time} · ${fmt.frames(g.frames)}`),
-    h("span.spacer"),
-    g.job_id ? link(`/job/${g.job_id}`, `Job #${g.job_id}`) : h("span.dim", {}, g.source_label),
-    h("a", { href: replayUrl, download: g.name }, "Download .slp"),
-    h("a", { href: base, target: "_blank" }, "Open in Slippi Lab ↗"));
+  const side = (p) => h(`span.side.p${p}`, {}, h(`span${g.winner === p ? ".won" : ""}`, {}, g[`label${p}`] ?? g[`p${p}`]),
+    h("span.char", {}, g[`char${p}_name`] ?? ""));
+  const head = h("div.pagehead", { style: { flexDirection: "column", alignItems: "stretch", gap: "8px" } },
+    h("div.matchup", {}, h("span.port.p1", { style: { fontSize: "16px" } }, "P1"), side(1), h("span.vs", {}, "vs"),
+      h("span.port.p2", { style: { fontSize: "16px" } }, "P2"), side(2)),
+    h("div.meta-row", {}, g.winner ? h("span.badge.hi", {}, `P${g.winner} wins`) : null, h("span", {}, resultText(g).replace(/^P\d wins · |^draw · /, "")),
+      h("span.badge", {}, g.stage_name), g.mode ? h("span.badge", {}, g.mode) : null,
+      h("span", {}, `${g.time} · ${fmt.frames(g.frames)}`),
+      h("span.spacer"),
+      g.job_id ? link(`/job/${g.job_id}`, `Job #${g.job_id}`) : h("span", {}, g.source_label),
+      h("a", { href: replayUrl, download: g.name }, "Download .slp"),
+      h("a", { href: base, target: "_blank" }, "Open in Slippi Lab ↗")));
 
   if (!decisions.length && !others.length) {
     mount(root, head, iframe);
     return;
   }
-  const followBox = h("label.check", { style: { fontSize: "12px" } }, h("input", { type: "checkbox", checked: true,
+  const followBox = h("label.check", { style: { fontSize: "12.5px" } }, h("input", { type: "checkbox", checked: true,
     onchange: (e) => { follow = e.target.checked; } }), "follow");
   mount(root, head, h("div.game-layout", {}, iframe,
-    h("div.card.panel", { style: { height: "calc(100vh - 170px)", top: "72px" } },
-      h("div.panel-head", { style: { flexDirection: "column", alignItems: "stretch" } },
-        h("div.row", {}, h("h2", {}, `Decisions (${decisions.length})`), frameInfo, h("span.spacer"), followBox),
+    h("div.card.panel", { style: { height: "calc(100vh - 190px)" } },
+      h("div.panel-head.stacked", {},
+        h("div.row", {}, h("h2", {}, "Decisions ", h("span.faint", { style: { fontSize: "15px" } }, decisions.length)), frameInfo, h("span.spacer"), followBox),
         bar,
-        t ? h("div.dim", { style: { fontSize: "12px" } }, `${fmt.num(t.calls)} LLM calls · ${fmt.tokens(t)}`,
-          t.est_usd !== null ? ` · ~${fmt.usd(t.est_usd)}` : "") : null,
-        h("div.dim", { style: { fontSize: "12px" } }, "Click a decision to jump to the state the model saw.")),
+        h("div.panel-sub", {}, t ? `${fmt.num(t.calls)} LLM calls · ${fmt.tokens(t)}${t.est_usd !== null ? ` · ~${fmt.usd(t.est_usd)}` : ""} · ` : "",
+          "click a decision to jump to the state the model saw")),
       list)));
 }
