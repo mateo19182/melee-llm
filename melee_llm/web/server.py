@@ -448,7 +448,7 @@ app = Starlette(routes=routes)
 def main() -> None:
     host = os.environ.get("BIND", "127.0.0.1")
     if host in ("0.0.0.0", "::"):
-        raise SystemExit("refusing to bind all interfaces; the app has no auth of its own")
+        raise SystemExit("refusing to bind all interfaces; requests that do not come through Cloudflare count as the owner")
     uvicorn.run(app, host=host, port=int(os.environ.get("PORT", "8770")), log_level="warning", proxy_headers=True)
 
 

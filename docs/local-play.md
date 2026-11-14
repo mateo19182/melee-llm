@@ -35,9 +35,9 @@ uv run play.py --iso "$ISO" --bot phillip:gm --bot-char FOX
 ## Controller
 
 Your controls are Port 1 of the Slippi Launcher's Dolphin (`~/.config/slippi-dolphin/netplay-beta`). Set them once
-there (in the Slippi Launcher, open Dolphin's configuration → Controllers) and `play.py` copies them on every start.
+there (Slippi Launcher, Dolphin's configuration → Controllers); `play.py` copies them on every start.
 
-- **GameCube controller on a Wii U adapter** (official or Mayflash): switch on the adapter set to "Wii U", plug in
+- **GameCube controller on a Wii U adapter** (official or Mayflash): set the adapter's switch to "Wii U", plug in
   the black USB cable, and set Port 1 to "GameCube Adapter for Wii U". No mapping needed. The udev rule for
   `057e:0337` comes with Steam's `60-steam-input.rules`; without Steam see `docs/netplay.md`.
 - **Any other pad** (8BitDo, Xbox, DualSense): set Port 1 to "Standard Controller", Configure, pick the pad as Device
@@ -50,8 +50,8 @@ there (in the Slippi Launcher, open Dolphin's configuration → Controllers) and
 Any `match.py` player spec whose bot is installed works: `phillip:<model>` (`gm`, `super-gm`, `master`, `diamond`,
 `fox_d21_v6.2`), `meleebot[:run]`, `faynt`, `reyn:<command>`, `baseline:<name>`, `bot:<path.py>`.
 
-On the laptop (Ryzen AI Max 390, CPU only) Phillip gm and meleebot bc-6m-v1 both hold 60 fps. Dolphin waits for the
-bot every frame, so a bot slower than 16.7 ms per frame slows the whole game.
+Dolphin waits for the bot every frame, so a bot slower than 16.7 ms per frame slows the whole game. On the laptop
+(Ryzen AI Max 390, CPU only) Phillip gm and meleebot bc-6m-v1 both hold 60 fps.
 
 ## Setup (once per machine)
 
@@ -64,9 +64,11 @@ bot every frame, so a bot slower than 16.7 ms per frame slows the whole game.
 
 ## Two or three players
 
-`--humans 2` (or 3) puts humans on ports 1 and 3 (and 4) against the bot on port 2, as a free-for-all. The score
-line has each player (`p1`, `p3`, ..., `bot`) and the winner; Ctrl-C prints wins per player. Set Port 3 (and 4) in
-the Launcher's Dolphin too; `play.py` exits if a human port has no device there. Phillip only sees port 1.
+`--humans 2` (or 3) puts humans on ports 1 and 3 (and 4) against the bot on port 2, as a free-for-all.
+
+- The score line has each player (`p1`, `p3`, ..., `bot`) and the winner; Ctrl-C prints wins per player.
+- Set Port 3 (and 4) in the Launcher's Dolphin too: `play.py` exits if a human port has no device there.
+- Phillip only sees port 1.
 
 ```sh
 uv run play.py --iso "$ISO" --bot phillip:gm --bot-char FOX --humans 2

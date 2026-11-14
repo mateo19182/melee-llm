@@ -2,20 +2,22 @@
 
 As of 2026-11-14 (wrapped up at 15:10 with 183 ablation games; no further runs planned). Real-time track, Fox ditto on Battlefield and Final Destination, Elo relative to CPU 9 = 1500, ± the 95% half-width.
 
+Ratings on this page are from the joint fit of the main bench's games and the ablation games ([table](#ablation-results)). The bench-only fit, shown on the Bench page and in [status.md](status.md), differs by a few points.
+
 ## Answer
 
 **Reyn needs a command, and the best one is "Don't die."; the coach barely matters beyond that.**
 
-1. **Most of the gain is having any command at all.** Uncoached Reyn plays with no command (1746). One random command held all game already reaches 2018 (+272 over none); switching every 5 s adds only ~50 more (random coach 2068; fixed and sticky random are −50 ±174 and −65 ±181 vs it, within noise). So it isn't the perturbation of changing commands.
-2. **Holding "Don't die." all game, with no coach at all, rates 2398**: level with the Jev coach (+52 ±164), above every LLM coach (2132-2259) and +330 ±168 over the random coach.
+1. **Most of the gain is having any command at all.** Reyn with no command rates 1746. One random command held all game reaches 2018, and a random coach switching every 5 s only 2068, within noise of it. So the gain is not the perturbation of changing commands.
+2. **Holding "Don't die." all game, with no coach, rates 2398**: level with the Jev coach (2346) and above every LLM coach (2132-2259).
 3. **Jev coaches best because it ends up holding "Don't die."** 41% of the time, mostly through a router accident (its "kill now" pick is routed to "Don't die."). The LLM coaches pick sensible-sounding commands (edgeguard, aggressive play) that are worth less.
-4. **Interval, computed features and the menu don't measurably matter** at ~25 games per variant: Jev at 1 s / 5 s / 15 s is 2278 / 2346 / 2154, Jev with features 2189, Haiku with features 2183, random over Jev's top-6 commands 2169. All within ±175 of each other.
+4. **Interval, computed features and the menu don't measurably matter** at ~25 games per variant: all those variants are within ±175 of each other.
 
-Practical upshot: to make a stronger coached Reyn, start from "Don't die." as the default and only switch away for a clear reason; and fix the router's `kill_now` mapping (or keep it, knowingly).
+To make a stronger coached Reyn, start from "Don't die." as the default and switch away only for a clear reason, and fix the router's `kill_now` mapping (or keep it, knowingly).
 
 ## The questions
 
-The final bench put uncoached Reyn at 1765 ±110, the random coach at 2096 ±122, the four LLM coaches at 2147-2275 (±130-145) and the Jev coach at 2371 ±132. So:
+On the bench, a random coach lifted Reyn by about 320 Elo, the four LLM coaches did not clearly beat it, and the Jev coach did. So:
 
 1. Why does any coaching help, even random? Is it the perturbation of changing commands, or specific commands?
 2. Why does Jev beat random when the LLM coaches don't clearly do so?
@@ -23,11 +25,15 @@ The final bench put uncoached Reyn at 1765 ±110, the random coach at 2096 ±122
 
 ## Method
 
-**Log mining** (`uv run python scripts/coach_deepdive.py logs|windows|games`). Every bench coach game writes `<replay>.p<port>.coach.jsonl`: one record per call with the state text, the chosen command, whether it changed, the latency, and Reyn's router reply. The *effective* command is the router's row after each call (an abstained phrase keeps the previous command). A *window* is the span between two calls (5 s at `interval=300`); its outcome is the change in percent and stocks between the two states the coach saw. The random coach assigns commands at random, so its windows are a randomised experiment: the command → next-5-s outcome association there is causal, if noisy (about 25 windows per command).
+**Log mining** (`uv run python scripts/coach_deepdive.py logs|windows|games`) over every bench coach game's `<replay>.p<port>.coach.jsonl` (format in [coach.md](coach.md#design)).
 
-**Ablations** (`bench run --out data/bench-deepdive --context data/bench/results.jsonl --only ...`). New entrants in `entrants.ablations()` (inactive in the main bench) were played by the bench scheduler under the bench rules (`realtime` mode on :98, ports 52000-52099, games under 50 fps not rated), against the same anchors (HAL, Phillip gm/plat, MIMIC, Reyn, the random and Jev coaches, Haiku coach). The main bench's games join the fit as context, so the new ratings are on the same scale. `scripts/coach_deepdive.py ablations data/bench-deepdive/results.jsonl` refits everything and prints each entrant's difference from the random coach and from the Jev coach, with a Laplace 95% interval from the joint fit (shared anchor uncertainty cancels, so these are tighter than the per-entrant ±).
+- The *effective* command is the one Reyn's router holds after each call (an abstained phrase keeps the previous command).
+- A *window* is the span between two calls (5 s at `interval=300`). Its outcome is the change in percent and stocks.
+- The random coach assigns commands at random, so its windows are a randomised experiment: the effect of a command on the next 5 s is causal there, if noisy (about 25 windows per command).
 
-New coach options used (`melee_llm/agents/coach.py`): `p_change` (random coach keeps its command with probability 1 − p; 0 = one random command all game), `menu=id|id` (restrict the menu), `features=1` (named features computed in code, below).
+**Ablations** (`bench run --out data/bench-deepdive --context data/bench/results.jsonl --only ...`). New entrants in `entrants.ablations()` (inactive in the main bench) played under the bench rules (`realtime` mode on :98, ports 52000-52099, games under 50 fps not rated) against the same anchors, and the main bench's games join the fit as context, so the ratings are on the same scale. `scripts/coach_deepdive.py ablations data/bench-deepdive/results.jsonl` refits everything and prints each entrant's difference from the random coach and from the Jev coach. Those differences have tighter intervals than the per-entrant ±, because shared anchor uncertainty cancels.
+
+New coach options (`melee_llm/agents/coach.py`): `p_change` (random coach keeps its command with probability 1 − p; 0 = one random command all game), `menu=id|id` (restrict the menu), `features=1` (named features computed in code).
 
 ## What the coaches do (log mining, 392 bench coach games)
 
@@ -50,23 +56,23 @@ What they hold (share of calls, effective command):
 - **Luna:** low recovery 31%, edgeguard 28%, nothing 10%, centre of the stage 7%.
 - **Sol:** nothing 44%, whiff punish 17%, centre of the stage 16%.
 
-**Jev's favourite command is a router accident.** Jev's most chosen id is `kill_now` (21% of calls), whose phrase "Cause your opponent to lose a stock." Reyn's router maps to **Stock protection** ("Don't die.") every time (160 of 160 accepted sends; 200 across all coaches). With its explicit `stock_protection` picks (18%), Jev holds "Don't die." 41% of the time. Its other frequent pick, `approach`, is always abstained by the router (160 of 160), as are `holding_position`, `ground_play` and `far_spacing`, so those picks act as "keep". The command menu says one thing; Reyn does another.
+**Jev's favourite command is a router accident.** Jev's most chosen id is `kill_now` (21% of calls), whose phrase "Cause your opponent to lose a stock." Reyn's router maps to **Stock protection** ("Don't die.") every time (160 of 160 accepted sends; 200 across all coaches). With its explicit `stock_protection` picks (18%), Jev holds "Don't die." 41% of the time. Its other frequent pick, `approach`, is always abstained by the router (160 of 160), as are `holding_position`, `ground_play` and `far_spacing`, so those picks act as "keep".
 
 **Command effects, from the random coach's randomised windows** (net damage = % dealt − % taken in the next ~5 s; random-coach mean +8.3, n = 2,595 windows; ± is the 95% interval):
 
 - Best: "Don't die." +25 ±12 (n = 52), punish landing +19 ±13, edgeguard from the stage +19 ±15, ledgedash +17 ±12. By menu section, Play style +18 ±6 is best.
 - Worst: "Don't start any attacks." −19 ±6, the half-second-pause rule −15 ±10, down tilt −11 ±17; by section, Fox techniques +1 ±4 and Attacks +4 ±3.
-- No command at all: +7.5 ±10 (n = 35), about average. So inside random-coach games, an empty command is not worse than a random one over the next 5 s.
+- No command at all: +7.5 ±10 (n = 35), about average.
 
-**A coach's mix predicts its rating.** Weighting each coach's held commands by those random-window effects (shrunk toward the mean) gives an implied value per window of Jev +14.2, Haiku +11.9, Sonnet +11.7, Luna +10.2, Sol +9.4, random +8.2. That is the bench order except Luna vs Haiku/Sonnet, which are within noise of each other on the board too. The LLM coaches pick sensible commands (edgeguard, punish landing, aggressive); Jev mostly holds the single best one.
+**A coach's mix predicts its rating.** Weighting each coach's held commands by those effects (shrunk toward the mean) gives an implied value per window of Jev +14.2, Haiku +11.9, Sonnet +11.7, Luna +10.2, Sol +9.4, random +8.2. That is the bench order except Luna vs Haiku/Sonnet, which are within noise of each other on the board too.
 
-**Game-level associations are flat.** Across coach games, the result relative to the Elo expectation does not depend on change rate (low half +0.06 ±0.05, high half −0.04 ±0.05), time with no command or distinct commands. Windows right after a change do worse than held windows for every LLM and Jev, but that is selection (coaches change when losing).
+**Game-level associations are flat.** The result relative to the Elo expectation does not depend on change rate (low half +0.06 ±0.05, high half −0.04 ±0.05), time with no command or distinct commands. Windows right after a change do worse than held windows, but that is selection (coaches change when losing).
 
-**Head to head**, Jev's edge is clearest: Jev beat the LLM coaches 25-3 (Haiku 8-0, Sonnet 6-0, Luna 8-1, Sol 3-2) and the random coach 9-2; the random coach beat uncoached Reyn 9-0. On the fitted scale Jev is +273 ±130 over random; the LLM coaches are +49 to +177 (±132-145) over random and −96 to −224 (±130-138) under Jev (Laplace intervals on the difference).
+**Head to head**, Jev beat the LLM coaches 25-3 (Haiku 8-0, Sonnet 6-0, Luna 8-1, Sol 3-2) and the random coach 9-2; the random coach beat uncoached Reyn 9-0.
 
 ## Ablation results
 
-`scripts/coach_deepdive.py ablations data/bench-deepdive/results.jsonl`: 183 games (133 rated, 47 ran under 50 fps on a loaded machine and were not rated, 3 errors), fitted jointly with the main bench's games. ± is the 95% Laplace interval; the last two columns are differences from the random coach and the Jev coach.
+183 games (133 rated, 47 ran under 50 fps on a loaded machine and were not rated, 3 errors), fitted jointly with the main bench's games. ± is the 95% Laplace interval; the last two columns are differences from the random coach and the Jev coach.
 
 | Entrant | Elo | ± | Games (new) | vs random | vs Jev |
 |---|---|---|---|---|---|
@@ -88,4 +94,4 @@ What they hold (share of calls, effective command):
 
 Anchors in the same fit: Phillip gm 2488, HAL MASTER 2234, Phillip plat 1945, MIMIC 1919. MIMIC was dropped from the run partway (too slow to rate under load). No ablation game reached the 8-minute timer, so the Sudden Death scoring fix (PR #5, deployed mid-run) changed no result.
 
-**Limits.** ~25 games per variant leaves ±175: enough to see that "Don't die." and Jev are well above random and that fixed/sticky random are not better than switching, not enough to rank interval or feature variants. The window analysis above is short-horizon (5 s) and the bench is whole games; they agree on "Don't die." being best.
+**Limits.** ~25 games per variant leaves ±175: enough to see that "Don't die." and Jev are well above random and that fixed/sticky random are not better than switching, not enough to rank interval or feature variants. The window analysis is short-horizon (5 s) and the bench is whole games; they agree on "Don't die." being best.
