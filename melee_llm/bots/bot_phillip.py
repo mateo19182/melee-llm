@@ -9,6 +9,21 @@ from slippi_ai import eval_lib, saving
 MODELS = Path("models")
 
 
+def _pin_onnx_threads(n: int) -> None:
+    # onnxruntime's default thread pool spikes to 25+ ms a step on some CPUs (e.g. the 12-core Ryzen AI laptop);
+    # a fixed count is steady. slippi_ai builds its SessionOptions itself, so set it on every one.
+    import onnxruntime as ort
+
+    base = ort.SessionOptions
+
+    def options():
+        o = base()
+        o.intra_op_num_threads = n
+        return o
+
+    ort.SessionOptions = options
+
+
 class Bot:
     def __init__(self, init: dict):
         cfg = init["config"]
@@ -16,6 +31,8 @@ class Bot:
         if not path.exists():
             raise ValueError(f"no Phillip model {path}; have {self.available()}")
         self.model = cfg["model"]
+        if cfg.get("threads"):
+            _pin_onnx_threads(int(cfg["threads"]))
         self.state = saving.load_state_from_disk(str(path))
         self.agent = eval_lib.build_agent(
             port=init["port"], opponent_port=init["opponent_port"], state=self.state, name=None,
@@ -32,6 +49,7 @@ class Bot:
         self.steer = {"name": rl_names[0] if rl_names else None, "rating": self.basic.rating,
                       "temperature": float(self.basic._temperature)}
         self.controller_set = False
+        self.ports = (init["port"], init["opponent_port"])
 
     @staticmethod
     def available() -> list[str]:
@@ -59,4 +77,6 @@ class Bot:
         if not self.controller_set:
             self.agent.set_controller(controller)
             self.controller_set = True
+        if len(gs.players) > 2:  # slippi_ai's parser asserts a 1v1; extra humans (play.py --humans) stay unseen
+            gs.players = {p: gs.players[p] for p in self.ports}
         self.agent.step(gs)
