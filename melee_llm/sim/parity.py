@@ -44,7 +44,7 @@ def compare(slp: Path, verbose: bool = False) -> dict:
     truth = {gs.frame: gs for gs in replay_states(slp)}
     stage = next(iter(truth.values())).stage
     n = len(ids)
-    from melee_llm.sim.runner import DATA_DIR
+    from melee_llm.sim.world import DATA_DIR
     env = msl.EnvBatch(batch_size=1, length=n + 1, action_format="raw", data_dir=str(DATA_DIR))
     env.configure_match(stage=SIM_STAGE[stage], seed=game.start.random_seed,
                         players=tuple(msl.PlayerConfig(truth[ids[0]].players[p].character.value, controller_port=p - 1)

@@ -4,7 +4,7 @@
 
 slippi-ai already ships a bridge to it (`slippi_ai/sim_env`). Phillip's training most likely runs on it: the slippi-ai README thanks Enzyme for a "decomp-based simulator that runs melee even faster than dolphin".
 
-We tested it on 2026-11-14 with upstream commit `eea7b5fb`. It has **no license file**, so we use it locally and don't redistribute it. Its game data is extracted from our ISO.
+We tested it on 2026-11-14 with upstream commit `eea7b5fb`. It has **no license file**, so we don't redistribute it: `pyproject.toml` pins that commit as a git dependency, so `uv sync` builds it from GitHub on each machine (about a minute, once). Its game data is extracted from our ISO and stays local.
 
 ## Results
 
@@ -36,12 +36,13 @@ We tested it on 2026-11-14 with upstream commit `eea7b5fb`. It has **no license 
 `melee_llm/sim` runs any of our agents in the simulator, with the same contract as `runner.play`. `runner.play(mode="sim")` dispatches to it, so match.py, the bench, the ladders and the arena take it by mode name:
 
 ```sh
-uv pip install -e vendor/melee-sim-light   # once, into the main venv (setup below)
 uv run python -m melee_llm.match --mode sim --p1 baseline:rusher --p2 baseline:laser --char1 FOX --char2 FOX --games 3
 ```
 
 - **`sim/state.py`** builds the libmelee `GameState` from each observation, field for field as libmelee's Console builds it from Slippi. That includes the action frames re-indexed to start at 1, the moonwalk warning, `off_stage`, `distance`, projectiles and each player's controller state.
 - **`sim/controller.py`** is a `melee.Controller` with no pipe. Agents press buttons on it as live. Each frame it converts `current` to the integers the game reads, the way Dolphin converts libmelee's pipe values.
+- **`sim/world.py`** steps one match frame by frame (controllers in, `GameState` out) with `save()`/`restore()`; the runner plays whole games on it.
+- **`sim/scenes.py`** reaches situations with plain inputs and saves them: standing mid-stage, dashing, hanging on the ledge. `tests/test_macros.py` runs the LLM player's input macros from them in the real game (it replaced a hand-written toy physics model, and caught a ledge macro that did nothing when the stick was still held from the grab).
 - **`sim/parity.py`** checks both against libmelee. It replays a Dolphin `.slp`'s raw inputs through the simulator and compares every field with libmelee's own parse of the same replay.
 
 **Exactness against libmelee.** 40 random replays of ours between controller-driven players gave 152,375 compared frames. Every field matched except `hitstun_frames_left`:
@@ -85,9 +86,8 @@ git clone https://github.com/kyhavlov/melee-sim-light
 uv venv sim-venv --python 3.12
 VIRTUAL_ENV=$PWD/sim-venv uv pip install -e "./slippi-ai[onnx-cuda,jax]" -e ./melee-sim-light
 
-# For --mode sim: the main venv (uv run keeps it; `uv sync` removes it, so reinstall after a sync).
-# The replay parity check also needs peppi-py.
-cd .. && uv pip install -e vendor/melee-sim-light peppi-py
+# The main venv gets melee-sim-light (and peppi-py, for the parity check) from `uv sync`;
+# --mode sim and the simulator tests need only the data/ extracted above (or MSL_DATA_DIR).
 
 # Check our replays against the simulator (strict, frame by frame)
 cd melee-sim-light && uv run python -m tools.validation.validate_replay --backend native --workers 12 \

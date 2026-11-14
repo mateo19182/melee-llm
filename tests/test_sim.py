@@ -1,6 +1,5 @@
 """melee_llm.sim: controller conversion (offline), and against melee-sim-light when it and its data are installed."""
 import glob
-import os
 from pathlib import Path
 
 import melee
@@ -8,6 +7,7 @@ import numpy as np
 import pytest
 from melee.controller import fix_analog_stick
 
+from melee_llm.sim import world
 from melee_llm.sim.controller import SimController
 
 RAW_ROW = np.dtype([("buttons", "<u2"), ("main_x", "i1"), ("main_y", "i1"), ("c_x", "i1"), ("c_y", "i1"),
@@ -48,9 +48,7 @@ def test_unfixed_controller_values_convert_the_same_way_dolphin_reads_them():
     assert (_raw(c)["c_x"], _raw(c)["c_y"]) == (80, -40)
 
 
-_DATA = Path(os.environ.get("MSL_DATA_DIR", Path(__file__).parents[1] / "vendor/melee-sim-light/data"))
-needs_sim = pytest.mark.skipif(not (_DATA / "raw").is_dir() or __import__("importlib").util.find_spec("melee_sim") is None,
-                               reason="melee-sim-light or its extracted data is not installed (docs/simulator.md)")
+needs_sim = pytest.mark.skipif(not world.available(), reason="melee-sim-light's game data is not extracted (docs/simulator.md)")
 
 
 @needs_sim

@@ -9,23 +9,16 @@ seed and inputs replay identically here but not on Dolphin.
 """
 from __future__ import annotations
 
-import os
 import random
 import time
-from pathlib import Path
 from typing import Callable
 
 import melee
 
 from melee_llm import matches
 from melee_llm.agents.base import Agent
-from melee_llm.paths import VENDOR
-from melee_llm.sim.controller import SimController
-from melee_llm.sim.state import SIM_STAGE, StateBuilder
-
-DATA_DIR = Path(os.environ.get("MSL_DATA_DIR", VENDOR / "melee-sim-light/data"))
-TIMER_FRAMES = 8 * 60 * 60  # Slippi's 8-minute timer
-_RING = 1024  # frames per buffer pass; the cursor wraps
+from melee_llm.sim.state import SIM_STAGE
+from melee_llm.sim.world import TIMER_FRAMES, World
 
 
 def _check_agents(agents: dict[int, Agent]) -> None:
@@ -41,8 +34,6 @@ def play(agents: dict[int, Agent], stage: melee.Stage = melee.Stage.BATTLEFIELD,
          seed: int | None = None, observer: Callable[[str, dict], None] | None = None,
          meta: dict | None = None) -> list:
     """Run `games` games. `seed` fixes the game RNG of game 0 (game i uses seed + i); None picks one."""
-    import melee_sim as msl
-
     from melee_llm.runner import GameResult, _result
 
     notify = observer or (lambda event, info: None)
@@ -51,35 +42,27 @@ def play(agents: dict[int, Agent], stage: melee.Stage = melee.Stage.BATTLEFIELD,
     if stage not in SIM_STAGE:
         raise ValueError(f"{stage.name} is not a legal stage in the simulator")
     ports = sorted(agents)
-    controllers = {p: SimController(p) for p in ports}
     seed = random.getrandbits(32) if seed is None else seed
     pub = matches.publisher(agents, stage, "sim", games, 0, None, {"source": "sim", **(meta or {})})
     results: list[GameResult] = []
     error = None
-    env = msl.EnvBatch(batch_size=1, length=_RING, action_format="raw", data_dir=str(DATA_DIR))
+    world = World({p: agents[p].character for p in ports}, stage, seed, {p: agents[p].costume for p in ports},
+                  max_frame=TIMER_FRAMES)
     try:
         for p, a in agents.items():
-            a.setup(controllers[p], p, next(q for q in ports if q != p))
+            a.setup(world.controllers[p], p, next(q for q in ports if q != p))
         for a in agents.values():
             a.ready()
         stepping = [agents[p] for p in ports]
         for game in range(games):
-            env.configure_match(stage=SIM_STAGE[stage], seed=(seed + game) % 2**32, max_frame=TIMER_FRAMES,
-                                players=tuple(msl.PlayerConfig(agents[p].character.value, controller_port=p - 1,
-                                                               costume=agents[p].costume) for p in ports))
-            env.reset_all()
-            builder = StateBuilder(stage, ports, {p: agents[p].costume for p in ports})
-            gs, row = builder.build(env.current_frame[0]), None
-            for c in controllers.values():
-                c.release_all()
-                c.flush()
+            gs = world.reset(seed + game)
             for a in agents.values():
                 a.on_game_start(gs, None)
             if pub:
                 pub.game_start(game, gs, None)
             notify("game_start", {"game": game, "replay": None, "gs": gs})
             frames, t0 = 0, time.time()
-            while True:
+            while not world.done:
                 frames += 1
                 for a in stepping:
                     a.begin(gs)
@@ -89,17 +72,7 @@ def play(agents: dict[int, Agent], stage: melee.Stage = melee.Stage.BATTLEFIELD,
                     pub.frame(gs)
                 if observer:
                     observer("frame", {"gs": gs})
-                if env.t >= env.length:
-                    env.reset_cursor()
-                row = env.raw_action_view[env.t, 0]
-                for i, p in enumerate(ports):
-                    controllers[p].raw_input(row["players"][i])
-                    controllers[p].flush()
-                t = env.t
-                env.step()
-                gs = builder.build(env.current_frame[0], row)
-                if env.terminal_view[t, 0]["done"]:
-                    break
+                gs = world.step()
             results.append(_result(gs, frames, t0, agents))
             for a in agents.values():
                 a.on_game_end(gs)
@@ -113,6 +86,6 @@ def play(agents: dict[int, Agent], stage: melee.Stage = melee.Stage.BATTLEFIELD,
     finally:
         for a in agents.values():
             a.close()
-        env.close()
+        world.close()
         if pub:
             pub.close(error)
