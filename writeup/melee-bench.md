@@ -198,6 +198,7 @@ Per game:
 
 ## What's next
 
+- **Impressive bots and TASs**: the simulator can save and restore any moment of a game and runs about 100 times faster than the emulator. So a program can try thousands of inputs from the same moment and keep the best. That's how tool-assisted "superplay" works: frame-perfect combos, recoveries and edgeguards no human could pull off. It's also a way to train bots on far more games than a human could ever play.
 - **A faster brain**: a small local model on my GPU at about half a second per decision, since speed is what matters live.
 - **A better coach**: start from "Don't die." and only switch with a good reason.
 - **MeleeBot, bigger**: the 20M version, then onto the board.
