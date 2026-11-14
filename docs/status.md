@@ -40,11 +40,11 @@ Elo is relative to CPU 9 = 1500, ± the 95% half-width.
 - **CPU levels aren't monotonic** in Fox ditto (levels 1, 3 and 7 are about equal). This looks like a real Melee quirk.
 - **Caveats:**
   - Live GPT-6.1 Sol discards ~95% of its replies because they arrive more than 2 s late, so its live rating is mostly the fallback behaviour.
-  - The overnight run counted 100.1M CLIProxy tokens, but discarded replies weren't counted then: real spend was **115.1M** (recounted from the logs; `spent_recounted` in `data/bench/status.json`). Fixed: every call's tokens now count ([bench](bench.md#scheduler-active-sampling-under-a-budget)).
+  - The overnight run counted 100.1M CLIProxy tokens, but discarded replies weren't counted then: real spend was **115.1M** (recounted from the logs; `spent_recounted` in `data/bench/status.json`). Fixed: every call's tokens now count ([bench](bench.md#scheduler-active-sampling-no-token-cap)).
 
 ## What's next
 
-Mateo wants all of it, with the LLM-playing side now lower priority and a moderate budget (~10-20M LLM tokens). Three threads:
+Mateo wants all of it, with the LLM-playing side now lower priority. No fixed token budget: spend where games still answer something. Three threads:
 
 | Thread | Covers | Next |
 |---|---|---|

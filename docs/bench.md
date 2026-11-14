@@ -7,7 +7,7 @@ uv run python -m melee_llm.bench entrants                 # the registry
 uv run python -m melee_llm.bench imports                  # which older games count, and why the others don't
 uv run python -m melee_llm.bench standings                # recompute data/bench/standings.json (1000 bootstraps)
 uv run python -m melee_llm.bench recount                  # recount token spend from the decision logs (see Budget)
-uv run python -m melee_llm.bench run --budget 100 --target 125    # the fill (resumable); runs as unit melee-bench
+uv run python -m melee_llm.bench run --target 125    # the fill (resumable); runs as unit melee-bench
 ```
 
 ## The standard game
@@ -62,7 +62,7 @@ Port and stage are not in the model; the scheduler balances them per pairing.
 
 The page lists the excluded counts by reason under "Older games not imported".
 
-## Scheduler: active sampling under a budget
+## Scheduler: active sampling, no token cap
 
 `melee_llm/bench/scheduler.py`, unit `melee-bench`. Every few seconds, if a slot is free:
 
@@ -73,13 +73,13 @@ The page lists the excluded counts by reason under "Older games not imported".
 
 Resources (defaults, `run --help`): at most 14 games; 3 unthrottled token-free games, 6 real-time and 8 untimed-LLM games at once; 6 LLM sides in flight per provider (`claude`, `gpt`) and 4 for Jev, which spreads load across the two subscriptions; 6 GPU bot processes and 1.5 GB free VRAM per GPU bot (Reyn, HAL, MIMIC, Phillip); a CPU-heavy game (real-time or unthrottled) only while the 1-minute load plus its own share stays under 36, an untimed LLM game (Dolphin mostly blocked on the API) up to 40, and always at least 2 games running, since other services set most of the load and 20 s after the previous start. While the `melee-llm-arena` unit runs, at most 3 token-spending games. Unthrottled bot games run under `nice`. Each also waits for one of the machine's slots for unthrottled games, shared with the bot-writer ladder and fast web jobs ([performance.md](performance.md)).
 
-It stops when every active entrant is converged, when the CLIProxy token budget is spent (games in flight count against it at their estimate), or when nothing fits and nothing runs for 30 minutes. An entrant whose last three bench games all failed (crash, CUDA OOM, API outage) sits out for an hour. Restarting resumes from `results.jsonl`, budget included.
+It stops when every active entrant is either converged (95% CI within `--target`) or **no longer narrowing**: a CI shrinks about like 1/√games, so an entrant with n games and half-width w would gain about w·(1 − √(n/(n+20))) from 20 more; below `--min-gain` (5 Elo) it stops asking for games. It also stops when nothing fits and nothing runs for 30 minutes. There is no token cap by default; `--budget` (millions of CLIProxy tokens, games in flight counted at their estimate) adds one. An entrant whose last three bench games all failed (crash, CUDA OOM, API outage) sits out for an hour. Restarting resumes from `results.jsonl`, spend included.
 
-**Budget.** Only CLIProxy tokens (Claude and GPT models) count toward `--budget`; Jev is billed to its own TypeSafe key at about a cent per game and reported in USD. The page shows spend per provider and per entrant (tokens and list-price USD per game, where a price is known).
+**Spend.** Only CLIProxy tokens (Claude and GPT models) count toward an optional `--budget`; Jev is billed to its own TypeSafe key at about a cent per game and reported in USD. The page shows spend per provider and per entrant (tokens and list-price USD per game, where a price is known).
 
 **Every call counts.** A reply that is never applied still costs its tokens: a live player drops replies older than `max_stale` frames or superseded by a newer one, and a call can still be in flight when the game ends (the player waits up to 5 s for it). These are logged as `dropped` records with their usage, and `side_stats` adds them to the side's tokens, `calls` and `dropped`. Calls that fail in transport (timeouts) return no usage and stay uncounted; they were 5 of ~5,600 coach calls. The standings' spend per entrant carries `dropped` and `discarded_rate` (dropped / all replies), shown on the entrant page and in the cost column.
 
-Before 2026-11-14 the `dropped` records carried no usage, so the overnight run counted only applied replies: **100.1M CLIProxy tokens counted, 115.1M actually spent** (Claude 69.8M, GPT 45.4M). `bench recount` re-reads every game's logs, estimates each old dropped reply at its log's mean tokens per applied call (`tokens_estimated`), and writes `recount.json`. `results.jsonl` is not rewritten; the standings' per-entrant spend uses the recount, and `status.json` gets it as `spent_recounted` next to `spent` (the budget counter, as counted at the time). Discarded rates in that run: GPT-6.1 Sol live 95%, Sonnet live 35%, gpt-6-luna live 23%, `jev_live` 7%, Haiku live 5%; coaches and paused players drop none.
+Before 2026-11-14 the `dropped` records carried no usage, so the overnight run counted only applied replies: **100.1M CLIProxy tokens counted, 115.1M actually spent** (Claude 69.8M, GPT 45.4M). `bench recount` re-reads every game's logs, estimates each old dropped reply at its log's mean tokens per applied call (`tokens_estimated`), and writes `recount.json`. `results.jsonl` is not rewritten; the standings' per-entrant spend uses the recount, and `status.json` gets it as `spent_recounted` next to `spent` (as counted at the time); the page shows the recounted figure. The overnight run stopped at its 100M cap; that cap is gone. Discarded rates in that run: GPT-6.1 Sol live 95%, Sonnet live 35%, gpt-6-luna live 23%, `jev_live` 7%, Haiku live 5%; coaches and paused players drop none.
 
 ## Isolation and files
 
