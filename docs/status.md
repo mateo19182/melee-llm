@@ -21,6 +21,8 @@ Where do LLMs land on one Elo scale for real Super Smash Bros. Melee? The scale 
 | **Melee Bench** | One rating per track for every entrant, anchored to CPU 9 = 1500. Fox ditto on Battlefield and Final Destination. | [bench](bench.md) |
 | Web UI | https://melee.m19182.dev (you only): Bench, Live, All matches, Launch, Games, Arena, Docs. | README |
 | Netplay | You vs any bot over Slippi Direct Connect. Built, not yet played. | [netplay](netplay.md) |
+| Live commentary | Play-by-play ticker on the Live page, plus an optional two-caster LLM booth with ElevenLabs voices (only while someone listens). | [web-ui](web-ui.md) |
+| Simulator | `--mode sim`: games in melee-sim-light (Melee's decompiled gameplay code), no Dolphin. Checked frame for frame against Dolphin replays. Controller-driven players only (no CPUs, no learned bots). | [simulator](simulator.md) |
 
 ## What we learned (final bench: 2,325 real-time games, 1,993 untimed)
 
@@ -42,7 +44,7 @@ Elo is relative to CPU 9 = 1500, ± the 95% half-width.
 
 ## What's left (rough priority)
 
-1. **Coach deep-dive.** Why does the Jev coach beat random? Ablations on interval, prompt, named features (e.g. "opponent in endlag") and Jev vs LLM. Cheap: Jev costs cents.
+1. **Coach deep-dive (running).** Why does the Jev coach beat random? Ablations on interval, prompt, named features (e.g. "opponent in endlag") and Jev vs LLM. Cheap: Jev costs cents. The bench writes to `data/bench-deepdive/` (target 300 games).
 2. **Janky entrants**, dropped into the bench:
    - Jev with named features
    - two LLMs sharing one character
@@ -55,14 +57,14 @@ Elo is relative to CPU 9 = 1500, ± the 95% half-width.
    - Draft at `writeup/`. Not finished on purpose.
    - Decided: name the models, SVG figures, include a 2D replay render.
    - Regenerate the numbers with `python3 writeup/make_figures.py`.
-6. **Longer bets:** a fast local brain (a small model trained on our logs, ~50 ms decisions), Melee puzzles (savestate scenarios), a live AI caster, a world model / V-JEPA.
+6. **Longer bets:** a fast local brain (a small model trained on our logs, ~50 ms decisions), Melee puzzles (savestate scenarios), a world model / V-JEPA. The simulator could make bot-only games much cheaper once it can run learned bots.
 
 ## Running services (user units)
 
 | Unit | Role |
 |---|---|
 | `melee-web` | Web UI |
-| `melee-arena` | Live-slot worker. The arena is switched off. |
+| `melee-arena` | Live-slot worker; the arena fills idle time (`data/arena/`). |
 | `melee-mediamtx` | Stream server |
 | `melee-xvfb`, `melee-xvfb-headless` | Virtual displays :99 and :98 |
 | `melee-viewer` | Old Tailscale-only replay viewer |
