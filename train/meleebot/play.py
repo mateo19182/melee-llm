@@ -133,7 +133,10 @@ class Policy:
         self.centers = self.model.stick_centers.cpu().numpy()
         self.context = self.model.config.context
         torch.manual_seed(seed)
-        self.history: list = []
+        cap = 4 * self.context
+        self.feats = (np.zeros((cap, 2 * fe.PLAYER_NUM), np.float32), np.zeros((cap, fe.PAD_NUM), np.float32),
+                      np.zeros((cap, fe.PAD_NUM), np.float32), np.zeros((cap, 2), np.int64))
+        self.size = 0
         self.last_frame = None
         # rope models keep a per-layer key/value cache and run one frame per step
         self.cached = self.model.config.pos == "rope"
@@ -153,17 +156,36 @@ class Policy:
                           temperature=float(new["temperature"]))
         return dict(self.steer)
 
+    def _push(self, f):
+        """Store one frame's parts of fe.window's inputs, computed once when the frame arrives."""
+        if self.size == len(self.feats[0]):  # full: keep the newest frames a window can reach
+            keep = self.context + fe.MAX_DELAY
+            for x in self.feats:
+                x[:keep] = x[self.size - keep:self.size]
+            self.size = keep
+        state, own, opp_pad, act = self.feats
+        i = self.size
+        state[i, :fe.PLAYER_NUM], state[i, fe.PLAYER_NUM:] = fe.player_num(f["me"]), fe.player_num(f["opp"])
+        own[i], opp_pad[i] = fe.pad_num(f["me_pad"]), fe.pad_num(f["opp_pad"])
+        act[i] = f["me"]["action"], f["opp"]["action"]
+        self.size += 1
+
     def _batch(self, gs, last_only=False):
-        frames = np.stack(self.history[-(self.context + fe.MAX_DELAY):])
-        T = 1 if last_only else min(self.context, len(frames))
-        start = len(frames) - T
+        # Same inputs as fe.window over the game's frames, from the per-frame parts stored by _push.
+        n = min(self.size, self.context + fe.MAX_DELAY)
+        state, own, opp_pad, act = (x[self.size - n:self.size] for x in self.feats)
+        T = 1 if last_only else min(self.context, n)
+        start = n - T
         d = self.steer["delay"]
         # Early in a game there may be fewer than `delay` older frames: repeat the first one.
         pad_front = max(0, d - start)
         if pad_front:
-            frames = np.concatenate([np.repeat(frames[:1], pad_front), frames])
+            state, own, opp_pad, act = (np.concatenate([np.repeat(x[:1], pad_front, 0), x])
+                                        for x in (state, own, opp_pad, act))
             start += pad_front
-        num, actions, _ = fe.window(np.concatenate([frames, frames[-1:]]), start, T, d)
+        t = start + np.arange(T)
+        num = np.concatenate([state[t - d], own[t], opp_pad[t - d]], -1)
+        actions = np.minimum(act[t - d], fe.N_ACTIONS - 1)
         me, opp = gs.players[self.port], gs.players[self.opp]
         win = {0: 0, 1: 1, None: 2}[self.steer["win"]]
         b = dict(num=num[None], actions=actions[None], delay=[d], me_char=[character_index(me.character)],
@@ -185,15 +207,13 @@ class Policy:
     def act(self, gs) -> dict | None:
         """Controller for the next frame, or None (leave the controller alone) before the game starts."""
         if self.last_frame is not None and gs.frame < self.last_frame:
-            self.history, self.caches, self.n = [], None, 0
+            self.size, self.caches, self.n = 0, None, 0
         self.last_frame = gs.frame
         f = self.raw.frame(gs.frame, self.port, self.opp)
         self.raw.forget_before(gs.frame - 2)
         if f is None or gs.frame < 0:   # the dataset starts at frame 0, when players can first move
             return None
-        self.history.append(f)
-        if len(self.history) > 4 * self.context:
-            del self.history[:-(self.context + fe.MAX_DELAY)]
+        self._push(f)
         with torch.autocast(self.device, torch.bfloat16, enabled=self.device == "cuda"):
             if self.cached:
                 if self.caches is None:

@@ -21,13 +21,15 @@ BUTTONS = ("BUTTON_A", "BUTTON_B", "BUTTON_X", "BUTTON_Z", "BUTTON_L")
 class Bot:
     def __init__(self, init: dict):
         cfg = init["config"]
+        # A fixed seed against a deterministic CPU replays the same game; default to a fresh one.
+        seed = cfg["seed"] if cfg.get("seed") is not None else int.from_bytes(os.urandom(4), "little")
         self.policy = Policy(cfg["checkpoint"], init["port"], init["opponent_port"],
-                             device=cfg.get("device"), threads=cfg.get("threads", 8), seed=cfg.get("seed") or 0)
-        self.checkpoint = cfg["checkpoint"]
+                             device=cfg.get("device"), threads=cfg.get("threads", 8), seed=seed)
+        self.checkpoint, self.seed = cfg["checkpoint"], seed
 
     def info(self) -> dict:
         ck = self.policy.ckpt
-        return {"model": self.checkpoint, "device": self.policy.device, "step": ck.get("step"),
+        return {"model": self.checkpoint, "device": self.policy.device, "step": ck.get("step"), "seed": self.seed,
                 "params_m": round(ck.get("params", 0) / 1e6, 1), "steer": dict(self.policy.steer),
                 "ranges": {"delay": [0, 12], "rank": ["UNKNOWN", "PLATINUM", "DIAMOND", "MASTER", "PRO"],
                            "win": [0, 1, None], "temperature": "> 0"}}
