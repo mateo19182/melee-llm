@@ -2,12 +2,14 @@
 
     uv run play.py --iso ~/melee.iso --bot phillip:gm --bot-char FOX
     uv run play.py --iso ~/melee.iso --bot faynt --bot-char FOX --stage FINAL_DESTINATION --games 3
+    uv run play.py --iso ~/melee.iso --humans 2   # free-for-all: humans on ports 1 and 3
 
-Your controls are Port 1 of the Slippi Launcher's Dolphin (~/.config/slippi-dolphin/netplay-beta): set them
-there once and they carry over. Pick your character and press Start yourself; the bot picks its own and the
+Your controls are Port 1 (and 3, 4) of the Slippi Launcher's Dolphin (~/.config/slippi-dolphin/netplay-beta): set
+them there once and they carry over. Pick your character and press Start yourself; the bot picks its own and the
 stage. Ctrl-C quits. See docs/local-play.md.
 """
 import argparse
+import configparser
 import json
 import os
 import signal
@@ -25,6 +27,27 @@ from melee_llm.util import port_free
 DOLPHIN = ROOT / "bin/Slippi_Mainline.AppImage"  # scripts/setup.sh fetches it
 SLIPPI_HOME = Path("~/.config/slippi-dolphin/netplay-beta").expanduser()  # the Launcher's mainline config
 HUMAN, BOT = 1, 2
+HUMAN_PORTS = (1, 3, 4)
+
+
+def score(gs, humans: tuple[int, ...], spec: str) -> dict:
+    """Winner by (stocks, -percent) plus each player's line; 1v1 keeps the "you"/"bot" keys."""
+    line = lambda pl: {"char": pl.character.name, "stocks": int(pl.stock), "percent": round(pl.percent)}
+    names = {p: ("you" if len(humans) == 1 else f"p{p}") for p in humans} | {BOT: "bot"}
+    key = {p: (int(gs.players[p].stock), -float(gs.players[p].percent)) for p in names}
+    best = max(key.values())
+    top = [p for p in names if key[p] == best]
+    r = {"winner": names[top[0]] if len(top) == 1 else "tie"}
+    r |= {names[p]: line(gs.players[p]) for p in humans}
+    r["bot"] = {"spec": spec, **line(gs.players[BOT])}
+    return r
+
+
+def summary(results: list[dict], humans: tuple[int, ...]) -> str:
+    wins = lambda name: sum(r["winner"] == name for r in results)
+    if len(humans) == 1:
+        return f"you {wins('you')} - {wins('bot')} bot"
+    return "wins: " + ", ".join(f"{n} {wins(n)}" for n in [f"p{p}" for p in humans] + ["bot", "tie"])
 
 
 def main() -> None:
@@ -34,13 +57,22 @@ def main() -> None:
     p.add_argument("--bot-char", default="FOX")
     p.add_argument("--stage", default="BATTLEFIELD")
     p.add_argument("--games", type=int, default=0, help="0 = until Ctrl-C")
+    p.add_argument("--humans", type=int, default=1, choices=(1, 2, 3), help="humans on ports 1, 3, 4 (free-for-all)")
     p.add_argument("--bot-threads", type=int, default=8, help="Phillip's onnxruntime threads (0 = its default)")
     p.add_argument("--dolphin", default=str(DOLPHIN))
     p.add_argument("--slippi-home", default=str(SLIPPI_HOME), help="Dolphin user folder whose Port 1 controls you use")
     a = p.parse_args()
+    humans = HUMAN_PORTS[:a.humans]
     if not Path(a.slippi_home, "Config", "GCPadNew.ini").is_file():
         sys.exit(f"no controller config in {a.slippi_home}/Config: open Dolphin from the Slippi Launcher once and "
                  "set Port 1 to Standard Controller (see docs/local-play.md)")
+    ini = configparser.ConfigParser(strict=False, interpolation=None)
+    ini.read(Path(a.slippi_home, "Config", "Dolphin.ini"))
+    for h in humans[1:]:
+        if ini.get("Core", f"SIDevice{h - 1}", fallback="0") == "0":
+            sys.exit(f"Port {h} has no controller in {a.slippi_home}/Config/Dolphin.ini: in the Slippi Launcher's "
+                     f"Dolphin (Controllers) set Port {h} to \"GameCube Adapter for Wii U\" or Standard Controller "
+                     "(see docs/local-play.md)")
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
     os.environ.setdefault("QT_QPA_PLATFORM", "xcb")  # Dolphin only reads the keyboard through X11 (XInput2)
 
@@ -50,7 +82,7 @@ def main() -> None:
     replay_dir = ROOT / "replays/local"
     replay_dir.mkdir(parents=True, exist_ok=True)
     port = next(p for p in range(51460, 51480) if port_free(p))
-    # Copy the Launcher's Dolphin folder so your Port 1 mapping comes along; libmelee only rewrites Port 2.
+    # Copy the Launcher's Dolphin folder so your port mappings come along; libmelee only rewrites Port 2.
     console = Console(path=a.dolphin, dolphin_home_path=a.slippi_home, copy_home_directory=True, fullscreen=False,
                       save_replays=True, replay_dir=str(replay_dir), disable_audio=False, gfx_backend="OGL",
                       emulation_speed=1.0, blocking_input=True, slippi_port=port)
@@ -60,10 +92,11 @@ def main() -> None:
     try:
         if not (console.connect() and controller.connect()):
             raise RuntimeError("could not connect to Dolphin")
-        bot.setup(controller, BOT, HUMAN)
+        bot.setup(controller, BOT, HUMAN)  # bots are 1v1-trained: with more humans, port 1 is still "the opponent"
         bot.ready()
-        print(f"Dolphin is up. You: port 1. Bot: {a.bot} as {a.bot_char} on {a.stage}. Pick a character, press Start.",
-              flush=True)
+        you = "You: port 1" if a.humans == 1 else "Humans: ports " + ", ".join(map(str, humans))
+        print(f"Dolphin is up. {you}. Bot: {a.bot} as {a.bot_char} on {a.stage} (port 2). "
+              "Pick a character, press Start.", flush=True)
         menu, last, frames, replay, seen = melee.MenuHelper(), None, 0, None, set(replay_dir.rglob("*.slp"))
         screen = None
         while not a.games or len(results) < a.games:
@@ -82,11 +115,7 @@ def main() -> None:
                 bot.step(gs)
                 continue
             if last is not None:
-                me, it = last.players[HUMAN], last.players[BOT]
-                a_, b_ = (me.stock, -me.percent), (it.stock, -it.percent)
-                r = {"game": len(results) + 1, "winner": "you" if a_ > b_ else "bot" if b_ > a_ else "tie",
-                     "you": {"char": me.character.name, "stocks": me.stock, "percent": round(me.percent)},
-                     "bot": {"spec": a.bot, "char": it.character.name, "stocks": it.stock, "percent": round(it.percent)},
+                r = {"game": len(results) + 1, **score(last, humans, a.bot),
                      "stage": last.stage.name, "seconds": round(time.time() - t0),
                      "fps": round(frames / max(time.time() - t0, 1e-9), 1), "replay": str(replay) if replay else None}
                 if replay:
@@ -103,8 +132,7 @@ def main() -> None:
         bot.close()
         console.stop()
     if results:
-        wins = sum(r["winner"] == "you" for r in results)
-        print(f"you {wins} - {sum(r['winner'] == 'bot' for r in results)} bot")
+        print(summary(results, humans))
 
 
 if __name__ == "__main__":

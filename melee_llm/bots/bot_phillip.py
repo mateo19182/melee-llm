@@ -49,6 +49,7 @@ class Bot:
         self.steer = {"name": rl_names[0] if rl_names else None, "rating": self.basic.rating,
                       "temperature": float(self.basic._temperature)}
         self.controller_set = False
+        self.ports = (init["port"], init["opponent_port"])
 
     @staticmethod
     def available() -> list[str]:
@@ -76,4 +77,6 @@ class Bot:
         if not self.controller_set:
             self.agent.set_controller(controller)
             self.controller_set = True
+        if len(gs.players) > 2:  # slippi_ai's parser asserts a 1v1; extra humans (play.py --humans) stay unseen
+            gs.players = {p: gs.players[p] for p in self.ports}
         self.agent.step(gs)
