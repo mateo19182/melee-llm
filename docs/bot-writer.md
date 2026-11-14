@@ -18,6 +18,7 @@ Code lives in `melee_llm/botwriter/`:
 | `dolphin.py` | Claims a distinct Slippi port per process so Dolphins run in parallel. Also finds the ISO. |
 | `ladder.py` | Evaluation: jobs, parallel workers, `games.jsonl`, `leaderboard.json`, Bradley-Terry. |
 | `session.py`, `toolloop.py` | Build a sandbox, run a coding agent with a budget, and collect the bot, transcript and cost. |
+| `batch.py`, `round1.json` | Run a plan of sessions N at a time with per-slot port ranges and retries; `round1.json` holds the paused round-1 runs. |
 | `template/` | What the agent sees: `README.md` (task, rules, scoring, tools), `bot.py` starter, `docs/`. |
 | `baselines/` | Scripted Fox bots (`rusher`, `laser`, `shine`). They are copied into the sandbox as `opponents/`. |
 
@@ -34,7 +35,11 @@ cd /tmp/sb && tools/check-bot && tools/practice --opponent cpu:7 --games 4
 uv run python -m melee_llm.botwriter.session run --harness claude --model opus --minutes 60 \
     --budget-usd 25 --effort high --name opus/run1
 uv run python -m melee_llm.botwriter.session run --harness openai --model gpt-6-astra --minutes 60 --name astra/run1
-uv run python -m melee_llm.botwriter.session run --harness codex --model gpt-6-astra --minutes 60 --name astra-codex/run1
+uv run python -m melee_llm.botwriter.session run --harness codex --model gpt-6.1-sol --minutes 60 --name sol-codex/run1
+# (codex-cli 0.166 on the ChatGPT login refuses gpt-6-astra; use the openai harness for it)
+
+# a batch of sessions, 3 at a time, each with its own 4-port Slippi range; resumable via the log
+uv run python -m melee_llm.botwriter.batch --plan melee_llm/botwriter/round1.json --log runs.jsonl
 
 # ladder: add entrants (sessions/<id>/final/bot.py) to a copy of ladder.example.json
 uv run python -m melee_llm.botwriter.ladder run --config ladder.json      # resumable
@@ -133,9 +138,9 @@ times. `tools/inspect-replay` and `tools/time-left` round out the set.
 - **Practice vs evaluation conditions:** both use the same `BotAgent`, budget and sanitization.
   The only differences are the opponents and the number of games.
 
-## Testing status (no ISO on this machine)
+## Testing status
 
-Verified offline:
+Verified offline (before the ISO was available):
 
 - The starter bot and all three baselines load and run over 4.9k recorded frames with 0
   exceptions, p99 below 1 ms and inputs on every frame.
@@ -158,19 +163,108 @@ Verified offline:
 - Sessions:
   - Claude Code smoke session (Haiku, 3 min, $0.003): the sandbox was built, the agent read the
     README, ran `tools/check-bot` and `tools/time-left`, and the final bot was collected and
-    validated. Haiku stopped after 10 s, which is why continuation nudges now exist (added after
-    that run, so they are untested in a real session).
+    validated. Haiku stopped after 10 s, which is why continuation nudges now exist. They work
+    (round 1: Opus was resumed 7 times, Sonnet 31 times).
   - The OpenAI-compatible tool loop was tested with 5 turns of Haiku through CLIProxy: bash,
     read and edit all worked.
 
-**Not yet verified, because these need the ISO:**
+Verified with the ISO (pilot and round 1, below): practice games and ladder games end to end,
+up to 10 ladder Dolphins plus 12 practice Dolphins in parallel on distinct ports, and the
+baselines in real games. Real sessions under both the `claude` and `openai` harnesses work
+(3-minute smokes with Haiku and gpt-6-astra, then the 30-minute round-1 runs).
 
-- `practice play` and ladder games end to end.
-- Parallel Dolphins with patched ports.
-- That `play()` returns one result per `.slp`, in sorted order.
-- The baselines' in-game behaviour. Their recovery logic is untested; Fox's firefox action names
-  are assumed to be `SWORD_DANCE_*`.
-- The Codex harness (only command construction exists).
+Still unverified: the Codex harness. codex-cli 0.166 on the ChatGPT login refuses
+`gpt-6-astra` ("not supported when using Codex with a ChatGPT account"); `gpt-6.1-sol` should
+work there but no session has been run.
+
+## Round 1 results (2026-11-14)
+
+**Paused after one run per Claude model.** The planned study was 3 × 30-minute runs each of Opus 5.5,
+Sonnet 5.5 and Haiku 4.5 (Claude Code) and gpt-6-astra and gpt-6.1-sol (tool loop over CLIProxy).
+After the first wave Mateo paused it to save Claude subscription usage. The 12 remaining runs are in
+`melee_llm/botwriter/round1.json`. Resume them, 3 at a time on ports 51560-51571, with:
+
+```sh
+systemd-run --user --unit melee-ladder-r1-sessions --working-directory="$PWD" \
+  --setenv=PATH="$HOME/.local/bin:/usr/bin:/bin" --setenv=DISPLAY=:98 --setenv=MELEE_ISO=$HOME/melee.iso \
+  .venv/bin/python -m melee_llm.botwriter.batch --plan melee_llm/botwriter/round1.json \
+  --log ~/.local/share/melee-llm/botwriter/rounds/r1/runs.jsonl
+```
+
+Then add each `sessions/<id>/final/bot.py` to `~/.local/share/melee-llm/botwriter/ladders/v1.json` and
+re-run `ladder run` on it. It only plays the new games.
+
+**Ladder v1:** Fox ditto on FD and BF, both ports. The main roster is CPU 1-9 plus the 3 scripted
+baselines, at 3 games per (opponent, stage, side), so 144 games per bot. The hard tier is HAL,
+Phillip, MIMIC and Faynt, at 1 game per (opponent, stage, side), so 16 games per bot. That makes
+640 games: 112 reused from the pilot ladder, and the rest in about 2 h on 10 Dolphins. 9 hard-tier jobs first died of CUDA OOM, because other
+processes held 17 GB of the GPU, and were re-run with 3 workers. Across all bots, 188 of about
+7.6 M frames were late and 15 were skipped. No bot had exceptions, crashes or policy
+violations. Draws (8-minute timeouts, mostly against `laser` and `shine`) count ½.
+
+| model | harness | runs | main score (95 % CI) | hard tier | CPU level | Elo | cost | wall | LoC | practice games | SmashBot overlap |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Sonnet 5.5 (run1) | Claude Code | 1 | **83.0** (76.0-88.2) | 0 / 16 | 9 | 470 | $0.45 | 28.5 min | 135 | 38 | 0.084 |
+| Haiku 4.5 (run1) | Claude Code | 1 | **83.0** (76.0-88.2) | 6.2 (1 win vs MIMIC) | 7 | 479 | $0.44 | 30.0 min | 108 | 18 | 0.071 |
+| Opus 5.5 (run1) | Claude Code | 1 | 76.4 (68.8-82.6) | 0 / 16 | 8 | 391 | $1.82 | 29.1 min | 303 | 32 | 0.035 |
+| Sonnet 5.5 (pilot1) | Claude Code | 1 | 17.7 (12.3-24.8) | 0 / 16 | 0 | -171 | $0.32 | 29.5 min | 148 | n/a | 0.115 |
+| gpt-6-astra, gpt-6.1-sol | tool loop | 0 | paused | | | | | | | | |
+
+Notes on the table:
+
+- Per model, Sonnet is 50.4 ± 32.6 over 2 runs. With one run each, Sonnet, Haiku and Opus are not
+  separable: the CIs overlap, and the two Sonnet runs differ by 65 points.
+- Cost is Claude Code's API-equivalent `total_cost_usd`; usage was billed to the subscription.
+  Earlier records summed it over `--resume` calls, but the value is cumulative. That inflated
+  Sonnet run1 to $10.96 and Opus to $13.22. It is fixed in `session.py`, and the old values are
+  kept as `cost_usd_summed_bug` in those `meta.json` files.
+- Overlap is `similarity.py`'s renamed 12-token-shingle overlap. The baselines and the starter
+  template score 0.08-0.11, and the flag threshold is 0.25. No bot is flagged.
+- Reference Elo (CPU 1 = 0): CPU 9 449, `rusher` 431, `laser` 265, `shine` 243, MIMIC 757, HAL and
+  Phillip 968, Faynt 1003. Hard-tier Elos rest on very few non-wins.
+
+**What each model built**
+
+- **Sonnet run1** (`shiner`, 135 lines): a compact, reactive, stateless bot. On the ground in range
+  it shines and jump-cancels the shine with a tapped jump (frame 3 or later). It grabs a shielding
+  opponent, forward-smashes above 110 %, fires periodic lasers at range and spams nair in the air.
+  It recovers with a double jump, then a firefox aimed at a point above the ledge. Practice: 13/18
+  against CPU 9, 0/6 against the baselines. After about 21 minutes it declared the bot final and
+  ignored the next ~25 "keep improving" nudges with one-line replies (31 resumes in total).
+- **Sonnet pilot1** has the same skeleton (`shiner`, the same helpers) but holds B instead of
+  tapping it, so its shine rarely comes out. Its recovery also self-destructs off the bottom about
+  twice a game, and it loses even to CPU 1. Most of the 65-point gap between the Sonnet runs comes
+  from a few lines of input timing and recovery.
+- **Haiku run1** (108 lines): the simplest bot. At close range it calls libmelee's built-in
+  `melee.techskill.multishine`. A little further out it up-smashes, at mid range it dashes in and
+  jabs, otherwise it walks toward the opponent without passing the ledge. Its firefox recovery is
+  aimed at the ledge. It is the best against the scripted baselines (0.75 against each) and took
+  the only hard-tier win (1 game against MIMIC). One invocation, and it never stopped early.
+- **Opus run1** (303 lines): the most engineered bot. It has a macro queue (frame-by-frame input
+  sequences) and reactive defence from `FrameData.in_range` (shield, or shine if the hit is ≥ 2
+  frames away). It punishes cooldown frames read from `attack_state`, then chains grab into up-throw
+  or down-throw by percent, shine into jump-cancel into up-air, and dash grab or short-hop nair.
+  It also mixes ledge getup, ledge jump and roll at random, DIs in, fast-falls and lasers an
+  offstage opponent. It wrote its own frame-by-frame replay dumper in `/tmp/dbg` using the repo's
+  venv Python, which it found in `tools/`. That is legitimate, but it wrote outside the sandbox.
+  It is the weakest of the three against `rusher` (0.25) and CPU 8-9 (0.5 and 0.33). More
+  machinery did not pay off in 30 minutes.
+- Common pattern: all bots beat CPU 1-6 almost every time (except the pilot) and lose every game
+  to HAL, Phillip and Faynt. `rusher` is the hardest scripted baseline. The main score saturates
+  near 83, because 9/12 of the roster is CPUs.
+
+**Harness observations**
+
+- Codex: codex-cli 0.166 on the ChatGPT login refuses `gpt-6-astra`, so astra needs the `openai`
+  tool loop.
+- Tool loop: in the 3-minute astra smoke it ended with `model_stopped`. This was not a bug. The
+  model went idle in the last 6 s, after a "0 minutes left" nudge. The real weakness is that 3
+  idle replies in a row end the loop whatever time is left, so a 30-minute GPT run could quit
+  early. Not tested with sessions yet. Also, CLIProxy reported 0-8 reasoning tokens whether or
+  not `reasoning_effort` was set, so the GPT runs may be running with little reasoning.
+- Sandboxing: agents write to `/tmp` (Opus `/tmp/dbg`, astra `/tmp/rusher.txt`), and Opus used
+  the repo's venv directly. No transcript shows reads of repo source, other sessions or the
+  ladder.
 
 ## Needed changes outside botwriter/ (not made: other owners)
 
