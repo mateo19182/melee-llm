@@ -45,8 +45,10 @@ class Block(nn.Module):
         self.mlp = nn.Sequential(nn.Linear(c.width, 4 * c.width), nn.GELU(), nn.Linear(4 * c.width, c.width))
         self.heads, self.drop, self.rope, self.context = c.heads, c.dropout, c.pos == "rope", c.context
 
-    def forward(self, x, pos, cache=None):
-        """cache: dict holding this layer's last context-1 keys/values; x is then the newest token(s)."""
+    def forward(self, x, pos, cache=None, last_only=False):
+        """cache: dict holding this layer's last context-1 keys/values; x is then the newest token(s).
+
+        last_only: compute only the newest token's output, which may attend to every token."""
         B, T, D = x.shape
         q, k, v = self.qkv(self.ln1(x)).view(B, T, 3, self.heads, D // self.heads).permute(2, 0, 3, 1, 4)
         if self.rope:
@@ -55,6 +57,8 @@ class Block(nn.Module):
             if "k" in cache:
                 k, v = torch.cat([cache["k"], k], 2), torch.cat([cache["v"], v], 2)
             cache["k"], cache["v"] = k[:, :, -(self.context - 1):], v[:, :, -(self.context - 1):]
+        if last_only:
+            q, x, T = q[:, :, -1:], x[:, -1:], 1
         a = F.scaled_dot_product_attention(q, k, v, is_causal=cache is None and T > 1,
                                            dropout_p=self.drop if self.training else 0)
         x = x + F.dropout(self.proj(a.transpose(1, 2).reshape(B, T, D)), self.drop, self.training)
@@ -88,10 +92,11 @@ class Policy(nn.Module):
         self.out = nn.ModuleList(_head(w, n) for n in sizes)
         self.given = nn.ModuleList(nn.Embedding(n, w) for n in sizes[:-1])
 
-    def trunk(self, b, pos=None, caches=None):
+    def trunk(self, b, pos=None, caches=None, last_only=False):
         """b: num (B,T,NUM), actions (B,T,2), and per-window me_char, opp_char, stage, rank, win, delay (B,).
 
         pos: absolute frame positions (T,), default 0..T-1. caches: one dict per layer, for `step`.
+        last_only: return only the last token, (B,1,width); the last block then skips the other tokens.
         """
         T = b["num"].shape[1]
         if pos is None:
@@ -104,7 +109,7 @@ class Policy(nn.Module):
                       + self.rank(b["rank"]) + self.win(b["win"]) + self.delay(b["delay"]))
         x = x + per_window[:, None]
         for i, blk in enumerate(self.blocks):
-            x = blk(x, pos, None if caches is None else caches[i])
+            x = blk(x, pos, None if caches is None else caches[i], last_only and i == len(self.blocks) - 1)
         return self.ln(x)
 
     def forward(self, b):
@@ -128,7 +133,7 @@ class Policy(nn.Module):
     @torch.no_grad()
     def sample(self, b, temperature=1.0):
         """Choices for the last token of each window: dict head -> (B,) class index."""
-        return self._choose(self.trunk(b)[:, -1], temperature)
+        return self._choose(self.trunk(b, last_only=True)[:, -1], temperature)
 
     @torch.no_grad()
     def step(self, b, pos, caches, temperature=1.0):
