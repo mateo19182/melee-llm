@@ -51,7 +51,7 @@ uv run python -m melee_llm.match --mode sim --p1 baseline:rusher --p2 baseline:l
 
 **Closed loop.** Bot-writer baselines rusher vs laser (Fox ditto, Battlefield), with the seed of a headless Dolphin game, replayed that Dolphin game input for input and frame for frame for all 28,923 frames. The final state was the same 4–4, 5.7% vs 0%.
 
-**Speed.** That game took 32 s in the simulator and 143 s in headless Dolphin. Most of the 32 s is the bot-writer sandbox: pickling the `GameState` to each bot process each frame (9 s) and waiting for the bots (10 s). Building the state takes 0.23 ms/frame and the simulator 0.12 ms. Two in-process agents (idle vs multishine) run about 4,700 frames/s, an 8-minute game in 6 s.
+**Speed.** That game took 32 s in the simulator and 143 s in headless Dolphin. Most of the 32 s was the bot-writer sandbox: pickling the `GameState` to each bot process each frame (9 s) and waiting for the bots one after the other (10 s). With faster pickling and both bots asked at once, the same game takes 25 s (37 s before, measured back to back on a loaded machine); what remains is mostly the bot round-trip, about 0.35 ms. Building the state takes 0.23 ms/frame and the simulator 0.12 ms. Two in-process agents (idle vs multishine) run about 4,700 frames/s, an 8-minute game in 6 s.
 
 **Differences from Dolphin.**
 - No in-game CPU and no learned bots: `play` refuses both.
