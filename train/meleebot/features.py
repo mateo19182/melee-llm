@@ -95,9 +95,20 @@ def window(frames, start, length, delay):
     frames: FRAME records of one game. Needs start - delay >= 0 and start + length < len(frames).
     """
     t = start + np.arange(length)
-    state = frames[t - delay]
-    own = frames[t]["me_pad"]
-    num = np.concatenate([player_num(state["me"]), player_num(state["opp"]),
-                          pad_num(own), pad_num(state["opp_pad"])], -1)
-    actions = np.stack([state["me"]["action"], state["opp"]["action"]], -1).astype(np.int64)
-    return num, np.minimum(actions, N_ACTIONS - 1), frames[t + 1]["me_pad"]
+    return (*assemble(frame_parts(frames[:start + length]), t, delay), frames[t + 1]["me_pad"])
+
+
+def frame_parts(frames):
+    """Per-frame pieces of the model input; play computes them once per frame as it arrives.
+
+    Returns state (N, 2*PLAYER_NUM), own pad (N, PAD_NUM), opponent pad (N, PAD_NUM), actions (N, 2).
+    """
+    state = np.concatenate([player_num(frames["me"]), player_num(frames["opp"])], -1)
+    actions = np.stack([frames["me"]["action"], frames["opp"]["action"]], -1).astype(np.int64)
+    return state, pad_num(frames["me_pad"]), pad_num(frames["opp_pad"]), np.minimum(actions, N_ACTIONS - 1)
+
+
+def assemble(parts, t, delay):
+    """(num, actions) for the tokens at frame indices t: own pad of t, everything else from t - delay."""
+    state, own, opp_pad, actions = parts
+    return np.concatenate([state[t - delay], own[t], opp_pad[t - delay]], -1), actions[t - delay]

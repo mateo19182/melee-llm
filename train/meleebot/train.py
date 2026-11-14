@@ -70,8 +70,7 @@ def loss_fn(logits, b):
 def norm_stats(frames, rng, n=200_000):
     idx = np.sort(rng.choice(len(frames) - 1, n, replace=False))
     f = np.asarray(frames[idx])
-    num = np.concatenate([fe.player_num(f["me"]), fe.player_num(f["opp"]),
-                          fe.pad_num(f["me_pad"]), fe.pad_num(f["opp_pad"])], -1)
+    num, _ = fe.assemble(fe.frame_parts(f), np.arange(len(f)), 0)
     return num.mean(0), np.maximum(num.std(0), 1e-3), f["me_pad"]
 
 

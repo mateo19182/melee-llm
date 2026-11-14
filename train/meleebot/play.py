@@ -157,17 +157,14 @@ class Policy:
         return dict(self.steer)
 
     def _push(self, f):
-        """Store one frame's parts of fe.window's inputs, computed once when the frame arrives."""
+        """Store one frame's fe.frame_parts, computed once when the frame arrives."""
         if self.size == len(self.feats[0]):  # full: keep the newest frames a window can reach
             keep = self.context + fe.MAX_DELAY
             for x in self.feats:
                 x[:keep] = x[self.size - keep:self.size]
             self.size = keep
-        state, own, opp_pad, act = self.feats
-        i = self.size
-        state[i, :fe.PLAYER_NUM], state[i, fe.PLAYER_NUM:] = fe.player_num(f["me"]), fe.player_num(f["opp"])
-        own[i], opp_pad[i] = fe.pad_num(f["me_pad"]), fe.pad_num(f["opp_pad"])
-        act[i] = f["me"]["action"], f["opp"]["action"]
+        for store, part in zip(self.feats, fe.frame_parts(f[None])):
+            store[self.size] = part[0]
         self.size += 1
 
     def _batch(self, gs, last_only=False):
@@ -183,9 +180,7 @@ class Policy:
             state, own, opp_pad, act = (np.concatenate([np.repeat(x[:1], pad_front, 0), x])
                                         for x in (state, own, opp_pad, act))
             start += pad_front
-        t = start + np.arange(T)
-        num = np.concatenate([state[t - d], own[t], opp_pad[t - d]], -1)
-        actions = np.minimum(act[t - d], fe.N_ACTIONS - 1)
+        num, actions = fe.assemble((state, own, opp_pad, act), start + np.arange(T), d)
         me, opp = gs.players[self.port], gs.players[self.opp]
         win = {0: 0, 1: 1, None: 2}[self.steer["win"]]
         b = dict(num=num[None], actions=actions[None], delay=[d], me_char=[character_index(me.character)],
