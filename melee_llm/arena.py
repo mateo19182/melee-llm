@@ -1,7 +1,7 @@
 """Arena channel: learned bots (and CPU 9) play back to back on display :99 in lockstep.
 
 Each game picks the pair that has played least, random characters both bots support, and a legal stage.
-Writes the stream overlay (melee_llm.web.live), every result to data/arena/results.jsonl
+Writes every result to data/arena/results.jsonl
 and Elo standings to data/arena/standings.json (shown at https://melee.m19182.dev/arena).
 
 The web worker (melee_llm/web/worker.py, unit melee-arena) runs it as the live slot's idle filler, one
@@ -23,8 +23,6 @@ from melee_llm.paths import ARENA as DATA
 from melee_llm.players import make
 from melee_llm.runner import play
 from melee_llm.util import append_jsonl, exit_on_term, read_jsonl, write_atomic
-from melee_llm.web.live import write_overlay
-from melee_llm.web.specs import char_name
 
 ENTRANTS = ["hal:MASTER", "phillip:gm", "mimic", "faynt", "cpu:9"]
 CHARACTERS = ["FOX", "FALCO", "MARTH", "CPTFALCON"]  # every bot (incl. MIMIC's per-character checkpoints) has these
@@ -82,9 +80,6 @@ def main() -> None:
         p1, p2 = pick(results, rng)
         c1, c2, stage = rng.choice(CHARACTERS), rng.choice(CHARACTERS), rng.choice(STAGES)
         elo = {row["spec"]: row["elo"] for row in table["table"]}
-        overlay = (f"{label(p1)} ({char_name(c1)}) {elo.get(p1, 1500)}  vs  {label(p2)} ({char_name(c2)}) {elo.get(p2, 1500)}"
-                   f"   |   {stage.replace('_', ' ').title()}   |   arena game {len(results) + 1}")
-        write_overlay(overlay)
         t0 = time.time()
         try:
             agents = {1: make(p1, c1), 2: make(p2, c2)}

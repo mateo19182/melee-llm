@@ -116,9 +116,3 @@ def test_live_status_is_the_live_slot_match_or_idle():
     assert (st["phase"], st["error"]) == ("finished", "boom")
     assert registry.live_status([{**ended, "finished": time.time() - 60}])["phase"] == "idle"
 
-
-def test_overlay_text():
-    from melee_llm.web import live
-    assert live.match_text("cpu:9", "cpu:3", "FOX", "MARTH", "BATTLEFIELD", "job #4", 1, 3) == \
-        "CPU 9 (Fox)  vs  CPU 3 (Marth)   |   Battlefield   |   job #4   |   game 2/3"
-    assert live.match_text("cpu:9", "cpu:3", "FOX", "MARTH", "BATTLEFIELD", "job #4").endswith("job #4")

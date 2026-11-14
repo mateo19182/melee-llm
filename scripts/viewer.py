@@ -6,7 +6,6 @@ import html
 import http.server
 import json
 import os
-import re
 import subprocess
 import threading
 from functools import partial
@@ -17,7 +16,8 @@ DIST = ROOT / "vendor/slippilab/dist"
 REPLAYS = ROOT / "replays"
 ARENA = Path(os.environ.get("MELEE_WEB_DATA", ROOT / "data")) / "arena"
 HOST, PORT = os.environ.get("BIND", "100.83.166.6"), int(os.environ.get("PORT", "8767"))
-DISPLAY, SCREEN, OUT = os.environ.get("LIVE_DISPLAY", ":99"), "1280x960", "960:720"
+DISPLAY, OUT = os.environ.get("LIVE_DISPLAY", ":99"), "876:720"
+GAME = "1168x960"  # runner.LIVE_WINDOW: the live game window, kept at (0, 0)
 
 WATCH_HTML = b"""<!doctype html><title>melee live</title>
 <style>html,body{margin:0;height:100%;background:#000}img{width:100%;height:100%;object-fit:contain}</style>
@@ -30,22 +30,10 @@ class LiveStream:
     def __init__(self):
         self.cond, self.frame, self.seq, self.viewers, self.proc = threading.Condition(), b"", 0, 0, None
 
-    @staticmethod
-    def _game_window() -> tuple[str, str]:
-        """(size, display+offset) of Dolphin's game window, or the whole screen if it isn't open."""
-        tree = subprocess.run(["xwininfo", "-root", "-tree"], env={**os.environ, "DISPLAY": DISPLAY},
-                              capture_output=True, text=True).stdout
-        for line in tree.splitlines():
-            if "GALE01" in line and (m := re.search(r"(\d+)x(\d+)\+(\d+)\+(\d+)\s+\+(\d+)\+(\d+)", line)):
-                w, h, *_, x, y = m.groups()
-                return f"{w}x{h}", f"{DISPLAY}+{x},{y}"
-        return SCREEN, DISPLAY
-
     def _capture(self):
-        size, source = self._game_window()
         self.proc = subprocess.Popen(
             ["ffmpeg", "-loglevel", "error", "-f", "x11grab", "-draw_mouse", "0", "-framerate", "60",
-             "-video_size", size, "-i", source, "-vf", f"scale={OUT}:flags=lanczos", "-c:v", "mjpeg", "-q:v", "5",
+             "-video_size", GAME, "-i", f"{DISPLAY}+0,0", "-vf", f"scale={OUT}:flags=lanczos", "-c:v", "mjpeg", "-q:v", "5",
              "-f", "image2pipe", "-"], stdout=subprocess.PIPE)
         buf = b""
         while chunk := self.proc.stdout.read1(1 << 16):

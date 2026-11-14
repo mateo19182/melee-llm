@@ -23,7 +23,7 @@ from pathlib import Path
 from melee_llm.paths import DATA, HEADLESS_DISPLAY, HEADLESS_MAX, HEADLESS_PORTS, ISO, LIVE_DISPLAY, LIVE_PORT, ROOT, VENV_PY
 from melee_llm.players import unthrottled
 from melee_llm.util import claim_slot, port_free, read_jsonl
-from melee_llm.web import jobs, live, logs
+from melee_llm.web import jobs, logs
 
 ARENA_LOG = DATA / "arena.log"
 KILL_AFTER = 20  # seconds between SIGTERM and SIGKILL
@@ -90,7 +90,7 @@ class Worker:
         d = Path(job["dir"])
         spec = {k: job[k] for k in ("id", "p1", "p2", "char1", "char2", "stage", "mode", "games")}
         cmd = [str(VENV_PY), "-m", "melee_llm.web.runjob", "--job", json.dumps(spec), "--dir", str(d),
-               "--port", str(port), "--iso", self.iso] + (["--live"] if is_live else [])
+               "--port", str(port), "--iso", self.iso]
         p = self._spawn(cmd, LIVE_DISPLAY if is_live else HEADLESS_DISPLAY, d / "output.log")
         jobs.update(job["id"], status="running", started=time.time(), pid=p.pid, port=port)
         print(f"job {job['id']} started on port {port}: {job['p1']} vs {job['p2']} ({job['mode']})", flush=True)
@@ -145,7 +145,6 @@ class Worker:
                 self.arena_backoff = time.time() + 30
             self.live = None
             self.live_free_since = time.time()
-            live.write_overlay("")
         elif self.live and self.live.kind == "job" and time.time() - self.live.synced > 5:
             self.sync(self.live)
         if self.stopping:
@@ -188,7 +187,6 @@ class Worker:
                            "WHERE status = 'running'", (time.time(),)).rowcount
         if n:
             print(f"marked {n} interrupted jobs as failed", flush=True)
-        live.write_overlay("")
 
     def run(self) -> None:
         self.recover()
@@ -206,7 +204,6 @@ class Worker:
                 for p in procs:
                     p.terminate()
             time.sleep(0.5)
-        live.write_overlay("")
 
 
 def main() -> None:

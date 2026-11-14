@@ -23,7 +23,7 @@ DISPLAY=:99 uv run -m melee_llm.match --iso ~/melee.iso --p1 cpu:9 --p2 cpu:9
 DISPLAY=:99 uv run -m melee_llm.match --iso ~/melee.iso --p1 llm_paused:claude-haiku-4-5-20251001 --p2 cpu:5 --mode paused
 ```
 
-The web UI (below) is the main live view. On the tailnet, http://m19182:8889/live/ is the lowest-latency one. It's a WebRTC stream from mediamtx, H.264 encoded on the GPU with NVENC at 60 fps and 4 Mbit/s. mediamtx runs as the user service `melee-mediamtx` with config `scripts/mediamtx.yml`, and starts `scripts/stream.sh` only while someone watches. That stream is cropped to Dolphin's game window.
+The web UI (below) is the main live view. On the tailnet, http://m19182:8889/live/ is the lowest-latency one. It's a WebRTC stream from mediamtx, H.264 encoded on the GPU with NVENC at 60 fps and 6 Mbit/s. mediamtx runs as the user service `melee-mediamtx` with config `scripts/mediamtx.yml`, and starts `scripts/stream.sh` only while someone watches. It captures Dolphin's game window at native size (1168x960, 73:60): on :99, `runner.Console` opens that window at that size from Qt's saved geometry and moves it to (0, 0), since VirtualGL can't follow a resize after launch.
 
 http://m19182:8767/watch is the fallback: an MJPEG stream of Dolphin's game window at about 60 fps, served by `scripts/viewer.py` and bound only to the Tailscale IP. `VNC=1 scripts/live.sh` also starts a noVNC view on :6080, which is interactive but laggy.
 

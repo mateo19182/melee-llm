@@ -1,6 +1,6 @@
 """One queued match, run in its own process group by the worker.
 
-    python -m melee_llm.web.runjob --job '<json>' --dir replays/jobs/<id> --port 51441 [--live]
+    python -m melee_llm.web.runjob --job '<json>' --dir replays/jobs/<id> --port 51441
 
 Replays and decision logs go to --dir; each finished game appends a line to <dir>/results.jsonl.
 """
@@ -19,7 +19,6 @@ def main() -> None:
     ap.add_argument("--dir", required=True)
     ap.add_argument("--port", type=int, required=True)
     ap.add_argument("--iso", required=True)
-    ap.add_argument("--live", action="store_true", help="this job owns display :99: write the stream overlay")
     a = ap.parse_args()
     job, out = json.loads(a.job), Path(a.dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -29,21 +28,11 @@ def main() -> None:
     from melee_llm.players import make
     from melee_llm.runner import play
     from melee_llm.util import append_jsonl, exit_on_term
-    from melee_llm.web import live
 
     exit_on_term()  # so play()'s cleanup stops Dolphin and the bots
     agents = {1: make(job["p1"], job["char1"], out), 2: make(job["p2"], job["char2"], out)}
 
-    def overlay(game: int = 0) -> None:
-        if a.live:
-            live.write_overlay(live.match_text(job["p1"], job["p2"], job["char1"], job["char2"], job["stage"],
-                                               f"job #{job['id']}", game, job["games"]))
-
-    overlay()
-
     def on(event: str, info: dict) -> None:
-        if event == "game_start":
-            overlay(info["game"])
         if event == "game_end":
             r = info["result"]
             append_jsonl(out / "results.jsonl", {"game": info["game"], "time": time.strftime("%Y-%m-%dT%H:%M:%S"), **asdict(r)})
