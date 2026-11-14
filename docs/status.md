@@ -29,10 +29,10 @@ Where do LLMs land on one Elo scale for real Super Smash Bros. Melee? The scale 
 Elo is relative to CPU 9 = 1500, ± the 95% half-width.
 
 - **Learned bots are far ahead.** Faynt 3349 ±237, Phillip gm 2489, HAL 2244, MIMIC 1931, Reyn 1765.
-- **Coaching Reyn works, but mostly because any change of command does.**
-  - A random coach lifts Reyn from 1765 to 2096.
-  - The LLM coaches score 2147-2275, which overlaps the random coach.
-  - Only **Jev as coach (2371)** is clearly above random.
+- **Coaching Reyn works because Reyn needs a command, and "Don't die." is the best one** ([coach-deepdive](coach-deepdive.md)).
+  - Reyn with no command: 1765. Any single random command held all game: ~2020. A random coach switching every 5 s: ~2070-2100.
+  - Reyn holding "Don't die." all game, with no coach: **2398**, level with the Jev coach (2346-2371) and above every LLM coach (2132-2275).
+  - Jev coaches best because it ends up holding "Don't die." 41% of the time, mostly via a router accident.
 - **LLMs playing directly in real time are about CPU 4 strength** (1042-1102).
 - **Given unlimited thinking time, GPT-6.1 Sol beats CPU 9** (1691). The other paused LLMs land around CPU 8 (1325-1436).
 - **30 minutes of LLM coding gives a CPU-9-class bot.** Sonnet's scored 1664, Haiku's 1605 and Opus's 1536, one run each.
@@ -48,7 +48,7 @@ Mateo wants all of it, with the LLM-playing side now lower priority. No fixed to
 
 | Thread | Covers | Next |
 |---|---|---|
-| **Melee A · Hub** (server) | Bench, coach deep-dive, write-up, simulator, web UI and deploys | Deep-dive ablation results ([coach-deepdive](coach-deepdive.md)); cheap non-LLM janky entrants (Jev with named features, MIMIC on Mateo's replays, random-command Reyn variants); write-up "Melee Bot Elo" (draft in `writeup/`, not finished on purpose); learned bots in the simulator |
+| **Melee A · Hub** (server) | Bench, coach deep-dive, write-up, simulator, web UI and deploys | Coach deep-dive done ([coach-deepdive](coach-deepdive.md)); cheap non-LLM janky entrants (Jev with named features, MIMIC on Mateo's replays, random-command Reyn variants); write-up "Melee Bot Elo" (draft in `writeup/`, not finished on purpose); learned bots in the simulator |
 | **Melee B · Own bot** (server) | `train/`, `meleebot`, `data/train/` | Yoshi behaviour cloning: model design with Mateo, then training; the bot joins the bench |
 | **Melee D · Play** (laptop) | `human` player, `play.py`, [netplay](netplay.md) | `human` player type in the runner, then Mateo on the bench as `human:mateo` |
 

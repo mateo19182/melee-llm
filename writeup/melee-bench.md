@@ -9,7 +9,7 @@ tags:
 
 <!-- Source: writeup/melee-bench.template.md. Numbers and figures come from writeup/make_figures.py; edit prose here, then re-run it. -->
 
-> **TL;DR.** I put LLMs inside Super Smash Bros. Melee in five different ways and rated all of them, along with Melee's CPUs and the best published learned bots, on one Elo scale. In real time, every LLM that presses the buttons itself plays about as well as a level 4-5 CPU. Untimed, the best one beats CPU 9. Letting an LLM coach a fast learned bot works well, but a coach that picks commands at random gets you most of the way there. Bots that LLMs wrote in 30 minutes land around CPU 9. The learned bots are in a different league. Numbers as of 2026-11-14 12:29 CET, with the benchmark still running.
+> **TL;DR.** I put LLMs inside Super Smash Bros. Melee in five different ways and rated all of them, along with Melee's CPUs and the best published learned bots, on one Elo scale. In real time, every LLM that presses the buttons itself plays about as well as a level 4-5 CPU. Untimed, the best one beats CPU 9. Letting an LLM coach a fast learned bot works well, but telling that bot "Don't die." once and never speaking again works just as well. Bots that LLMs wrote in 30 minutes land around CPU 9. The learned bots are in a different league. Numbers as of 2026-11-14 12:57 CET, with the benchmark still running.
 
 Most game benchmarks for LLMs are turn-based: chess, Pokémon, [Slay the Spire](https://arxiv.org/abs/2610.12596). The model can take as long as it wants, and the game waits. I wanted the opposite: a real game at 60 frames per second that doesn't wait for anyone, where a one-second thought costs you 60 frames in which you can get hit, grabbed and thrown off the stage.
 
@@ -90,7 +90,7 @@ Reading it from the top:
 
 ![Untimed vs real-time Elo for each model, with the share of live replies dropped for being too stale](figures/latency-tax.svg)
 
-Untimed, the models are spread out: GPT-6.1 Sol is above CPU 9 (1691, 1590–1802), the other three between 1325 and 1436, and all of them above Jev (1105). Give them time and the bigger models make better choices than the 150 ms classifier.
+Untimed, the models are spread out: GPT-6.1 Sol is above CPU 9 (1691, 1581–1829), the other three between 1325 and 1436, and all of them above Jev (1105). Give them time and the bigger models make better choices than the 150 ms classifier.
 
 Live, all of that collapses: every model loses 283 to 589 points and they end up indistinguishable from each other and from Jev. The right column shows why. Sol's best untimed result turns into its worst problem live: its replies take about 2-3 s, so **95%** of them arrive after the 2-second cutoff and are thrown away. Live Sol is basically the default dash dance plus reflexes, with an LLM occasionally getting a word in, and it is still rated as high as any other live LLM (1102). Put differently: at this latency the live LLMs add nothing measurable over the scripted fallback they're wrapped in. Haiku is fast enough that only 5% of its replies are dropped, but each one is still about 70 frames old when it starts executing, and in Melee 70 frames is several exchanges ago.
 
@@ -102,9 +102,14 @@ None of this is new in spirit ([LLM Colosseum](https://github.com/OpenGenerative
 
 Uncoached, Reyn is rated 1765. With *any* coach it jumps by 300+ points, to roughly HAL's level. The catch is that most of that jump comes from the random coach (2096), which changes Reyn's command every 5 seconds to something uniformly random from the menu and has no idea what's happening in the game.
 
-The four LLM coaches land +51 to +179 points above random, and every one of their intervals overlaps the random coach's. The only coach clearly better than random is Jev (2371, 2282–2485, +275 over random), which is also the fastest and, in the pilot, the most conservative: it changed command on about 1 call in 7, where Haiku changed on about half.
+The four LLM coaches land +51 to +179 points above random, and every one of their intervals overlaps the random coach's. The only coach clearly better than random is Jev (2371, 2278–2488, +275 over random), which is also the fastest and, in the pilot, the most conservative: it changed command on about 1 call in 7, where Haiku changed on about half.
 
-My best guess is that uncoached Reyn gets stuck in habits that CPUs and bots punish, and any perturbation unsticks it. The LLMs do understand the game (their stated reasons are sensible), but at one call per 5 seconds, and 1-3 seconds stale, understanding doesn't buy much over noise. This is the result I'm least sure how to read, and the obvious ablations (fixed commands, a "change less often" random coach, faster coach intervals) are next.
+So I ran the ablations ([coach deep-dive](../docs/coach-deepdive.md), ~25 games each, ±175). The answer is less about coaching than about Reyn:
+
+- **Uncoached Reyn plays with no command at all**, and that's what costs it. One random command held for the whole game already gets it to about 2020; switching every 5 seconds adds only ~50 on top, within noise.
+- **Holding "Don't die." for the whole game, with no coach, rates 2398**: level with the Jev coach and above every LLM coach.
+- **Jev wins because it ends up on "Don't die."** 41% of the time, mostly by accident: its favourite pick, "kill now", is routed by Reyn's language layer to "Don't die." every time. The LLMs pick sensible-sounding commands (edgeguard, aggressive play) that turn out to be worth less.
+- The coach's interval (1, 5 or 15 s) and giving it computed features made no measurable difference.
 
 ### LLM-written bots: about CPU 9 for under $2
 
@@ -137,8 +142,8 @@ Per game, from the bench:
 | Sonnet 5.5, untimed | 31 | 560k | $1.96 |
 | GPT-6 Luna, untimed | 33 | 362k | n/a |
 | GPT-6.1 Sol, untimed | 41 | 261k | n/a |
-| Haiku 4.5, live | 30 | 457k | $0.48 |
-| Sonnet 5.5, live | 45 | 362k | $0.76 |
+| Haiku 4.5, live | 30 | 457k | $0.51 |
+| Sonnet 5.5, live | 45 | 362k | $1.17 |
 | GPT-6 Luna, live | 48 | 241k | n/a |
 | GPT-6.1 Sol, live | 56 | 128k | n/a |
 | Haiku 4.5 coach | 50 | 49k | $0.05 |
