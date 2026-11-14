@@ -11,6 +11,8 @@ tags:
 
 > **TL;DR.** People have been building bots for Super Smash Bros. Melee for ten years, and the last two months were the busiest of all: the strongest bot yet, a bot you steer in plain English, top players beating an AI crew on stream, a ranked ladder for bots only, and a simulator that runs the game 100 times faster. Over two days I put all of it on one Elo scale: Melee's own CPUs, the published learned bots, and frontier LLMs in five different roles. The learned bots are far ahead. LLMs pressing the buttons in real time play like a level 4 CPU; given unlimited time to think, the best one beats the hardest CPU, and so do bots that LLMs wrote in 30 minutes. The surprise came from coaching: a small bot coached by four frontier LLMs did best with no coach at all, just the words "Don't die."
 
+[Slides from the 5-minute talk](slides.html)
+
 Melee came out in 2001 and people still play it competitively. It runs at 60 frames per second and waits for nobody: one second of thinking is 60 frames in which you can get hit, grabbed and thrown off the stage. That makes it a hard target for AI, and its community has built absurdly good open tooling around it: [Slippi](https://slippi.gg) for online play and replays, [libmelee](https://github.com/vladfi1/libmelee) to read the game and press buttons from Python, and a decompilation of the game's own code.
 
 I came to it with a question about LLMs. Most game benchmarks for them are turn-based (chess, Pokémon, [Slay the Spire](https://arxiv.org/abs/2610.12596)), where the game waits while the model thinks. I wanted a game that doesn't. The LLMs turned out to be the smaller part of the story, so this post starts with the bots.
@@ -186,18 +188,6 @@ Melee's community has decompiled the game's code back into C, and [melee-sim-lig
 ### Playing the bots yourself
 
 You can play the bots yourself, on a laptop with a controller (Phillip at any skill tier, Faynt or Reyn with a command of your choice) or from home over Slippi's online direct connect. The board has a slot waiting for human results. Come try.
-
----
-
-## What it cost
-
-The Claude and GPT tokens went through my subscriptions, so the real bill is the subscriptions. The main bench used {{tokens_m}}M tokens: {{tokens_claude_m}}M on Claude and {{tokens_gpt_m}}M on GPT. At list prices the Claude part alone would be about ${{usd_claude}}. Jev is billed separately and cost ${{usd_jev}} in total. The bots LLMs wrote cost under $2 each to write.
-
-Per game:
-
-{{table_tokens}}
-
-"Tokens" counts every call, including the live replies that arrived too late and were thrown away. A coach is called every 5 seconds instead of every half second, so it costs 5-10 times less than a player and plays far better.
 
 ---
 

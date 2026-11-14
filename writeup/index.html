@@ -55,6 +55,7 @@
 <blockquote>
 <p><strong>TL;DR.</strong> People have been building bots for Super Smash Bros. Melee for ten years, and the last two months were the busiest of all: the strongest bot yet, a bot you steer in plain English, top players beating an AI crew on stream, a ranked ladder for bots only, and a simulator that runs the game 100 times faster. Over two days I put all of it on one Elo scale: Melee's own CPUs, the published learned bots, and frontier LLMs in five different roles. The learned bots are far ahead. LLMs pressing the buttons in real time play like a level 4 CPU; given unlimited time to think, the best one beats the hardest CPU, and so do bots that LLMs wrote in 30 minutes. The surprise came from coaching: a small bot coached by four frontier LLMs did best with no coach at all, just the words &quot;Don't die.&quot;</p>
 </blockquote>
+<p><a href="slides.html">Slides from the 5-minute talk</a></p>
 <p>Melee came out in 2001 and people still play it competitively. It runs at 60 frames per second and waits for nobody: one second of thinking is 60 frames in which you can get hit, grabbed and thrown off the stage. That makes it a hard target for AI, and its community has built absurdly good open tooling around it: <a href="https://slippi.gg" target="_blank" rel="noopener">Slippi</a> for online play and replays, <a href="https://github.com/vladfi1/libmelee" target="_blank" rel="noopener">libmelee</a> to read the game and press buttons from Python, and a decompilation of the game's own code.</p>
 <p>I came to it with a question about LLMs. Most game benchmarks for them are turn-based (chess, Pokémon, <a href="https://arxiv.org/abs/2610.12596" target="_blank" rel="noopener">Slay the Spire</a>), where the game waits while the model thinks. I wanted a game that doesn't. The LLMs turned out to be the smaller part of the story, so this post starts with the bots.</p>
 <hr />
@@ -181,113 +182,6 @@ f1230 laser(short,1) → laser: fired 1, landed
 <p>Melee's community has decompiled the game's code back into C, and <a href="https://github.com/kyhavlov/melee-sim-light" target="_blank" rel="noopener">melee-sim-light</a> runs it without an emulator. I hooked all our players into it, including the learned bots, and checked it against real games: 287 of 300 replays matched frame for frame (the other 13 were unfinished files), and the game itself runs about 100 times faster than in the emulator. Its catch: there are no built-in CPUs.</p>
 <h3>Playing the bots yourself</h3>
 <p>You can play the bots yourself, on a laptop with a controller (Phillip at any skill tier, Faynt or Reyn with a command of your choice) or from home over Slippi's online direct connect. The board has a slot waiting for human results. Come try.</p>
-<hr />
-<h2>What it cost</h2>
-<p>The Claude and GPT tokens went through my subscriptions, so the real bill is the subscriptions. The main bench used 115.1M tokens: 69.8M on Claude and 45.4M on GPT. At list prices the Claude part alone would be about $161. Jev is billed separately and cost $3.94 in total. The bots LLMs wrote cost under $2 each to write.</p>
-<p>Per game:</p>
-<table>
-<thead>
-<tr>
-<th>Entrant</th>
-<th>Games</th>
-<th>Tokens per game</th>
-<th>List-price USD per game</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Haiku 4.5, untimed</td>
-<td>27</td>
-<td>635k</td>
-<td>$0.72</td>
-</tr>
-<tr>
-<td>Sonnet 5.5, untimed</td>
-<td>31</td>
-<td>560k</td>
-<td>$1.96</td>
-</tr>
-<tr>
-<td>GPT-6 Luna, untimed</td>
-<td>33</td>
-<td>362k</td>
-<td>n/a</td>
-</tr>
-<tr>
-<td>GPT-6.1 Sol, untimed</td>
-<td>41</td>
-<td>261k</td>
-<td>n/a</td>
-</tr>
-<tr>
-<td>Haiku 4.5, live</td>
-<td>30</td>
-<td>457k</td>
-<td>$0.51</td>
-</tr>
-<tr>
-<td>Sonnet 5.5, live</td>
-<td>45</td>
-<td>363k</td>
-<td>$1.17</td>
-</tr>
-<tr>
-<td>GPT-6 Luna, live</td>
-<td>48</td>
-<td>241k</td>
-<td>n/a</td>
-</tr>
-<tr>
-<td>GPT-6.1 Sol, live</td>
-<td>56</td>
-<td>112k</td>
-<td>n/a</td>
-</tr>
-<tr>
-<td>Haiku 4.5 coach</td>
-<td>50</td>
-<td>49k</td>
-<td>$0.05</td>
-</tr>
-<tr>
-<td>Sonnet 5.5 coach</td>
-<td>43</td>
-<td>64k</td>
-<td>$0.23</td>
-</tr>
-<tr>
-<td>GPT-6 Luna coach</td>
-<td>50</td>
-<td>39k</td>
-<td>n/a</td>
-</tr>
-<tr>
-<td>GPT-6.1 Sol coach</td>
-<td>71</td>
-<td>42k</td>
-<td>n/a</td>
-</tr>
-<tr>
-<td>Jev, untimed</td>
-<td>59</td>
-<td>705k</td>
-<td>$0.024 (billed)</td>
-</tr>
-<tr>
-<td>Jev, live</td>
-<td>82</td>
-<td>815k</td>
-<td>$0.029 (billed)</td>
-</tr>
-<tr>
-<td>Jev coach</td>
-<td>72</td>
-<td>94k</td>
-<td>$0.003 (billed)</td>
-</tr>
-</tbody>
-</table>
-<p>&quot;Tokens&quot; counts every call, including the live replies that arrived too late and were thrown away. A coach is called every 5 seconds instead of every half second, so it costs 5-10 times less than a player and plays far better.</p>
 <hr />
 <h2>Caveats</h2>
 <ul>
