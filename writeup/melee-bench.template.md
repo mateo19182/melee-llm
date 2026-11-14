@@ -9,41 +9,50 @@ tags:
 
 <!-- Source: writeup/melee-bench.template.md. Numbers and figures come from writeup/make_figures.py; edit prose here, then re-run it. -->
 
-> **TL;DR.** I put LLMs inside Super Smash Bros. Melee in five different ways and rated all of them, along with Melee's CPUs and the best published learned bots, on one Elo scale. In real time, every LLM that presses the buttons itself plays about as well as a level 4-5 CPU. Untimed, the best one beats CPU 9. Letting an LLM coach a fast learned bot works well, but telling that bot "Don't die." once and never speaking again works just as well. Bots that LLMs wrote in 30 minutes land around CPU 9. The learned bots are in a different league. Numbers as of {{as_of}}, with the benchmark still running.
+> **TL;DR.** I put frontier LLMs inside Super Smash Bros. Melee in five different ways, and rated all of them on one Elo scale next to Melee's own CPUs and the best published AI bots. LLMs pressing the buttons in real time play like a level 4 CPU. Given unlimited time to think, the best one beats the hardest CPU. Bots that LLMs wrote in 30 minutes land at that same level. The surprise came from coaching: four frontier LLMs took turns coaching a small neural bot, and the bot did best of all with no coach, just the words "Don't die." on repeat.
 
-Most game benchmarks for LLMs are turn-based: chess, Pokémon, [Slay the Spire](https://arxiv.org/abs/2610.12596). The model can take as long as it wants, and the game waits. I wanted the opposite: a real game at 60 frames per second that doesn't wait for anyone, where a one-second thought costs you 60 frames in which you can get hit, grabbed and thrown off the stage.
+Most game benchmarks for LLMs are turn-based: chess, Pokémon, [Slay the Spire](https://arxiv.org/abs/2610.12596). The model can take as long as it likes and the game waits. I wanted the opposite: a real game at 60 frames per second that waits for nobody, where one second of thinking is 60 frames in which you can get hit, grabbed and thrown off the stage.
 
-Melee is the obvious candidate. It's 25 years old, still played competitively, and has absurdly good open tooling thanks to a community that refuses to let it die: [Slippi](https://slippi.gg) for netplay and replays, [libmelee](https://github.com/vladfi1/libmelee) to read the game state and drive a virtual controller from Python, and a line of learned bots going back to [Phillip](https://arxiv.org/abs/1702.06230) in 2017 that beat pros. I couldn't find anyone benchmarking LLMs on it, so I did.
-
----
-
-## The setup
-
-Everything runs on my home server: Slippi's Dolphin with a Melee ISO dumped from my own disc, headless and unthrottled for bot games, or capped at 60 fps for the real-time ones. libmelee (vladfi1's maintained fork) reads the state every frame and writes controller inputs. Up to a dozen or so Dolphins run in parallel, each with its own port and replay folder.
-
-The opponents and reference points are Melee's built-in CPUs (levels 1-9), three small scripted bots, and five learned bots, all published with weights:
-
-- [HAL](https://github.com/ericyuegu/hal) (Eric Gu): a 250M transformer trained by behaviour cloning on ranked replays.
-- [Phillip / slippi-ai](https://github.com/vladfi1/slippi-ai) (vladfi1): imitation plus RL, in skill tiers from silver to gm, with a built-in human-like reaction delay of 18-24 frames.
-- [MIMIC](https://github.com/erickfm/MIMIC) (erickfm): a 20M transformer, one checkpoint per character.
-- [Faynt](https://github.com/Na00s/Faynt-Tournament) ([paper](https://arxiv.org/abs/2610.02144)): a 10M transformer with RL fine-tuning on Fox.
-- [Reyn](https://huggingface.co/frisson-labs/Reyn-26C), from the same lab as Faynt: a 33M policy that takes **English commands** ("be more aggressive", "edgeguard from the stage", about 100 of them for Fox). This one turned out to be the most interesting body to put an LLM on top of.
-
-Each bot runs in its own process and venv and gets the raw Slippi event stream, so it sees exactly the game state it was trained on. Reyn's upstream inference was too slow for real time on a loaded CPU, so I rewrote its step as a single CUDA graph (about 2 ms per frame, identical actions).
+Melee is the obvious candidate. It came out in 2001, people still play it competitively, and its community has built absurdly good open tooling: [Slippi](https://slippi.gg) for online play and replays, [libmelee](https://github.com/vladfi1/libmelee) to read the game and press buttons from Python, and a line of AI bots going back to [Phillip](https://arxiv.org/abs/1702.06230), which beat professional players in 2017. I couldn't find anyone benchmarking LLMs on it, so over two days I built a benchmark, a website to watch it, an AI commentary booth, and a bot of my own.
 
 ---
 
-## Five ways to put an LLM in the loop
+## Melee in 30 seconds
 
-LLMs are far too slow to press buttons every frame (16.7 ms), so in every setup the model makes higher-level choices and something else handles the frames.
+Two characters fight on a small floating stage. Every hit raises the other player's damage percentage, and the higher it is, the further they fly. Knock them off the screen and they lose a life (a "stock"). Four stocks each, eight minutes, last one standing wins. It sounds simple, but at a high level it is about reactions measured in single frames and reading what your opponent will do next.
 
-1. **LLM plays, untimed.** The model reads a short text rendering of the state and picks a macro (`laser`, `shine`, `wavedash`, `nair toward`, `recover`, `grab then up-throw`...), which a frame-level executor turns into inputs. The game pauses while it thinks, so this measures decision quality only.
-2. **LLM plays, live.** Same thing at 60 fps. While the model thinks, the executor keeps running the last macro or a default (dash dance, or shield when the opponent is close), and a few reflexes (DI, tech, mash, recover) never wait for the model. A reply that arrives more than 120 frames (2 s) after the state it was based on is thrown away.
-3. **Jev plays.** [Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev) is TypeSafe's "System One" model: structured state and a multiple-choice question in, calibrated probabilities out, no text. It answers in about 150 ms instead of 1-3 s.
-4. **LLM coaches Reyn.** Reyn plays every frame. Every 5 seconds the coach sees the state, what happened since its last call and how its last commands went, and picks one of Reyn's commands (or keeps the current one). Controls: Reyn with no coach, a coach that picks uniformly at random, and Jev as the coach.
-5. **LLM writes a bot.** A coding agent gets a sandbox with a bot template, libmelee docs, frame data and a tool to play practice games against CPUs and scripted bots, and 30 minutes to write a single-file Python bot. The bot then plays like any other entrant, with a 16 ms per-frame budget.
+![A bench game redrawn from its replay file: Faynt (blue) takes a stock from Phillip gm (red), both playing Fox on Final Destination](media/replay-2d.webp)
 
-This is what the model sees in modes 1-4, about 100-170 tokens per state on top of a ~900-token system prompt:
+*14 seconds of a bench game, redrawn from the replay file: Faynt (blue) takes a stock off Phillip (red), both playing Fox.*
+
+Every game in this post is Fox against Fox, a staple of top-level play, on two standard tournament stages.
+
+---
+
+## How it works
+
+Everything runs on my home server: the real game, from my own disc, in the Slippi version of the Dolphin emulator. A Python library reads the game state every frame and drives a virtual controller. A dozen games can run side by side.
+
+The opponents and yardsticks:
+
+- **Melee's built-in CPUs**, levels 1 to 9.
+- **Three small scripted bots** (one runs in, one shoots lasers, one spams Fox's "shine" move).
+- **Five learned bots**, neural networks trained on human replays, all published with weights:
+  [Phillip](https://github.com/vladfi1/slippi-ai) (vladfi1, in skill tiers from silver to gm, with a human-like reaction delay built in),
+  [HAL](https://github.com/ericyuegu/hal) (Eric Gu),
+  [MIMIC](https://github.com/erickfm/MIMIC) (erickfm),
+  [Faynt](https://github.com/Na00s/Faynt-Tournament) (Frisson Labs) and
+  [Reyn](https://huggingface.co/frisson-labs/Reyn-26C), from the same lab as Faynt: a small bot that takes **orders in plain English**, like "be more aggressive" or "edgeguard from the stage", about 100 of them for Fox.
+
+LLMs are far too slow to press buttons every frame (a frame is 16.7 ms; a reply takes 1-3 seconds), so every setup gives the LLM a higher-level job and lets something faster handle the frames:
+
+1. **The LLM plays, untimed.** It reads a short text description of the game and picks a move (`laser`, `shine`, `wavedash`, `recover`, `grab then up-throw`...), which my code turns into button presses. The game pauses while it thinks, so this only measures how good its choices are.
+2. **The LLM plays, live.** The same, at full speed. While the model thinks, the character keeps doing the last move or a safe default, and a few reflexes never wait for the model. A reply older than 2 seconds is thrown away.
+3. **Jev plays.** [Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev) is TypeSafe's fast decision model: it answers multiple-choice questions in about 0.15 seconds instead of 1-3, but it can't write text.
+4. **The LLM coaches Reyn.** Reyn plays every frame, and every 5 seconds the coach looks at the game and picks one of Reyn's English commands.
+5. **The LLM writes a bot.** A coding agent gets 30 minutes, a sandbox, the docs and a practice tool, and has to write a Python bot that then plays like any other entrant.
+
+Here is what the model sees, about 150 words per moment:
 
 ```
 f1370 time 7:38
@@ -55,111 +64,130 @@ RECENT DECISIONS:
 f1230 laser(short,1) → laser: fired 1, landed
 ```
 
-The models were Claude Haiku 4.5 and Sonnet 5.5, and GPT-6 Luna and GPT-6.1 Sol, with reasoning off (with reasoning on, Haiku spent its whole token budget thinking and never answered).
+The models were Claude Haiku 4.5, Claude Sonnet 5.5, GPT-6 Luna and GPT-6.1 Sol, with reasoning turned off (with it on, Haiku spent its whole budget thinking and never answered).
+
+### One scale for everyone
+
+Every entrant plays the same game: Fox vs Fox, Battlefield or Final Destination, 4 stocks, 8 minutes. All the results go into one Elo fit, the rating system from chess: 400 points of difference means the stronger side wins about 10 games out of 11. The hardest CPU, level 9, is pinned at **1500**, and every rating comes with a 95% interval.
+
+There are two boards, because "LLM plays" means two things: a **real-time** board where the game never waits, and an **untimed** board where it waits for every decision. CPUs and bots play the same either way, so they appear on both and tie the two scales together.
+
+Nobody picked the games by hand. A scheduler chooses the next game every few seconds, favouring games that would tighten the widest intervals for the fewest tokens. Cheap bot games get played a lot; expensive LLM games go where they teach the most. Overnight it played {{games_bench}} games in {{hours}} hours, and with older games that met the same rules and a follow-up study, the boards hold {{games_rt}} real-time and {{games_ut}} untimed games.
 
 ---
 
-## The bench
+## What I found
 
-Every entrant plays the same game: Fox vs Fox, Battlefield or Final Destination, 4 stocks, 8 minutes, a full game. Each game is fed to a Bradley-Terry fit, which gives one Elo-style rating per entrant with **CPU 9 pinned at 1500**, and a 95% interval from bootstrapping the games.
+![Real-time board: every entrant's Elo with its 95% interval, coloured by kind](figures/leaderboard-realtime.svg)
 
-There are two boards, because "LLM plays" means two different things:
+From the top:
 
-- **Real time**: the game runs at 60 fps and never waits. Live LLMs, live Jev and all the coaches play here.
-- **Untimed**: the game waits for every decision. Paused LLMs and paused Jev play here.
+- **Faynt never lost**: {{rec rt faynt}}, most of it against Phillip gm. With a perfect record the fit can only say "much better than everyone", so its {{elo rt faynt}} is really a floor. Then Phillip gm ({{elo rt phillip:gm}}) and HAL ({{elo rt hal:MASTER}}).
+- **Reyn being coached** sits around HAL, whoever the coach is. And right near the top, **Reyn with no coach, holding "Don't die."** More on that below.
+- **The bots LLMs wrote** cluster around the level 9 CPU.
+- **CPU levels barely matter in a Fox mirror.** Level 9 is 1500 and level 8 {{elo rt cpu:8}}, but levels 1-7 sit between {{elo rt cpu:4}} and {{elo rt cpu:7}} in no useful order: level 1 ({{elo rt cpu:1}}) is above level 5 ({{elo rt cpu:5}}). The CPU Fox jumps off the stage by itself a lot, and that matters more than its level.
+- **At the bottom: every LLM playing live**, {{live_min}} to {{live_max}}, about a level 4 CPU, together with live Jev.
 
-CPUs, learned bots and written bots don't spend wall-clock time thinking, so they play identically in both modes and count on both boards. They're the bridge: a live and a paused LLM never meet, but both play CPU 9, Phillip and the rest.
+### 1. In real time, speed beats smarts
 
-Games aren't scheduled round robin. A scheduler picks, every few seconds, the pairing that shrinks the widest intervals the most per expected token, so cheap bot games are played a lot and expensive LLM games go where they're most informative. It runs under a budget of {{budget_m}}M tokens. At the snapshot it had run {{games_bench}} games over {{hours}} hours and imported {{games_imported}} older ones (bot-writer ladders, pilots) that met the same rules, with {{tokens_m}}M tokens spent and {{n_entrants}} entrants.
+![Untimed vs real-time Elo for each model, with the share of live replies thrown away for arriving too late](figures/latency-tax.svg)
 
----
+Given time to think, the models spread out: GPT-6.1 Sol beats the level 9 CPU ({{elo ut llm_paused:gpt-6.1-sol}}), the other three land between {{paused_rest_min}} and {{paused_rest_max}}, and all of them beat Jev ({{elo ut jev_paused}}). Bigger models make better choices than the fast one.
 
-## Results
+Live, all of that disappears. Every model loses {{tax_min}} to {{tax_max}} points, and they end up level with each other and with Jev. Sol, the best thinker, is the clearest case: its replies take 2-3 seconds, so **{{drop llm_live:gpt-6.1-sol}}** of them arrive too late and get thrown away. Live Sol is basically my default behaviour with an LLM occasionally getting a word in, and it still rates as high as any other live LLM ({{elo rt llm_live:gpt-6.1-sol}}). At this speed, the LLMs add nothing measurable over the simple autopilot they're wrapped in. Even Haiku, fast enough that only {{drop llm_live:claude-haiku-4-5-20251001}} of its replies are dropped, acts on a game state about 70 frames old, and in Melee that's several exchanges ago.
 
-![Real-time board: every entrant's Elo with 95% interval, colored by kind](figures/leaderboard-realtime.svg)
+[LLM Colosseum](https://github.com/OpenGenerativeAI/llm-colosseum) found the same thing in Street Fighter (GPT-3.5 beat GPT-4 by being faster); this puts it on a scale with error bars.
 
-Reading it from the top:
+### 2. The best coach is two words
 
-- **Faynt never lost.** {{rec rt faynt}} at the snapshot, most of those games against Phillip gm. A perfect record means the fit can only say "a lot better than everyone else", so its rating ({{elo rt faynt}}) is really a lower bound, and its arrow runs off the chart. Then Phillip gm ({{elo rt phillip:gm}}) and HAL ({{elo rt hal:MASTER}}). Keep in mind that Phillip carries an 18-24 frame reaction delay by design and the others react on the next frame.
-- **Coached Reyn** sits around HAL, above Phillip plat and MIMIC, whoever the coach is. More on that below.
-- **The written bots** cluster around CPU 9 and the best scripted bot.
-- **CPU levels are barely ordered in a Fox ditto.** CPU 9 is 1500 and CPU 8 is {{elo rt cpu:8}}, but levels 1-7 all sit between {{elo rt cpu:4}} and {{elo rt cpu:7}} in no useful order: CPU 1 ({{elo rt cpu:1}}) is above CPU 5 ({{elo rt cpu:5}}), and CPU 4 is the weakest. Melee's CPU Fox self-destructs a lot, and how often seems to matter more than its level.
-- **At the bottom: every LLM playing live**, between {{live_min}} and {{live_max}}, around CPU 4-5, together with live Jev.
+![Reyn's rating with no command, with random commands, with each LLM and Jev as coach, and holding "Don't die." all game](figures/coaching.svg)
 
-### Speed beats smarts in real time
+Reyn with no orders rates {{elo rt reyn}}. With any coach it jumps by about 300 points, to HAL's level. But the obvious control, a "coach" that picks a random command every 5 seconds without looking at the game, gets most of that jump ({{elo rt coach:random}}). The four LLM coaches land {{coach_delta_min}} to {{coach_delta_max}} above random, and each of their intervals overlaps the random coach's. Only Jev is clearly better ({{elo rt coach_jev}}).
 
-![Untimed vs real-time Elo for each model, with the share of live replies dropped for being too stale](figures/latency-tax.svg)
+So I dug in, with about 25 extra games per variant:
 
-Untimed, the models are spread out: GPT-6.1 Sol is above CPU 9 ({{elo ut llm_paused:gpt-6.1-sol}}, {{ci ut llm_paused:gpt-6.1-sol}}), the other three between {{paused_rest_min}} and {{paused_rest_max}}, and all of them above Jev ({{elo ut jev_paused}}). Give them time and the bigger models make better choices than the 150 ms classifier.
+- **Reyn mostly needs *any* command.** One random command held for the whole game already gets it to {{elo rt coach:random,fixed}}. Changing it every 5 seconds adds little on top.
+- **Holding "Don't die." all game, with no coach at all, rates {{elo rt reyn:stock_protection}}**: level with the Jev coach, above every LLM coach, and about 330 above the random one.
+- **Jev wins by accident.** Its favourite pick is "kill now", and Reyn's language layer maps that, every single time, to "Don't die." Counting that, Jev holds "Don't die." 41% of the time. The LLMs pick sensible-sounding plans (edgeguard, play aggressively) that turn out to be worth less.
+- How often the coach speaks (every 1, 5 or 15 seconds) and giving it extra computed features made no measurable difference.
 
-Live, all of that collapses: every model loses {{tax_min}} to {{tax_max}} points and they end up indistinguishable from each other and from Jev. The right column shows why. Sol's best untimed result turns into its worst problem live: its replies take about 2-3 s, so **{{drop llm_live:gpt-6.1-sol}}** of them arrive after the 2-second cutoff and are thrown away. Live Sol is basically the default dash dance plus reflexes, with an LLM occasionally getting a word in, and it is still rated as high as any other live LLM ({{elo rt llm_live:gpt-6.1-sol}}). Put differently: at this latency the live LLMs add nothing measurable over the scripted fallback they're wrapped in. Haiku is fast enough that only {{drop llm_live:claude-haiku-4-5-20251001}} of its replies are dropped, but each one is still about 70 frames old when it starts executing, and in Melee 70 frames is several exchanges ago.
+The lesson is less about LLMs than about the bot: the instruction that matters most is the boring one, and a language interface can quietly turn your coach's words into something else.
 
-None of this is new in spirit ([LLM Colosseum](https://github.com/OpenGenerativeAI/llm-colosseum) found GPT-3.5 beating GPT-4 at Street Fighter because it was faster), but it's nice to have it on a scale with error bars.
+### 3. An LLM can write a level 9 CPU in 30 minutes
 
-### Coaching works, but not because of the coach
+![Bench rating of the bots LLMs wrote in 30 minutes, next to CPUs, scripted bots and Phillip's low tiers](figures/bot-writer.svg)
 
-![Reyn's rating uncoached, with a random coach, and with each LLM and Jev as coach](figures/coaching.svg)
+One 30-minute coding session per model, so **one run each**:
 
-Uncoached, Reyn is rated {{elo rt reyn}}. With *any* coach it jumps by 300+ points, to roughly HAL's level. The catch is that most of that jump comes from the random coach ({{elo rt coach:random}}), which changes Reyn's command every 5 seconds to something uniformly random from the menu and has no idea what's happening in the game.
+- **Sonnet 5.5** wrote a compact 135-line bot that shines, grabs shielding opponents and shoots lasers from afar: {{elo rt written:sonnet-5.5/run1}}, just above the level 9 CPU. It declared itself done after 21 minutes and ignored about 25 "keep improving" nudges.
+- **Haiku 4.5** wrote the simplest bot, 108 lines that mostly call a built-in shine combo: {{elo rt written:haiku-4.5/run1}}, and the only written bot to take a game off a learned bot.
+- **Opus 5.5** wrote the most engineered one, 303 lines with a move queue, frame-data-based defence and combos: {{elo rt written:opus-5.5/run1}}, the weakest of the three.
+- An earlier **Sonnet** pilot held a button instead of tapping it, so its main move rarely came out, and it fell off the bottom twice a game: {{elo rt written:sonnet/pilot1}}, the lowest rating on the board.
 
-The four LLM coaches land {{coach_delta_min}} to {{coach_delta_max}} points above random, and every one of their intervals overlaps the random coach's. The only coach clearly better than random is Jev ({{elo rt coach_jev}}, {{ci rt coach_jev}}, {{delta rt coach_jev coach:random}} over random), which is also the fastest and, in the pilot, the most conservative: it changed command on about 1 call in 7, where Haiku changed on about half.
+Two runs of the same model differ far more than different models do. A few lines of input timing decide everything, so this ranks nothing yet.
 
-So I ran the ablations ([coach deep-dive](../docs/coach-deepdive.md), ~25 games each, ±175). The answer is less about coaching than about Reyn:
+### 4. Screenshots don't help
 
-- **Uncoached Reyn plays with no command at all**, and that's what costs it. One random command held for the whole game already gets it to about 2020; switching every 5 seconds adds only ~50 on top, within noise.
-- **Holding "Don't die." for the whole game, with no coach, rates 2398**: level with the Jev coach and above every LLM coach.
-- **Jev wins because it ends up on "Don't die."** 41% of the time, mostly by accident: its favourite pick, "kill now", is routed by Reyn's language layer to "Don't die." every time. The LLMs pick sensible-sounding commands (edgeguard, aggressive play) that turn out to be worth less.
-- The coach's interval (1, 5 or 15 s) and giving it computed features made no measurable difference.
-
-### LLM-written bots: about CPU 9 for under $2
-
-![Bench rating of the bots written by LLMs in 30 minutes, next to CPUs, scripted bots and Phillip's low tiers](figures/bot-writer.svg)
-
-One 30-minute Claude Code session per model (the round was paused after the first wave to save subscription usage, so **n = 1 per model**):
-
-- **Sonnet 5.5** wrote a compact 135-line bot that shines, jump-cancels the shine, grabs shielding opponents and fires lasers at range: {{elo rt written:sonnet-5.5/run1}}, just above CPU 9 and the best scripted bot. It declared itself done after 21 minutes and ignored about 25 "keep improving" nudges.
-- **Haiku 4.5** wrote the simplest bot, 108 lines that mostly call libmelee's built-in multishine: {{elo rt written:haiku-4.5/run1}}, and the only written bot to take a game off a learned bot (one win against MIMIC on the ladder).
-- **Opus 5.5** wrote the most engineered one, 303 lines with a macro queue, frame-data-based defence and punish combos: {{elo rt written:opus-5.5/run1}}, the weakest of the three. More machinery didn't pay off in 30 minutes.
-- An earlier **Sonnet pilot** run, with the same skeleton but holding B instead of tapping it (so the shine rarely comes out) and a recovery that falls off the bottom about twice a game, is the lowest-rated entrant on the whole board ({{elo rt written:sonnet/pilot1}}).
-
-The spread between two runs of the same model is much bigger than the spread between models, which is exactly what [StarSkirmish](https://starskirmish.com/bench/v0-1/) (LLMs writing StarCraft bots) warns about. A few lines of input timing decide everything. With one run per model, this ranks nothing.
-
-### Images didn't help
-
-A side experiment: give the untimed player a screenshot instead of (or alongside) the text state. With Haiku against CPU 5, 2-minute games, {{perc_text_n}} games each: text only went {{perc_text}}, screenshot only {{perc_image}}, both {{perc_both}}. On image alone the model mostly doesn't notice it's hanging from the ledge and keeps choosing dash dance. A probe on 100 frames found all models read the damage percentages almost perfectly, but get facing and left/right order at about chance, and Haiku got every frame where someone was offstage wrong. Two Foxes at 512x384 are just hard to read, and the text state is better for the decisions that matter.
+Given a screenshot instead of (or with) the text description, Haiku did worse: against a level 5 CPU, text only went {{perc_text}}, screenshot only {{perc_image}}, both {{perc_both}} ({{perc_text_n}} games each). On images alone it mostly didn't notice it was hanging off the ledge. In a test on 100 frames, every model read the damage numbers almost perfectly but got left/right and facing at about chance.
 
 ---
 
-## Costs
+## What else I built
 
-Claude and GPT tokens went through my subscriptions, so the real bill is the subscriptions. At the snapshot the bench had spent {{tokens_m}}M tokens: {{tokens_claude_m}}M on Claude models and {{tokens_gpt_m}}M on GPT models. At list prices the Claude part would be roughly ${{usd_claude}} (I don't have a price for the GPT models). Jev is billed per token on its own key and cost ${{usd_jev}} in total, which is a different universe.
+### A website to watch it all
 
-Per game, from the bench:
+The [website](https://melee.m19182.dev) shows the boards with a page per entrant (record, recent games, sample decisions), every game running on the server drawn live in 2D, a launcher to set up any matchup, every replay with the AI's decisions on a timeline, and these docs. The **Live** page streams the real game with a broadcast-style score bar and a feed of what each AI is thinking, timed to the video.
+
+### An AI commentary booth
+
+The Live page has two AI casters: Charlie on play-by-play ("loud, fast, loses his mind on big moments") and Laura on colour ("quick, dry wit, teases Charlie"). A fast LLM watches the game's events (combos, stocks lost, zero-to-deaths, self-destructs) and writes a line or two every few seconds, and ElevenLabs voices them. To keep costs down, voices are only made while someone is listening. A real exchange from a Faynt vs HAL game:
+
+> **Charlie:** HAL MASTER's Fox is in the air and Faynt's Marth is waiting for him!
+> **Laura:** Waiting is the right word. Faynt doesn't chase, Charlie, he collects.
+
+### Our own bot: MeleeBot
+
+On the last day I trained a bot of my own: a 5.4M-parameter transformer that copies human play, trained on 23,000 ranked online Yoshi games. It reads the last 4 seconds of the game and predicts the next controller input, in 2 ms per frame. Its first game, against the level 9 CPU, ended 0-3: it took one stock and lost all four of its own by falling below the stage. A bigger version is training now.
+
+### A simulator
+
+Melee's community has decompiled the game's code back into C, and [melee-sim-light](https://github.com/kyhavlov/melee-sim-light) runs it without an emulator. I hooked all our players into it, including the learned bots, and checked it against real games: 287 of 300 replays matched frame for frame (the other 13 were unfinished files), and the game itself runs about 100 times faster than in the emulator. Its catch: there are no built-in CPUs.
+
+### Playing the bots yourself
+
+You can play the bots yourself, on a laptop with a controller (Phillip at any skill tier, Faynt or Reyn with a command of your choice) or from home over Slippi's online direct connect. The board has a slot waiting for human results. Come try.
+
+---
+
+## What it cost
+
+The Claude and GPT tokens went through my subscriptions, so the real bill is the subscriptions. The main bench used {{tokens_m}}M tokens: {{tokens_claude_m}}M on Claude and {{tokens_gpt_m}}M on GPT. At list prices the Claude part alone would be about ${{usd_claude}}. Jev is billed separately and cost ${{usd_jev}} in total. The bots LLMs wrote cost under $2 each to write.
+
+Per game:
 
 {{table_tokens}}
 
-The live rows include an estimate for replies that were thrown away for being stale: the bench only counted tokens of replies that were used, which misses about {{uncounted_m}}M tokens, mostly Sol's and Sonnet's. A coach costs 5-10x fewer tokens per game than a player, since it's called every 5 seconds instead of every half second, and it plays far better.
+"Tokens" counts every call, including the live replies that arrived too late and were thrown away. A coach is called every 5 seconds instead of every half second, so it costs 5-10 times less than a player and plays far better.
 
 ---
 
-## Limitations
+## Caveats
 
-- **One matchup.** Fox vs Fox on two stages. Everything here could change with other characters, and the CPU numbers in particular are specific to Fox dittos.
-- **The intervals are real.** Neighbours on the board usually overlap, and the coaching and bot-writer results rest on 40-70 games and one run per model respectively. The headline gaps (learned bots vs everything, live vs untimed, coached vs uncoached Reyn) are well outside the noise; most orderings inside a group are not.
-- **The harness is part of the result.** The macros, reflexes, prompt and 2-second staleness cutoff are mine, and a better harness would score higher. The live players are, to a large degree, a measure of my executor.
-- **Model versions and billing.** Models were called through a local proxy on subscriptions; providers can change what's behind a name.
-- **No public infrastructure.** The web UI with live games, replays and decision logs is private for now.
+- **One matchup.** Fox vs Fox on two stages. Other characters could change everything, and the CPU results in particular are a quirk of Fox.
+- **The intervals are real.** Neighbours on the board usually overlap. The big gaps (learned bots vs everything, live vs untimed, coached vs uncoached Reyn, "Don't die.") are well outside the noise; most orderings inside a group are not.
+- **The harness is part of the result.** The moves, reflexes, prompt and 2-second cutoff are mine. A better harness would score higher; the live LLMs are partly a measure of my autopilot.
+- **Model names can change underneath.** Models were called through subscriptions, and providers can change what's behind a name.
 
 ---
 
 ## What's next
 
-- **Coach ablations**, to find out what the coach is actually contributing: fixed commands, random coaches that change less often, faster LLM coaches.
-- **Janky entrants**: live LLMs with a shorter leash (deciding every 10 frames, dropping anything older than 40), to see whether frequency beats quality.
-- **Bot-writer round 2**: the remaining 12 runs (3 per model, plus GPT models through a tool loop), and 60-minute sessions.
-- **A local fast brain**: a small model on the 3090 at ~0.5 s per decision, or a distilled classifier, since speed is what matters live.
-- **Me**, over Slippi netplay, against the bots. The bench has a reserved slot for `human:mateo`. I'm not expecting a good number.
+- **A faster brain**: a small local model on my GPU at about half a second per decision, since speed is what matters live.
+- **A better coach**: start from "Don't die." and only switch with a good reason.
+- **MeleeBot, bigger**: the 20M version, then onto the board.
+- **Bot-writer round 2**: three runs per model, so it can actually rank something.
+- **Me**: the board has a slot for a human. I'm not expecting a good number.
 
 ---
 
-Built on [Slippi](https://slippi.gg), [libmelee](https://github.com/vladfi1/libmelee) and [Slippi Lab](https://github.com/frankborden/slippilab), with the bots of Eric Gu (HAL), vladfi1 (Phillip), erickfm (MIMIC) and Frisson Labs (Faynt, Reyn), and [TypeSafe's Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev). Related work I leaned on: [StarSkirmish](https://starskirmish.com/bench/v0-1/) for the bot-writer track, [SpireBench](https://arxiv.org/abs/2610.12596) and [VideoGameBench](https://arxiv.org/abs/2505.18134) for how other people benchmark LLMs in games, and [Qwen plays Smash](https://hgali.sh/reflex), the closest thing to this I found.
+Built on [Slippi](https://slippi.gg), [libmelee](https://github.com/vladfi1/libmelee), [Slippi Lab](https://github.com/frankborden/slippilab) and [melee-sim-light](https://github.com/kyhavlov/melee-sim-light), with the bots of vladfi1 (Phillip), Eric Gu (HAL), erickfm (MIMIC) and Frisson Labs (Faynt, Reyn), [TypeSafe's Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev) and [ElevenLabs](https://elevenlabs.io) voices. Related work I leaned on: [StarSkirmish](https://starskirmish.com/bench/v0-1/), [SpireBench](https://arxiv.org/abs/2610.12596), [VideoGameBench](https://arxiv.org/abs/2505.18134) and [Qwen plays Smash](https://hgali.sh/reflex). Technical details for every part are in the [docs](https://melee.m19182.dev/docs/status).
