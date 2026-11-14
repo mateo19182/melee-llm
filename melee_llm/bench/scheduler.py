@@ -1,12 +1,14 @@
 """The overnight fill: pick the most informative pairing per token, run it in an isolated child, repeat.
 
-Active sampling. Per track, the current fit (bench + imported games) gives each entrant's strength and a Laplace
+Active sampling. The current fit (bench + imported games) gives each entrant's strength and a Laplace
 covariance. Games already running are added to the precision as if played (so a pairing is not started six
 times at once). For a candidate pairing with win probability p, one more game adds Fisher information
 w = p(1-p) along (e_a - e_b); by Sherman-Morrison the anchored variance of entrant k drops by
 w·(c_k' Σ d)² / (1 + w·d' Σ d). The value of a pairing is the sum of those drops over entrants whose 95% CI is
 still wider than the target (others weigh 2%), divided by its expected token cost plus a fixed per-game
-overhead. Pairings that do not fit the free resources (mode slots, provider slots, GPU, budget) are skipped.
+overhead. Pairings that do not fit the free resources (mode slots, provider slots, GPU, budget) are skipped,
+and so are pairings one side has always won (ratings.decided_pairs): an unbeaten entrant's interval never closes,
+and without this rule it soaks up every free game.
 
 Isolation follows llm_arena: each game is `python -m melee_llm.bench one` in its own process group with its
 own Slippi port (51920-51999) and replay dir; a wall timeout kills the group, Dolphin included.
@@ -30,7 +32,7 @@ from pathlib import Path
 import numpy as np
 
 from melee_llm.bench import imports, ratings, recount
-from melee_llm.bench.entrants import Entrant, by_id, game_mode, game_track, tracks_of
+from melee_llm.bench.entrants import Entrant, by_id, game_mode, game_track
 from melee_llm.bench.game import status_of
 from melee_llm.paths import BENCH_PORTS as PORTS
 from melee_llm.paths import DATA as _DATA
@@ -237,12 +239,11 @@ class Bench:
                 return False
         return True
 
-    def track_fit(self, track: str, games: list[dict], players: list[str]):
-        tg = ratings.track_games(games, track, self.entrants)
-        f = ratings.Fit(tg, extra_players=players)
+    def fit(self, games: list[dict], players: list[str]):
+        f = ratings.Fit(ratings.rated_games(games, self.entrants), extra_players=players)
         H = f.H.copy()
         for r in self.running.values():  # count running games as if played
-            if r["track"] in (track, "shared") and r["p1"] in f.idx and r["p2"] in f.idx:
+            if r["p1"] in f.idx and r["p2"] in f.idx:
                 i, j = f.idx[r["p1"]], f.idx[r["p2"]]
                 p = 1 / (1 + np.exp(-(f.th[i] - f.th[j])))
                 w = p * (1 - p)
@@ -252,14 +253,14 @@ class Bench:
                 H[j, i] -= w
         return f, np.linalg.inv(H)
 
-    def needs(self, track: str, f, cov) -> dict[str, float]:
+    def needs(self, f, cov) -> dict[str, float]:
         boot = {}
         if self.standings:
-            boot = {r["id"]: (r["elo_hi"] - r["elo_lo"]) / 2 for r in self.standings["tracks"][track]["players"]
+            boot = {r["id"]: (r["elo_hi"] - r["elo_lo"]) / 2 for r in self.standings["board"]["players"]
                     if r.get("elo_lo") is not None}
         out = {}
         for e in self.active():
-            if track not in tracks_of(e) or e.id == ratings.ANCHOR:
+            if e.id == ratings.ANCHOR:
                 continue
             lap, lap_now = f.half_width(e.id, cov), f.half_width(e.id)
             # the bootstrap CI (wider with few games) shrinks like the Laplace one does with the running games
@@ -273,42 +274,37 @@ class Bench:
         gpu_free = _gpu_free_mb()
         deferred = _unit_active(cfg.defer_unit)
         self.load = os.getloadavg()[0]
-        act = self.active()
-        values: dict[tuple[str, str], float] = {}
-        unconverged, settled = {}, {}
-        for track in ratings.TRACK_NAMES:
-            players = [e.id for e in act if track in tracks_of(e)]
-            if not players:
-                continue
-            f, cov = self.track_fit(track, games, players)
-            half = self.needs(track, f, cov)
-            n = Counter(p for g in f.games for p in (g["p1"], g["p2"]))
-            wide = {k for k, v in half.items() if v > cfg.target}
-            # a CI shrinks about like 1/sqrt(games): stop paying for one that PLATEAU_GAMES more games barely move
-            flat = {k for k in wide if half[k] * (1 - math.sqrt(n[k] / (n[k] + PLATEAU_GAMES))) < cfg.min_gain}
-            unconverged[track], settled[track] = sorted(wide - flat), sorted(flat)
-            K = [k for k in half]
-            C = np.array([f.contrast(k) for k in K]) if K else np.zeros((0, len(f.players)))
-            weight = np.array([1.0 if k in wide - flat else 0.02 for k in K])
-            for i, a in enumerate(players):
-                for b in players[i + 1:]:
-                    t = game_track(self.entrants[a], self.entrants[b])
-                    if t not in (track, "shared"):
-                        continue
-                    d = f.contrast(a) - f.contrast(b)
-                    p = f.p_win(a, b)
-                    w = p * (1 - p)
-                    sd = cov @ d
-                    red = w * (C @ sd) ** 2 / (1 + w * d @ sd) * ELO**2
-                    values[(a, b)] = values.get((a, b), 0.0) + float(weight @ red)
-        self.unconverged, self.settled = unconverged, settled
-        if not any(unconverged.values()):
-            self.stop_reason = (f"every rating is within ±{cfg.target:.0f}"
-                                + (" or no longer narrowing" if any(settled.values()) else ""))
+        players = [e.id for e in self.active()]
+        if len(players) < 2:
+            self.stop_reason = "fewer than two entrants to schedule"
             return None
+        f, cov = self.fit(games, players)
+        half = self.needs(f, cov)
+        n = Counter(p for g in f.games for p in (g["p1"], g["p2"]))
+        done = ratings.decided_pairs(f.games)
+        pairs = [(a, b) for i, a in enumerate(players) for b in players[i + 1:]
+                 if game_track(self.entrants[a], self.entrants[b]) and frozenset((a, b)) not in done]
+        open_ = {p for pair in pairs for p in pair}  # entrants that still have an undecided pairing to play
+        wide = {k for k, v in half.items() if v > cfg.target and k in open_}
+        # a CI shrinks about like 1/sqrt(games): stop paying for one that PLATEAU_GAMES more games barely move
+        flat = {k for k in wide if half[k] * (1 - math.sqrt(n[k] / (n[k] + PLATEAU_GAMES))) < cfg.min_gain}
+        self.unconverged = {"board": sorted(wide - flat)}
+        self.settled = {"board": sorted(flat | {k for k, v in half.items() if v > cfg.target and k not in open_})}
+        if not wide - flat:
+            self.stop_reason = (f"every rating is within ±{cfg.target:.0f}"
+                                + (" or no longer narrowing" if self.settled["board"] else ""))
+            return None
+        K = list(half)
+        C = np.array([f.contrast(k) for k in K])
+        weight = np.array([1.0 if k in wide - flat else 0.02 for k in K])
         best, best_score = None, 0.0
-        for (a, b), v in values.items():
+        for a, b in pairs:
             ea, eb = self.entrants[a], self.entrants[b]
+            d = f.contrast(a) - f.contrast(b)
+            p = f.p_win(a, b)
+            w = p * (1 - p)
+            sd = cov @ d
+            v = float(weight @ (w * (C @ sd) ** 2 / (1 + w * d @ sd))) * ELO**2
             if v <= 0 or not self.feasible(ea, eb, spent, gpu_free, deferred):
                 continue
             score = v / (self.est_tokens(a) + self.est_tokens(b) + OVERHEAD) * random.uniform(0.85, 1.15)

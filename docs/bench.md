@@ -14,15 +14,15 @@ uv run python -m melee_llm.bench run --target 125    # the fill (resumable); run
 
 Fox vs Fox, Battlefield or Final Destination (stages and ports alternate per pairing), 4 stocks, 8-minute timer, a full game. A time-out goes to the player with more stocks, then lower percent. Other characters and stages would be separate boards.
 
-## Two tracks
+## One board, two clocks
 
-| Track | Who | How the game runs |
+| Clock | Who | How the game runs |
 |---|---|---|
 | **Real time** | `llm_live:<model>`, `jev_live`, `coach:<model>`, `coach_jev`, `coach:random` | `realtime` mode: headless Dolphin capped at 60 fps. The game never waits, so latency costs game time, as for a human. |
 | **Untimed** | `llm_paused:<model>`, `jev_paused` | `fast` mode: the game waits for every decision. Measures decision quality only. |
-| **Both** | CPUs, learned bots, scripted and LLM-written bots | Token-free players play identically in both modes. Their games run in `fast` mode and count on **both** boards. |
+| **Every frame** | CPUs, learned bots, LLM-written bots | They act on every frame, so they play the same on either clock. Their games run in `fast` mode. |
 
-The shared games tie the two scales together, so a live and a paused LLM can be compared though they never meet.
+A real-time and an untimed player never meet, but both play the every-frame players, so one fit over all games puts everyone on one scale. (Until 2026-11-15 there were two boards, one per clock, sharing most of their games; they differed by at most 66 Elo, which was noise.)
 
 **Slow games are not rated.** The runner waits for a late bot, so an overloaded machine slows the game and gives a wall-clock player extra game time per decision. A real-time game with a mean below **50 fps** is marked `slow`: kept, not rated, and the pairing stays available. On the loaded machine `realtime` held 59.6-60.4 fps.
 
@@ -34,18 +34,26 @@ The registry is `melee_llm/bench/entrants.py`.
 
 | Category | Entrants | Notes |
 |---|---|---|
-| CPU | `cpu:1,3,5,7,9` scheduled; `cpu:2,4,6,8` from imports only | `cpu:9` is the anchor, 1500 |
+| CPU | `cpu:1` to `cpu:9` | `cpu:9` is the anchor, 1500 |
 | Learned bot | `phillip:silver`, `phillip:plat`, `phillip:gm`, `hal:MASTER`, `mimic`, `faynt` (10M-Arena), `reyn` (no command) | Phillip tiers give graded anchors above the CPUs |
-| Scripted bot | `baseline:laser`, `rusher`, `shine` | The bot-writer's reference bots |
 | LLM-written bot | `written:<session name>`: every bot-writer session of 10+ minutes with a `final/bot.py` | Picked up automatically from `~/.local/share/melee-llm/botwriter/sessions/` |
 | LLM player | `llm_live:<m>` and `llm_paused:<m>` for Haiku 4.5, Sonnet 5.5, gpt-6-luna, gpt-6.1-sol | Default options (`interval=30`, JSON, `effort=none`) |
 | Jev player | `jev_live`, `jev_paused` | Default options |
 | Coach → Reyn | `coach:<m>` for the four models, `coach_jev`, `coach:random` (control) | `interval=300` (one call per 5 s), as in the coach and Jev pilots |
 | Human | `human:mateo` | Reserved slot, see below |
 
+Each entrant also has a group:
+
+- **Control:** players with no model, which say what a number is worth. `coach:random` picks a random Reyn command. `llm_paused:random` and `llm_live:random` pick a random macro at every decision. `llm_live:none` never asks a model, so it plays the live player's waiting behaviour (dash dance, shield when threatened) all game.
+- **Experiment:** one-off variants with few games (the coach deep-dive's ablations). The page lists them under the main table.
+- **Retired:** `baseline:laser`, `rusher`, `shine` and `written:sonnet/pilot1`. Their games are left out of the fit. `rusher` stops attacking after its first up-smash, `laser` timed out in 76% of its games and `shine` in 49%, and the three worst-fitting pairings on the old board all involved them. The pilot bot was a harness test that loses to CPU 1.
+
 ## Rating method
 
-Each track is a Bradley-Terry fit (`melee_llm/bench/ratings.py`) over its `ok` games, on the Elo scale (400 points ≈ 10:1 odds), with **`cpu:9` pinned at 1500** on both boards. A draw is half a win, and a prior keeps undefeated records finite.
+One Bradley-Terry fit (`melee_llm/bench/ratings.py`) over all `ok` games between entrants that are not retired, on the Elo scale (400 points ≈ 10:1 odds), with **`cpu:9` pinned at 1500**. A draw is half a win.
+
+- **Time-outs:** a game with no recorded winner goes to the player with more stocks, then the lower percent. Older sources stored every time-out as a draw; the rule is applied when the game is read.
+- **Never lost, or never won:** a prior keeps such a record finite, but the games bound the rating on one side only. The row carries `bound` (`lower` or `upper`) and the page shows `> N` or `< N`.
 
 The 95% interval shown is the wider of the bootstrap and the Laplace estimate, because the bootstrap alone is too narrow for a perfect record. An entrant is "converged" when the half-width is at most the target (default ±125).
 
@@ -67,6 +75,8 @@ The page lists the excluded counts by reason under "Older games not imported".
 ## Scheduler: active sampling, no token cap
 
 Whenever a slot is free, the scheduler (`melee_llm/bench/scheduler.py`, unit `melee-bench`) starts the pairing whose next game would narrow the unconverged entrants' intervals most per unit of expected cost (tokens plus machine time). So close ratings and wide intervals win, free games are played often, and expensive LLMs play where they still need games, against opponents near their level. The maths is in the module's docstring and code.
+
+A pairing that one side has won every time, over at least 8 games, is not scheduled again. Before this rule Faynt, which never loses, played Phillip gm 349 times.
 
 Resource limits (defaults, `run --help`):
 

@@ -13,7 +13,12 @@ CATEGORIES = {
     "cpu": "CPU", "learned": "Learned bot", "scripted": "Scripted bot", "written": "LLM-written bot",
     "llm": "LLM player", "jev": "Jev player", "coach": "Coach → Reyn", "human": "Human",
 }
-TRACKS = {"realtime": "Real time", "untimed": "Untimed", "both": "Both tracks"}
+TRACKS = {"realtime": "Real time", "untimed": "Untimed", "both": "Every frame"}
+GROUPS = {"main": "Main board", "control": "Control", "experiment": "Experiment", "retired": "Retired"}
+CONTROL_MODELS = ("random", "none")  # LLM-player controls with no model behind them (agents/llm_common.py)
+# Broken players whose games no longer count: the scripted baselines stall (rusher stops attacking after one
+# up-smash, laser and shine time out most games) and the pilot bot was a harness test.
+RETIRED_WRITTEN = ("sonnet/pilot1",)
 WALL_CLOCK = {"llm_live", "jev_live", "coach", "coach_jev"}  # decide off-thread: need a 60 fps game
 LLM_MODELS = {  # id → (short name, provider)
     "claude-haiku-4-5-20251001": ("Haiku 4.5", "claude"),
@@ -29,12 +34,13 @@ class Entrant:
     id: str
     label: str
     category: str
-    track: str  # realtime | untimed | both (token-free players whose games count on both boards)
+    track: str  # the clock it plays on: realtime | untimed | both (steps every frame, so the clock is irrelevant)
     spec: str | None  # None: cannot be scheduled (imports only, or a human)
     about: str
     provider: str = "none"  # claude | gpt | jev | none: who pays for its decisions
     active: bool = True  # the scheduler may pick it
     gpu: bool = False  # runs a CUDA bot process
+    group: str = "main"  # main | control | experiment | retired (retired: its games are left out of the fit)
     aliases: list[str] = field(default_factory=list)
 
     @property
@@ -47,7 +53,7 @@ class Entrant:
 
     def view(self) -> dict:
         return {**asdict(self), "category_label": CATEGORIES[self.category], "track_label": TRACKS[self.track],
-                "wall_clock": self.wall_clock}
+                "group_label": GROUPS[self.group], "wall_clock": self.wall_clock}
 
 
 def _written() -> list[Entrant]:
@@ -62,10 +68,12 @@ def _written() -> list[Entrant]:
         if not bot.exists() or m.get("name", "").startswith("smoke") or (m.get("minutes") or 0) < 10:
             continue
         name = m["name"]
+        retired = name in RETIRED_WRITTEN
         out.append(Entrant(
             f"written:{name}", f"{name} bot", "written", "both", f"bot:{bot}",
             f"Single-file Python bot written by {m.get('model')} ({m.get('harness')} harness) in {m.get('minutes'):.0f} min "
-            f"of wall time; runs with a 16 ms per-frame budget.", aliases=[name, str(bot)]))
+            f"of wall time; runs with a 16 ms per-frame budget.", aliases=[name, str(bot)],
+            active=not retired, group="retired" if retired else "main"))
     return out
 
 
@@ -74,7 +82,7 @@ def registry() -> list[Entrant]:
     for lvl in range(1, 10):
         e.append(Entrant(f"cpu:{lvl}", f"CPU {lvl}", "cpu", "both", f"cpu:{lvl}",
                          f"Melee's built-in level-{lvl} CPU." + (" The anchor: pinned at 1500." if lvl == 9 else ""),
-                         active=lvl % 2 == 1, aliases=[f"cpu{lvl}"]))
+                         aliases=[f"cpu{lvl}"]))
     tiers = {"silver": "silver", "plat": "platinum", "gm": "grandmaster"}
     for t, name in tiers.items():
         e.append(Entrant(f"phillip:{t}", f"Phillip {t}", "learned", "both", f"phillip:{t}",
@@ -96,8 +104,8 @@ def registry() -> list[Entrant]:
     for b, what in (("laser", "short-hop lasers from range"), ("rusher", "runs in and attacks"),
                     ("shine", "approaches and shines")):
         e.append(Entrant(f"baseline:{b}", f"Script {b}", "scripted", "both", f"baseline:{b}",
-                         f"Hand-written bot-writer baseline: {what}.",
-                         aliases=[f"baseline/{b}", str(ROOT / f"melee_llm/botwriter/baselines/{b}.py")]))
+                         f"Bot-writer baseline: {what}. Retired: it stalls, and most of its games time out.",
+                         active=False, group="retired", aliases=[f"baseline/{b}", str(ROOT / f"melee_llm/botwriter/baselines/{b}.py")]))
     e += _written()
     for m, (short, prov) in LLM_MODELS.items():
         e.append(Entrant(f"llm_live:{m}", f"{short} live", "llm", "realtime", f"llm_live:{m}",
@@ -117,7 +125,15 @@ def registry() -> list[Entrant]:
         Entrant("coach_jev", "Jev coach", "coach", "realtime", f"coach_jev:,interval={COACH_INTERVAL}",
                 "Jev picks Reyn's command every 5 s.", provider="jev", gpu=True),
         Entrant("coach:random", "Random coach", "coach", "realtime", f"coach:random,interval={COACH_INTERVAL}",
-                "Control: a uniformly random Reyn command every 5 s, no model.", gpu=True),
+                "Control: a uniformly random Reyn command every 5 s, no model.", gpu=True, group="control"),
+        Entrant("llm_paused:random", "Random macros", "llm", "untimed", "llm_paused:random",
+                "Control: the LLM player's macro set with a uniformly random macro at every decision, no model.",
+                group="control"),
+        Entrant("llm_live:random", "Random macros, live", "llm", "realtime", "llm_live:random",
+                "Control: a random macro at every decision in real time, with no thinking delay.", group="control"),
+        Entrant("llm_live:none", "Live fallback only", "llm", "realtime", "llm_live:none",
+                "Control: what a live LLM does while it waits for a reply (dash dance, shield when threatened), "
+                "all game, no model.", group="control"),
         Entrant("human:mateo", "Mateo", "human", "realtime", None,
                 "Mateo over Slippi netplay (docs/netplay.md). Slot reserved; no games yet.", active=False),
     ]
@@ -145,10 +161,11 @@ def ablations() -> list[Entrant]:
         ("coach:claude-haiku-4-5-20251001,features", "Haiku coach + features",
          f"coach:claude-haiku-4-5-20251001,{i},features=1", "claude", "Haiku every 5 s, with the same named features."),
     ]
-    out = [Entrant(eid, label, "coach", "realtime", spec, about, provider=prov, active=False, gpu=True)
+    out = [Entrant(eid, label, "coach", "realtime", spec, about, provider=prov, active=False, gpu=True, group="experiment")
            for eid, label, spec, prov, about in rows]
     out.append(Entrant("reyn:stock_protection", "Reyn, fixed \"Don't die.\"", "learned", "both", "reyn:Don't die.",
-                       "Reyn holding Jev's favourite command all game, no coach.", active=False, gpu=True))
+                       "Reyn holding Jev's favourite command all game, no coach.", active=False, gpu=True,
+                       group="experiment"))
     return out
 
 
@@ -161,7 +178,8 @@ def tracks_of(e: Entrant) -> tuple[str, ...]:
 
 
 def game_track(a: Entrant, b: Entrant) -> str | None:
-    """realtime | untimed | shared (counts on both boards) | None (the two never meet)."""
+    """The clock a game between the two runs on: realtime | untimed | shared (neither cares) | None (they never
+    meet: one needs the game to wait, the other needs it not to)."""
     if a.track == "both" and b.track == "both":
         return "shared"
     tracks = set(tracks_of(a)) & set(tracks_of(b))
