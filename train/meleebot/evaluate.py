@@ -5,7 +5,7 @@
 Games go through melee_llm.match in the repo that contains this train/ directory, using the live
 checkout's venv and data. Results append to data/train/runs/<RUN>/eval.jsonl, one line per game.
 """
-import argparse, json, os, queue, subprocess, sys, time
+import argparse, json, os, queue, subprocess, sys, threading, time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -19,8 +19,13 @@ for _p in range(52200, 52240):  # melee_llm.paths.TRAIN_EVAL_PORTS
     PORTS.put(_p)
 
 
+_START = threading.Lock()
+
+
 def game(spec, opponent, opp_char, stage, iso, env):
     port = PORTS.get()
+    with _START:  # Dolphin names replays by the second a game starts: keep starts apart
+        time.sleep(2)
     cmd = [str(LIVE / ".venv/bin/python"), "-m", "melee_llm.match", "--iso", iso, "--mode", "fast", "--port", str(port),
            "--p1", spec, "--char1", "YOSHI", "--p2", opponent, "--char2", opp_char, "--stage", stage]
     try:
