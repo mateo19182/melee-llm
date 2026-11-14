@@ -48,6 +48,16 @@ def coach_sides(results):
                 yield r, int(port), eid, Path(s["log"])
 
 
+def menu():
+    import melee
+
+    from melee_llm.agents.coach import reyn_commands
+    out = {}
+    for stage in (melee.Stage.BATTLEFIELD, melee.Stage.FINAL_DESTINATION):
+        out |= {c.id: c for c in reyn_commands(melee.Character.FOX, stage)}
+    return list(out.values())
+
+
 def sections():
     """Router row (Reyn's `active`) → menu section, via each command's phrase."""
     import melee
@@ -147,6 +157,16 @@ def cmd_logs(results):
         for d in timeline(log):
             if d["changed"] and d.get("router"):
                 ab[d["command"]][d["router"].get("outcome")] += 1
+    routed = defaultdict(Counter)
+    names = {c.id: c.name for c in menu()}
+    for r, port, eid, log in coach_sides(results):
+        for d in timeline(log):
+            if d["changed"] and d.get("router") and d["router"].get("outcome") != "abstain":
+                routed[d["command"]][d["router"].get("name")] += 1
+    mis = [(k, n, c) for k, c in routed.items() for n in c if names.get(k) and n and n.lower() != names[k].lower()]
+    mis.sort(key=lambda t: -t[2][t[1]])
+    print("\nRouter sends a command to a different row (command → row: n): " +
+          ", ".join(f"{k} → {n}: {c[n]}" for k, n, c in mis[:10]))
     worst = sorted(((c["abstain"] / sum(c.values()), k, sum(c.values())) for k, c in ab.items() if sum(c.values()) >= 8),
                    reverse=True)
     print("\nRouter abstains on (share of sends, n sends): " +
@@ -248,23 +268,41 @@ def cmd_games(results):
 
 
 def cmd_ablations(results_path):
-    """Fit ablation games together with the bench (+imports) on the real-time board; print new entrants."""
+    """Fit ablation games together with the bench (+imports) on the real-time board. Differences vs the random
+    coach and vs Jev use the Laplace covariance of the joint fit (shared anchor uncertainty cancels)."""
+    import numpy as np
+
     from melee_llm.bench import imports, ratings
     from melee_llm.bench.entrants import by_id
     from melee_llm.bench.scheduler import read_results
-    bench = read_results(BENCH)
     imp, _ = imports.load()
     abl = [r for r in read_results(Path(results_path)) if r.get("status") == "ok"]
     ents = by_id()
-    tg = ratings.track_games(bench + imp, "realtime", ents) + abl
+    tg = ratings.track_games(read_results(BENCH) + imp + abl, "realtime", ents)
     f = ratings.Fit(tg)
     lo, hi = ratings.bootstrap(tg, f.players, 300)
-    new = sorted({r["p1"] for r in abl} | {r["p2"] for r in abl})
-    for i, p in enumerate(f.players):
-        if p in new or p in SHORT:
-            rec = ratings.record(p, tg)
-            half = max(f.half_width(p), (hi[i] - lo[i]) / 2)
-            print(f"{p:50s} {f.elo(p):6.0f} ±{half:4.0f}  n={rec['games']:3d} {rec['wins']}-{rec['losses']}-{rec['draws']}")
+    shown = sorted({r["p1"] for r in abl} | {r["p2"] for r in abl} | set(SHORT), key=lambda p: -f.elo(p))
+
+    def diff(a, b):
+        if a == b:
+            return 0.0, 0.0
+        d = np.zeros(len(f.players))
+        d[f.idx[a]], d[f.idx[b]] = 1, -1
+        return ELO_K * (f.th[f.idx[a]] - f.th[f.idx[b]]), 1.96 * ELO_K * math.sqrt(d @ f.cov @ d)
+    print(f"{'entrant':44s} {'elo':>5s} {'±95%':>5s} {'n(new)':>7s} {'W-L':>8s} {'vs random':>12s} {'vs jev':>12s}")
+    for p in shown:
+        if p not in f.idx:
+            continue
+        i = f.idx[p]
+        rec = ratings.record(p, tg)
+        new = sum(p in (g["p1"], g["p2"]) for g in abl)
+        half = max(f.half_width(p), (hi[i] - lo[i]) / 2)
+        vr, vj = diff(p, "coach:random"), diff(p, "coach_jev")
+        print(f"{p:44s} {f.elo(p):5.0f} {half:5.0f} {rec['games']:4d}({new:3d}) {rec['wins']:3d}-{rec['losses']:<3d} "
+              f"{vr[0]:+5.0f}±{vr[1]:<4.0f} {vj[0]:+5.0f}±{vj[1]:<4.0f}")
+
+
+ELO_K = 400 / math.log(10)
 
 
 if __name__ == "__main__":
