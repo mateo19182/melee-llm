@@ -26,10 +26,12 @@ async function render() {
   current = new AbortController();
   const signal = current.signal;
   const root = document.getElementById("app");
+  // pages without their own menu item light up their parent's: a job belongs to Launch, a ladder to Bot-writer
   const path = location.pathname;
+  const section = path.replace(/^\/job\//, "/launch/").replace(/^\/ladder\//, "/botwriter/");
   for (const a of document.querySelectorAll("#nav a")) {
     const href = a.getAttribute("href");
-    a.classList.toggle("active", path === href || (href !== "/live" && path.startsWith(href.replace(/s$/, ""))) || (href === "/live" && path === "/"));
+    a.classList.toggle("active", section === href || (href !== "/live" && section.startsWith(href.replace(/s$/, ""))) || (href === "/live" && section === "/"));
   }
   frameTitle();
   describe();

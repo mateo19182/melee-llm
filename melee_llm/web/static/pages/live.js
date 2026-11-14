@@ -247,7 +247,7 @@ export default async function live(root, _params, signal) {
       videoWrap.classList.remove("loading");
       mount(scorebug, h("div.sb-idle", {}, h("div", {}, h("b", {}, "Nothing on the live slot"), s.next ? h("div.dim", {}, s.next) : null),
         link("/launch", h("button.primary.small", {}, "Launch a match"))));
-      if (!events.children.length) mount(empty, emptyState("Idle", "Launch a match, or turn the arena on to fill the slot."));
+      if (!events.children.length) mount(empty, emptyState("Idle", admin ? "Launch a match, or turn the arena on to fill the slot." : "Launch a match to fill the slot."));
       return;
     }
     const side = (p) => {
