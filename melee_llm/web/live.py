@@ -6,21 +6,14 @@ The process that owns display :99 (a job or an arena game) creates a `LiveReport
 from __future__ import annotations
 
 import json
-import os
 import time
 from pathlib import Path
 
-from melee_llm.web.paths import LIVE
+from melee_llm.paths import LIVE
+from melee_llm.util import write_atomic
 from melee_llm.web.specs import char_name, kind_of, label, stage_name
 
 OVERLAY = Path("/tmp/melee-arena/overlay.txt")  # drawn under the video by scripts/stream.sh
-
-
-def write_atomic(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    tmp.write_text(text)
-    tmp.replace(path)  # ffmpeg's drawtext and the server never read a half-written file
 
 
 def write_overlay(text: str) -> None:

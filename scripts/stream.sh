@@ -16,7 +16,7 @@ if [ -n "$geom" ]; then
 else
   size=640x480; src=$DISPLAY_NAME+0,0
 fi
-OVERLAY=/tmp/melee-arena/overlay.txt  # written by arena.py; empty outside arena runs
+OVERLAY=/tmp/melee-arena/overlay.txt  # written by melee_llm/web/live.py for whatever owns the live slot
 mkdir -p "$(dirname "$OVERLAY")"; [ -f "$OVERLAY" ] || : > "$OVERLAY"
 FONT=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf
 exec ffmpeg -loglevel error -f x11grab -draw_mouse 0 -framerate 60 -video_size "$size" -i "$src" \

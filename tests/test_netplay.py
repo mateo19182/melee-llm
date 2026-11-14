@@ -1,18 +1,14 @@
-"""Offline tests for melee_llm.netplay (no Dolphin, no Slippi account). Run: uv run --with pytest pytest -q tests/"""
+"""Offline tests for melee_llm.netplay (no Dolphin, no Slippi account). Run: uv run pytest -q tests/"""
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import melee
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-import melee  # noqa: E402
-
-from melee_llm.netplay.host import HostConfig, _find_port, _winner, bot_code, check, normalize_code  # noqa: E402
+from melee_llm.netplay.host import HostConfig, _find_port, _winner, bot_code, check, normalize_code
 
 
 def test_normalize_code():

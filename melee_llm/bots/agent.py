@@ -15,9 +15,8 @@ import melee
 
 from melee_llm.agents.base import Agent
 from melee_llm.bots import protocol
+from melee_llm.paths import VENDOR  # noqa: F401 - re-exported for the bot classes
 
-ROOT = Path(__file__).resolve().parents[2]
-VENDOR = ROOT / "vendor"
 SERVER = Path(__file__).resolve().parent / "server.py"
 APPLIED_BUTTONS = [melee.Button[n] for n in ("BUTTON_A", "BUTTON_B", "BUTTON_X", "BUTTON_Y", "BUTTON_Z",
                                              "BUTTON_L", "BUTTON_R", "BUTTON_D_UP")]

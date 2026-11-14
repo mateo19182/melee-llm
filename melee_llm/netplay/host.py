@@ -15,7 +15,6 @@ import configparser
 import json
 import os
 import re
-import sys
 import threading
 import time
 from dataclasses import asdict, dataclass, field
@@ -25,20 +24,23 @@ import melee
 from melee.slippstream import EnetDisconnected
 
 from melee_llm.agents.base import Agent
-from melee_llm.runner import ROOT, Console, _port_free
+from melee_llm.paths import DOLPHIN_RENDERED as DOLPHIN  # mainline beta.19 netplay build, rendered on the GPU
+from melee_llm.paths import REPLAYS
+from melee_llm.players import make as make_player
+from melee_llm.runner import Console
+from melee_llm.util import port_free as _port_free
 
-DOLPHIN = ROOT / "scripts/dolphin-gpu.sh"  # mainline beta.19 netplay build, rendered on the GPU
 DISPLAY = ":98"  # hidden Xvfb (melee-xvfb-headless). Never :99, the streamed live slot
 WINDOW = (640, 480)  # :98's screen size
 SPECTATOR_PORTS = range(51800, 51820)
 USER_JSON = Path(os.environ.get("MELEE_NETPLAY_USER_JSON", Path.home() / ".config/melee-llm/slippi-bot/user.json"))
-OUT = ROOT / "replays/netplay"
+OUT = REPLAYS / "netplay"
 CODE_RE = re.compile(r"^[A-Z]{1,7}#[0-9]{1,4}$")
 
 
 @dataclass
 class HostConfig:
-    opponent: str  # any match.py player spec except cpu:N and llm_paused
+    opponent: str  # any player spec (melee_llm/players.py) except cpu:N and llm_paused
     connect_code: str  # the human's code, e.g. ABCD#123
     char: str = "FOX"
     stage: str = "BATTLEFIELD"  # used only if the bot gets the stage pick
@@ -96,7 +98,7 @@ def check(cfg: HostConfig) -> list[str]:
     elif not bot_code(cfg.user_json):
         problems.append(f"{cfg.user_json} has no connectCode: not a Slippi user.json?")
     if not Path(f"/tmp/.X11-unix/X{cfg.display.lstrip(':')}").exists():
-        problems.append(f"X display {cfg.display} is not running (./live.sh starts it as melee-xvfb-headless)")
+        problems.append(f"X display {cfg.display} is not running (scripts/live.sh starts it as melee-xvfb-headless)")
     try:
         normalize_code(cfg.connect_code)
         if normalize_code(cfg.connect_code) == bot_code(cfg.user_json):
@@ -129,13 +131,6 @@ class NetplayConsole(Console):
                 ini.set(section, k, v)
             with open(path, "w") as f:
                 ini.write(f)
-
-
-def make_player(spec: str, char: str) -> Agent:
-    if str(ROOT) not in sys.path:
-        sys.path.insert(0, str(ROOT))
-    from match import make  # the one place player specs are parsed
-    return make(spec, char)
 
 
 def _event_lists(agent: Agent) -> list[list]:

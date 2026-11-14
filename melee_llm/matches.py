@@ -17,13 +17,13 @@ import threading
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-DIR = Path(os.environ.get("MELEE_MATCHES_DIR", ROOT / "data/matches"))
+from melee_llm.paths import BOTWRITER, DATA, LIVE_DISPLAY, LIVE_PORT
+
+DIR = Path(os.environ.get("MELEE_MATCHES_DIR", DATA / "matches"))
 ENABLED = os.environ.get("MELEE_MATCHES", "1") != "0"
 WRITE_HZ = 15
 SAMPLE_FPS = 60  # at most this many samples per wall second (fast mode runs several times real time)
 RING = 45  # samples kept in the file: enough for a client polling at a few Hz to never see gaps
-LIVE_DISPLAY = ":99"
 
 _SHIELD = {178, 179, 181, 182}  # SHIELD_START, SHIELD, SHIELD_STUN, SHIELD_REFLECT
 
@@ -33,7 +33,7 @@ def _guess_source(replay_dir: Path | None) -> tuple[str, str]:
     if script in ("-m", "-c", ""):
         script = "python"
     rd = str(replay_dir or "")
-    bw = os.environ.get("BOTWRITER_HOME", str(Path.home() / ".local/share/melee-llm/botwriter"))
+    bw = str(BOTWRITER)
     if rd.startswith(bw):
         parts = Path(rd).relative_to(bw).parts
         kind = parts[0].rstrip("s") if parts else "botwriter"  # ladders → ladder, sessions → session, rounds → round
@@ -61,7 +61,7 @@ class MatchPublisher:
             "id": self.path.stem, "pid": os.getpid(), "port": slippi_port, "source": meta.pop("source", source),
             "label": meta.pop("label", label), "mode": mode, "stage": getattr(stage, "name", str(stage)),
             "games": games, "game": 0, "phase": "starting", "started": round(self.t0, 3), "game_started": None,
-            "live_slot": mode != "fast" and display == LIVE_DISPLAY and slippi_port == 51441,
+            "live_slot": mode != "fast" and display == LIVE_DISPLAY and slippi_port == LIVE_PORT,
             "argv": " ".join(sys.argv)[:300], "replay_dir": str(replay_dir) if replay_dir else None,
             "players": {str(p): {"name": a.name, "spec": specs.get(p) or specs.get(str(p)), "character": a.character.name,
                                  "cpu_level": a.cpu_level} for p, a in agents.items()},

@@ -8,8 +8,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import signal
-import sys
 import time
 from dataclasses import asdict
 from pathlib import Path
@@ -23,20 +21,18 @@ def main() -> None:
     ap.add_argument("--iso", required=True)
     ap.add_argument("--live", action="store_true", help="this job owns display :99: report to data/live.json")
     a = ap.parse_args()
-    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))  # so play()'s cleanup stops Dolphin and the bots
     job, out = json.loads(a.job), Path(a.dir)
     out.mkdir(parents=True, exist_ok=True)
 
     import melee
 
-    from match import make
+    from melee_llm.players import make
     from melee_llm.runner import play
+    from melee_llm.util import append_jsonl, exit_on_term
     from melee_llm.web.live import LiveReporter
 
-    agents = {1: make(job["p1"], job["char1"]), 2: make(job["p2"], job["char2"])}
-    for ag in agents.values():
-        if hasattr(ag, "log_dir"):
-            ag.log_dir = out  # keep decision logs next to this job's replays (and away from parallel jobs)
+    exit_on_term()  # so play()'s cleanup stops Dolphin and the bots
+    agents = {1: make(job["p1"], job["char1"], out), 2: make(job["p2"], job["char2"], out)}
     reporter = observer = None
     if a.live:
         reporter = LiveReporter("job", job["p1"], job["p2"], job["char1"], job["char2"], job["stage"], job["mode"],
@@ -48,9 +44,7 @@ def main() -> None:
             observer(event, info)
         if event == "game_end":
             r = info["result"]
-            rec = {"game": info["game"], "time": time.strftime("%Y-%m-%dT%H:%M:%S"), **asdict(r)}
-            with (out / "results.jsonl").open("a") as f:
-                f.write(json.dumps(rec, default=float) + "\n")
+            append_jsonl(out / "results.jsonl", {"game": info["game"], "time": time.strftime("%Y-%m-%dT%H:%M:%S"), **asdict(r)})
 
     error = None
     try:

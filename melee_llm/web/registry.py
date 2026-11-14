@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 from melee_llm.matches import DIR
-from melee_llm.web import games, logs
+from melee_llm.web import games
 from melee_llm.web.specs import char_name, kind_of, label, stage_name
 
 ENDED = ("finished", "failed", "crashed")

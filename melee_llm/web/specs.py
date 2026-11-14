@@ -5,9 +5,8 @@ import json
 import time
 from functools import lru_cache
 
-from melee_llm.web.paths import ROOT
+from melee_llm.paths import VENDOR
 
-VENDOR = ROOT / "vendor"
 CHARACTERS = ["FOX", "FALCO", "MARTH", "SHEIK", "CPTFALCON", "JIGGLYPUFF", "PEACH", "POPO", "SAMUS", "GANONDORF",
               "LUIGI", "MARIO", "DOC", "YOSHI", "DK", "LINK", "YLINK", "NESS", "PIKACHU", "PICHU", "ROY", "MEWTWO",
               "GAMEANDWATCH", "KIRBY", "BOWSER", "ZELDA"]

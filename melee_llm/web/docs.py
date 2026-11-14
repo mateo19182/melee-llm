@@ -7,7 +7,7 @@ from pathlib import Path
 
 from markdown_it import MarkdownIt
 
-from melee_llm.web.paths import ROOT
+from melee_llm.paths import ROOT
 
 DOCS = ROOT / "docs"
 # Nav order; any other docs/*.md follows alphabetically.

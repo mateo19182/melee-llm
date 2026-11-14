@@ -20,11 +20,11 @@ from dataclasses import asdict, fields
 from pathlib import Path
 
 from melee_llm.netplay.host import DISPLAY, OUT, HostConfig, check
-from melee_llm.runner import ROOT
+from melee_llm.paths import ROOT
 
 STATUS = OUT / "status.json"
 LOG = OUT / "session.log"
-VNC_PORT, NOVNC_PORT, BIND = 5998, 6081, "100.83.166.6"  # :99's live.sh uses 5900/6080
+VNC_PORT, NOVNC_PORT, BIND = 5998, 6081, "100.83.166.6"  # :99's scripts/live.sh uses 5900/6080
 
 
 def write_status(st: dict) -> None:

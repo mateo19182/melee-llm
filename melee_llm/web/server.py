@@ -19,8 +19,8 @@ from starlette.responses import FileResponse, HTMLResponse, JSONResponse, PlainT
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
+from melee_llm.paths import ROOT
 from melee_llm.web import docs, games, jobs, live, logs, registry, specs
-from melee_llm.web.paths import ROOT
 
 STATIC = Path(__file__).parent / "static"
 SLIPPILAB = ROOT / "vendor/slippilab/dist"

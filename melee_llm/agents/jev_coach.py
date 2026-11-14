@@ -4,7 +4,7 @@ One Choice per call over Reyn's command ids plus `keep` and `none` (108 options 
 Jev's 255 limit). Same prompt state, interval, history and .coach.jsonl log as `coach:`; each decision record
 also carries the top-k probabilities and the answer's confidence.
 
-match.py spec: coach_jev[:<model>][,interval=60,command=<id>,top_k=5,shuffle=1,timeout=3,history=4,menu=a|b,features=1]
+spec: coach_jev[:<model>][,interval=60,command=<id>,top_k=5,shuffle=1,timeout=3,history=4,menu=a|b,features=1]
 """
 from __future__ import annotations
 

@@ -1,14 +1,10 @@
 """LLM arena: schedule balance and Bradley-Terry recovery on synthetic games (no ISO, no API)."""
 import math
 import random
-import sys
 from collections import Counter
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from melee_llm.llm_arena.ratings import standings  # noqa: E402
-from melee_llm.llm_arena.tournament import schedule  # noqa: E402
+from melee_llm.llm_arena.ratings import standings
+from melee_llm.llm_arena.tournament import schedule
 
 
 def test_schedule_full_and_rotated():

@@ -7,35 +7,29 @@ and Elo standings to arena/standings.json (shown at https://melee.m19182.dev/are
 The web worker (melee_llm/web/worker.py, unit melee-arena) runs it as the live slot's idle filler, one
 game per process (`--games 1`), so queued jobs get the slot between games. Standalone:
 
-    DISPLAY=:99 uv run arena.py --iso ~/melee.iso [--games N]
+    DISPLAY=:99 uv run -m melee_llm.arena --iso ~/melee.iso [--games N]
 """
 import argparse
 import itertools
 import json
 import random
-import signal
 import sys
 import time
 from collections import Counter
-from dataclasses import asdict
-from pathlib import Path
 
 import melee
 
-from match import make
+from melee_llm.paths import ARENA as DATA
+from melee_llm.players import make
 from melee_llm.runner import play
+from melee_llm.util import append_jsonl, exit_on_term, read_jsonl, write_atomic
 from melee_llm.web.live import LiveReporter
+from melee_llm.web.specs import char_name
 
-ROOT = Path(__file__).parent
-DATA = ROOT / "arena"
 ENTRANTS = ["hal:MASTER", "phillip:gm", "mimic", "faynt", "cpu:9"]
 CHARACTERS = ["FOX", "FALCO", "MARTH", "CPTFALCON"]  # every bot (incl. MIMIC's per-character checkpoints) has these
 STAGES = ["BATTLEFIELD", "FINAL_DESTINATION", "YOSHIS_STORY", "DREAMLAND", "FOUNTAIN_OF_DREAMS"]
 K = 24
-
-
-def char_name(c: str) -> str:
-    return {"CPTFALCON": "Falcon", "JIGGLYPUFF": "Puff"}.get(c, c.title())
 
 
 def label(spec: str) -> str:
@@ -43,8 +37,7 @@ def label(spec: str) -> str:
 
 
 def load_results() -> list[dict]:
-    path = DATA / "results.jsonl"
-    return [json.loads(line) for line in path.open()] if path.exists() else []
+    return read_jsonl(DATA / "results.jsonl")
 
 
 def standings(results: list[dict]) -> dict:
@@ -79,7 +72,7 @@ def main() -> None:
     p.add_argument("--games", type=int, default=0, help="0 = forever")
     p.add_argument("--no-retry", action="store_true", help="exit 1 when a game fails (the worker decides what next)")
     a = p.parse_args()
-    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
+    exit_on_term()
     DATA.mkdir(exist_ok=True)
     rng = random.Random()
     played = 0
@@ -111,9 +104,8 @@ def main() -> None:
                "stage": stage, "winner": res.winner, "stocks": {str(k): int(v) for k, v in res.stocks.items()},
                "percent": {str(k): round(float(v), 1) for k, v in res.percent.items()}, "frames": res.frames,
                "wall_s": round(time.time() - t0, 1), "replay": res.replay}
-        with (DATA / "results.jsonl").open("a") as f:
-            f.write(json.dumps(row) + "\n")
-        (DATA / "standings.json").write_text(json.dumps(standings(load_results()), indent=1))
+        append_jsonl(DATA / "results.jsonl", row)
+        write_atomic(DATA / "standings.json", json.dumps(standings(load_results()), indent=1))
         print(json.dumps(row), flush=True)
         played += 1
 

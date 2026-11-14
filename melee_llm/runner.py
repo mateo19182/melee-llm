@@ -4,7 +4,6 @@ from __future__ import annotations
 import configparser
 import os
 import signal
-import socket
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -14,19 +13,17 @@ import melee
 
 from melee_llm import matches
 from melee_llm.agents.base import Agent
+from melee_llm.paths import DOLPHIN_HEADLESS, DOLPHIN_RENDERED, HEADLESS_DISPLAY, REPLAYS
+from melee_llm.util import port_free
 
-ROOT = Path(__file__).resolve().parent.parent
 DOLPHIN = {
-    "watch": ROOT / "scripts/dolphin-gpu.sh",  # rendered on the GPU, real time (view on :99)
-    "paused": ROOT / "scripts/dolphin-gpu.sh",  # rendered, game waits for every input (slow players → slow motion)
-    "lockstep": ROOT / "scripts/dolphin-gpu.sh",  # same as paused; with fast bots it runs at real time, no dropped frames
-    "fast": ROOT / "bin/Slippi_Mainline_ExiAI.AppImage",  # headless, unthrottled
-    "realtime": ROOT / "bin/Slippi_Mainline_ExiAI.AppImage",  # headless lockstep: 60 fps cap, game waits for slow inputs
+    "watch": DOLPHIN_RENDERED,  # rendered on the GPU, real time (view on :99)
+    "paused": DOLPHIN_RENDERED,  # rendered, game waits for every input (slow players → slow motion)
+    "lockstep": DOLPHIN_RENDERED,  # same as paused; with fast bots it runs at real time, no dropped frames
+    "fast": DOLPHIN_HEADLESS,  # headless, unthrottled
+    "realtime": DOLPHIN_HEADLESS,  # headless lockstep: 60 fps cap, game waits for slow inputs
 }
-
-
-HEADLESS_DISPLAY = os.environ.get("MELEE_HEADLESS_DISPLAY", ":98")  # the ExiAI build still wants an X display
-WINDOW = (1280, 960)  # matches the Xvfb :99 screen that live.sh starts
+WINDOW = (1280, 960)  # matches the Xvfb :99 screen that scripts/live.sh starts
 
 
 class Console(melee.Console):
@@ -44,7 +41,7 @@ class Console(melee.Console):
             ("Dolphin.ini", "Display", {"Fullscreen": "False", "RenderToMain": "False", "RenderWindowAutoSize": "False",
                                         "RenderWindowXPos": "0", "RenderWindowYPos": "0",
                                         "RenderWindowWidth": str(WINDOW[0]), "RenderWindowHeight": str(WINDOW[1])}),
-            ("GFX.ini", "Settings", {"InternalResolution": "2"}),  # window size is ignored by this build; viewer.py crops to the game window
+            ("GFX.ini", "Settings", {"InternalResolution": "2"}),  # window size is ignored by this build; the stream crops to the game window
         ]:
             path, cfg = os.path.join(cfg_dir, name), configparser.ConfigParser()
             cfg.read(path)
@@ -72,15 +69,6 @@ def _kill_matching(needle: str) -> None:
                     os.kill(int(pid), signal.SIGKILL)
         except (OSError, ValueError):
             pass
-
-
-def _port_free(port: int) -> bool:
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-        try:
-            s.bind(("127.0.0.1", port))
-            return True
-        except OSError:
-            return False
 
 
 @dataclass
@@ -129,11 +117,11 @@ def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BA
     """
     notify = observer or (lambda event, info: None)
     assert len(agents) == 2, "two ports for now"
-    if not _port_free(slippi_port):
+    if not port_free(slippi_port):
         raise RuntimeError(f"Slippi port {slippi_port} is busy: a stale Dolphin is probably still running")
     fast, blocking = mode == "fast", mode in ("fast", "paused", "lockstep", "realtime")
     headless = mode in ("fast", "realtime")
-    replay_dir = replay_dir or ROOT / "replays"
+    replay_dir = replay_dir or REPLAYS
     replay_dir.mkdir(parents=True, exist_ok=True)
     console = Console(
         path=str(DOLPHIN[mode]), fullscreen=False, save_replays=True, replay_dir=str(replay_dir),

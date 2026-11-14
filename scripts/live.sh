@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Virtual displays :99 (rendered Dolphin, streamed) and :98 (headless jobs). Watch at https://melee.m19182.dev,
-# http://m19182:8889/live/ (WebRTC, tailnet) or http://m19182:8767/watch (MJPEG via viewer.py).
+# http://m19182:8889/live/ (WebRTC, tailnet) or http://m19182:8767/watch (MJPEG via scripts/viewer.py).
 # VNC=1 also starts x11vnc + noVNC on :6080, laggy but interactive, useful for debugging menus.
-# Then run: DISPLAY=:99 uv run match.py --iso <path>
+# Then run: DISPLAY=:99 uv run -m melee_llm.match --iso <path>
 set -euo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 BIND=${BIND:-100.83.166.6}
 systemctl --user is-active -q melee-xvfb || { systemctl --user reset-failed melee-xvfb 2>/dev/null || true;
   systemd-run --user --unit=melee-xvfb --description="Xvfb :99 for Melee" Xvfb :99 -screen 0 1280x960x24 >/dev/null; }

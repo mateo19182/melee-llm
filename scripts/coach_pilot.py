@@ -67,13 +67,12 @@ def behaviour(slp: str, port: int, opp: int) -> dict:
 def one(a) -> None:
     import melee
 
-    from match import make
+    from melee_llm.players import make
     from melee_llm.runner import play
-    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))  # so play()'s cleanup stops Dolphin and the bot
+    from melee_llm.util import exit_on_term
+    exit_on_term()  # so play()'s cleanup stops Dolphin and the bot
     out = Path(a.out)
-    p1 = make(a.p1, a.char1)
-    if hasattr(p1, "log_dir"):
-        p1.log_dir = out
+    p1 = make(a.p1, a.char1, out)
     agents = {1: p1, 2: make(a.p2, a.char2)}
     t0 = time.time()
     [r] = play(agents, a.iso, melee.Stage[a.stage], a.mode, 1, replay_dir=out, slippi_port=a.port)

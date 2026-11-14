@@ -1,18 +1,15 @@
-"""Offline tests for the Jev client and players (no network, no ISO): uv run --with pytest pytest -q tests/test_jev.py"""
+"""Offline tests for the Jev client and players (no network, no ISO): uv run pytest -q tests/test_jev.py"""
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import httpx
 import melee
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from melee_llm import jev as J  # noqa: E402
-from melee_llm.actions import ACTIONS  # noqa: E402
+from melee_llm import jev as J
+from melee_llm.actions import ACTIONS
 
 
 @pytest.fixture(autouse=True)

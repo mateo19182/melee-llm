@@ -12,7 +12,7 @@ import threading
 from functools import partial
 from pathlib import Path
 
-ROOT = Path(__file__).parent
+ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / "vendor/slippilab/dist"
 REPLAYS = ROOT / "replays"
 HOST, PORT = os.environ.get("BIND", "100.83.166.6"), int(os.environ.get("PORT", "8767"))

@@ -17,8 +17,9 @@ import keyword
 import tokenize
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
-CORPUS = ROOT / "vendor" / "SmashBot"
+from melee_llm.paths import VENDOR
+
+CORPUS = VENDOR / "SmashBot"
 N = 12
 FLAG_AT = 0.25  # renamed overlap above this is worth a manual look
 

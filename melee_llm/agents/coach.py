@@ -5,7 +5,7 @@ since its last call and the body's valid commands, and the LLM answers with stri
 (or "keep"/"none") plus a one-line rationale. step() never blocks. Each decision is logged to
 <replay>.p<port>.coach.jsonl. See docs/coach.md.
 
-match.py spec: coach:<model>[,body=reyn|hal,interval=60,body_arg=...,command=<id>,timeout=10,menu=a|b,features=1]
+spec: coach:<model>[,body=reyn|hal,interval=60,body_arg=...,command=<id>,timeout=10,menu=a|b,features=1]
 <model> "random" picks a uniformly random valid command at the same interval, without an LLM; `p_change=0.4` makes
 it keep the current command with probability 0.6 (0: one random command held all game).
 `menu=id1|id2|...` restricts the command menu (plus keep/none); `features=1` adds named features computed in code
@@ -18,7 +18,6 @@ import queue
 import random
 import re
 import threading
-import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -29,7 +28,7 @@ from melee_llm.agents.llm_common import DecisionLog, parse_spec
 from melee_llm.bots import HAL, ReynBot
 from melee_llm.bots.agent import VENDOR
 from melee_llm.llm import LLM, Reply
-from melee_llm.runner import ROOT
+from melee_llm.paths import REPLAYS
 from melee_llm.state import AERIALS, LEDGE, SHIELDING, EventTracker, attack_phase, in_hitstun, observe, render, stage_text
 
 MODELS = {"haiku": "claude-haiku-4-5-20251001", "sonnet": "claude-sonnet-5-5"}
@@ -225,7 +224,7 @@ class CoachedBot(Agent):
         self.random = model == "random"
         self.rng = random.Random(seed)
         self.llm = None if self.random else LLM(model, timeout=timeout, mode="json", max_tokens=200)
-        self.log_dir = Path(log_dir) if log_dir else ROOT / "replays"
+        self.log_dir = Path(log_dir) if log_dir else REPLAYS
         self._req: queue.Queue = queue.Queue(maxsize=1)
         self._res: queue.Queue = queue.Queue()
         self._stop = threading.Event()

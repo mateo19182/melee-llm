@@ -7,7 +7,7 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
-from melee_llm.web.paths import DB, JOBS
+from melee_llm.paths import DB, JOBS
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (

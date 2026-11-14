@@ -28,7 +28,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-PORTS = range(51860, 51880)
+
+from melee_llm.paths import PERCEPTION_PORTS as PORTS  # noqa: E402
 
 
 class Capped(Exception):
@@ -38,13 +39,13 @@ class Capped(Exception):
 def one(a) -> None:
     import melee
 
-    from match import make
+    from melee_llm.players import make
     from melee_llm.runner import GameResult, play
+    from melee_llm.util import exit_on_term
     from melee_llm.vision import PrivateDisplay
-    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
+    exit_on_term()
     out = Path(a.out)
-    p1 = make(a.p1, a.char1)
-    p1.log_dir = out
+    p1 = make(a.p1, a.char1, out)
     agents = {1: p1, 2: make(a.p2, a.char2)}
     last = {"gs": None, "t0": time.time()}
 
