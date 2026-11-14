@@ -1,9 +1,10 @@
 """Behaviour cloning on a dataset built by build_dataset.
 
-    uv run python -m meleebot.train DATA_DIR RUN_DIR [--steps N] [--overfit-game G]
+    uv run python -m meleebot.train DATA_DIR RUN_DIR [--steps N] [--overfit-game G] [--init CKPT]
 
 --overfit-game trains on one game only; the loss should fall close to zero, otherwise the
-pipeline has a bug.
+pipeline has a bug. --init fine-tunes a trained checkpoint (e.g. the all-character pretrain on Yoshi): it
+keeps that model's shape, input normalisation and stick classes, so --layers/--width/--pos are ignored.
 """
 import argparse, json, math, os, time
 
@@ -12,7 +13,7 @@ import torch
 import torch.nn.functional as F
 
 from . import features as fe
-from .model import HEADS, Config, Policy, save
+from .model import HEADS, Config, Policy, load, save
 from .schema import FRAME, RANKS
 
 COND_DROP = 0.1   # share of windows trained without rank / result, so both can be left unknown at play time
@@ -87,6 +88,7 @@ def main():
     ap.add_argument("--overfit-game", type=int)
     ap.add_argument("--pos", choices=["rope", "learned"], default="rope")
     ap.add_argument("--compile", action="store_true")
+    ap.add_argument("--init", help="checkpoint to fine-tune instead of training from scratch")
     a = ap.parse_args()
 
     os.makedirs(a.run_dir, exist_ok=True)
@@ -96,19 +98,29 @@ def main():
     frames = np.memmap(os.path.join(a.data_dir, "frames.bin"), FRAME, "r")
     meta_path = os.path.join(a.data_dir, "meta.json")
     features = json.load(open(meta_path)).get("features", "v1") if os.path.exists(meta_path) else "v1"
-    mean, std, pads = norm_stats(frames, rng, features)
+    init = None
+    if a.init:
+        model, init = load(a.init)
+        if model.config.features != features:
+            raise SystemExit(f"--init model reads features {model.config.features}, the data has {features}")
+    else:
+        mean, std, pads = norm_stats(frames, rng, features)
     if a.overfit_game is not None:
         train_g = val_g = subset(games, np.arange(len(games["length"])) == a.overfit_game)
         dropout = 0.0
     else:
         train_g, val_g, dropout = subset(games, games["val"] == 0), subset(games, games["val"] == 1), 0.1
 
-    c = Config(layers=a.layers, width=a.width, heads=a.width // 32, context=a.context, dropout=dropout, pos=a.pos,
-               features=features)
-    model = Policy(c)
-    model.num_mean.copy_(torch.from_numpy(mean)); model.num_std.copy_(torch.from_numpy(std))
-    centers = fe.kmeans_stick(pads, c.n_stick)
-    model.stick_centers.copy_(torch.from_numpy(centers))
+    if init:
+        c = model.config
+        centers = model.stick_centers.numpy()
+    else:
+        c = Config(layers=a.layers, width=a.width, heads=a.width // 32, context=a.context, dropout=dropout,
+                   pos=a.pos, features=features)
+        model = Policy(c)
+        model.num_mean.copy_(torch.from_numpy(mean)); model.num_std.copy_(torch.from_numpy(std))
+        centers = fe.kmeans_stick(pads, c.n_stick)
+        model.stick_centers.copy_(torch.from_numpy(centers))
     dev = "cuda"
     model.to(dev)
     fwd = torch.compile(model) if a.compile else model   # `model` stays uncompiled for saving
@@ -147,8 +159,12 @@ def main():
     log = open(os.path.join(a.run_dir, "log.jsonl"), "a")
     curve = open(os.path.join(a.run_dir, "train.jsonl"), "a")
     ranks = {r: int((train_g["rank"] == i).sum()) for i, r in enumerate(RANKS)}
+    if init:  # rank embeddings the pretrain learned stay trained
+        ranks = {r: ranks[r] + (init.get("ranks") or {}).get(r, 0) for r in RANKS}
     ranks["UNKNOWN"] = max(ranks["UNKNOWN"], 1)  # COND_DROP trains it on every dataset
     meta = dict(data_dir=os.path.abspath(a.data_dir), args=vars(a), params=n_params, ranks=ranks)
+    if init:
+        meta["init"] = dict(path=os.path.abspath(a.init), data_dir=init.get("data_dir"), step=init.get("step"))
     run_info = dict(meta, steps=a.steps, started_at=time.time(), train_frames=int(train_g["length"].sum()),
                     train_games=len(train_g["length"]), val_games=len(val_g["length"]))
 
