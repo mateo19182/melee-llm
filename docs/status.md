@@ -42,26 +42,19 @@ Elo is relative to CPU 9 = 1500, ± the 95% half-width.
   - Live GPT-6.1 Sol discards ~95% of its replies because they arrive more than 2 s late, so its live rating is mostly the fallback behaviour.
   - The overnight run counted 100.1M CLIProxy tokens, but discarded replies weren't counted then: real spend was **115.1M** (recounted from the logs; `spent_recounted` in `data/bench/status.json`). Fixed: every call's tokens now count ([bench](bench.md#scheduler-active-sampling-under-a-budget)).
 
-## Lanes (who works on what)
+## What's next
 
-Mateo wants all of these; the LLM-playing side is now lower priority. Budget: moderate, ~10-20M LLM tokens in total, mostly lane A. One T3 thread per lane, titled "Melee <letter> · ...".
+Mateo wants all of it, with the LLM-playing side now lower priority and a moderate budget (~10-20M LLM tokens). Three threads:
 
-| Lane | Owns | Now | Next |
-|---|---|---|---|
-| **A · Hub** | this map, the bench (`melee_llm/bench*`, `ratings.py`, `entrants.py`), the coach, `scripts/coach_deepdive.py`, `writeup/`, `data/bench*` | Coach deep-dive bench running (`coach-deepdive.service`, `data/bench-deepdive/`); log-mining half in [coach-deepdive](coach-deepdive.md) | Ablation results; cheap non-LLM janky entrants (Jev with named features, MIMIC on Mateo's replays, random-command Reyn variants); write-up "Melee Bot Elo" (draft in `writeup/`, not finished on purpose) |
-| **B · Own bot** | `train/`, `meleebot`, `data/train/` | Yoshi behaviour-cloning dataset built from ranked replays | Model design with Mateo, then training; the bot joins the bench through lane A. This is the "fast local brain" bet |
-| **C · Simulator** | `--mode sim`, melee-sim-light, [simulator](simulator.md) | PR #4 open | Run learned bots in the sim so bot-only games (and B's training) get cheap. This is the "world model" bet |
-| **D · Play** | `human` player, `play.py`, [netplay](netplay.md) | Local play on the laptop works (Phillip); server netplay built but not played | `human` player type in the runner, then Mateo on the bench as `human:mateo` |
-| **E · Show** | `melee_llm/web/`, commentator, services, live checkout, deploys | Commentator duo + voice shipped | AI caster, web UI |
+| Thread | Covers | Next |
+|---|---|---|
+| **Melee A · Hub** (server) | Bench, coach deep-dive, write-up, simulator, web UI and deploys | Deep-dive ablation results ([coach-deepdive](coach-deepdive.md)); cheap non-LLM janky entrants (Jev with named features, MIMIC on Mateo's replays, random-command Reyn variants); write-up "Melee Bot Elo" (draft in `writeup/`, not finished on purpose); learned bots in the simulator |
+| **Melee B · Own bot** (server) | `train/`, `meleebot`, `data/train/` | Yoshi behaviour cloning: model design with Mateo, then training; the bot joins the bench |
+| **Melee D · Play** (laptop) | `human` player, `play.py`, [netplay](netplay.md) | `human` player type in the runner, then Mateo on the bench as `human:mateo` |
 
-Parked: bot-writer round 2 (3 runs per model plus GPT; also fix the tool loop that quits after 3 idle replies), two LLMs sharing a character, image-only player, Melee puzzles.
+Parked: bot-writer round 2 (also fix the tool loop that quits after 3 idle replies), two LLMs sharing a character, image-only player, Melee puzzles, AI caster.
 
-**Rules for every lane**
-1. Work in a worktree under `~/.t3/worktrees/melee-llm/<slug>`. The live checkout `~/projects/ai/melee-llm` is production: only lane E changes it or restarts services, and never while a bench is running (bench games import the live checkout).
-2. Open PRs freely; merge only after Mateo says so in that lane's thread.
-3. For files another lane owns, keep PRs small and name the owning lane in the PR body.
-4. The machine is shared: check `uptime` and `systemctl --user list-units 'melee*' 'coach*'` before heavy jobs (training, dataset builds, benches).
-5. Each lane edits only its own row here.
+Rules: work in worktrees under `~/.t3/worktrees/melee-llm/`; don't change the live checkout while a bench is running (bench games import it); merge after Mateo's OK.
 
 ## Running services (user units)
 
