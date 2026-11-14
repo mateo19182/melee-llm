@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Virtual display :99 for rendered Dolphin. Watch it at http://m19182:8767/watch (MJPEG via viewer.py).
+# Virtual displays :99 (rendered Dolphin, streamed) and :98 (headless jobs). Watch at https://melee.m19182.dev,
+# http://m19182:8889/live/ (WebRTC, tailnet) or http://m19182:8767/watch (MJPEG via viewer.py).
 # VNC=1 also starts x11vnc + noVNC on :6080, laggy but interactive, useful for debugging menus.
 # Then run: DISPLAY=:99 uv run match.py --iso <path>
 set -euo pipefail
@@ -15,4 +16,4 @@ if [ "${VNC:-0}" = 1 ]; then
   pgrep -f "websockify.*6080" >/dev/null || (uv run websockify --web vendor/noVNC "$BIND:6080" localhost:5900 >/tmp/melee-novnc.log 2>&1 &)
   echo "vnc: http://m19182:6080/vnc.html?autoconnect=1&resize=scale"
 fi
-echo "live: http://m19182:8767/watch"
+echo "live: https://melee.m19182.dev · http://m19182:8889/live/ · http://m19182:8767/watch"

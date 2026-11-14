@@ -23,7 +23,7 @@ DISPLAY=:99 uv run match.py --iso ~/melee.iso --p1 cpu:9 --p2 cpu:9
 DISPLAY=:99 uv run match.py --iso ~/melee.iso --p1 llm_paused:claude-haiku-4-5-20251001 --p2 cpu:5 --mode paused
 ```
 
-Open http://m19182:8889/live/ for the main live view. It's a WebRTC stream from mediamtx, H.264 encoded on the GPU with NVENC at 60 fps and 4 Mbit/s. mediamtx runs as the user service `melee-mediamtx` with config `scripts/mediamtx.yml`, and starts `scripts/stream.sh` only while someone watches. That stream is cropped to Dolphin's game window.
+The web UI (below) is the main live view. On the tailnet, http://m19182:8889/live/ is the lowest-latency one. It's a WebRTC stream from mediamtx, H.264 encoded on the GPU with NVENC at 60 fps and 4 Mbit/s. mediamtx runs as the user service `melee-mediamtx` with config `scripts/mediamtx.yml`, and starts `scripts/stream.sh` only while someone watches. That stream is cropped to Dolphin's game window.
 
 http://m19182:8767/watch is the fallback: an MJPEG stream of Dolphin's game window at about 60 fps, served by `viewer.py` and bound only to the Tailscale IP. `VNC=1 ./live.sh` also starts a noVNC view on :6080, which is interactive but laggy.
 
@@ -50,11 +50,28 @@ Open http://m19182:8767/list. Port 8766 is taken by another service on this host
 - Play our bots yourself over Slippi Direct Connect from another machine: see [docs/netplay.md](docs/netplay.md).
 - Learned bots (HAL, Faynt, MIMIC, Phillip), which serve as ladder opponents and as the body an LLM coach steers: see `docs/bots.md`.
 
-## Arena
+## Web UI
 
-`arena.py` runs the learned bots and a level-9 CPU back to back on display :99, in lockstep at about 60 fps. Each game uses the least-played pairing, random characters (Fox, Falco, Marth or Falcon) and a random legal stage. It writes a strip under the stream with the matchup and Elo, and results go to `arena/results.jsonl` and `arena/standings.json`. Standings are at http://m19182:8767/arena.
+https://melee.m19182.dev (Cloudflare Tunnel + Access, owner only) serves `melee_llm/web/` from 127.0.0.1:8770. The app has no auth of its own, so it refuses to bind all interfaces.
+
+- **Live**: the stream of display :99 as LL-HLS, proxied same-origin from mediamtx (`/hls/`), with a now-playing header and an LLM panel. The panel shows each decision of `llm_paused`/`llm_live` players (state text, action, reason, latency, staleness, tokens), each coach call (command, rationale, router reply) and the steer state of learned bots. It tails the live game's decision logs over SSE. Every event carries the wall-clock time it happened (`ts`, added by `DecisionLog`), and HLS segments carry `EXT-X-PROGRAM-DATE-TIME` from the same clock, so the page holds events until the video has played that far. "Instant" shows them on arrival.
+- **Launch**: pick both players from every registered spec, characters (checked per bot: Phillip models' characters, MIMIC checkpoints), stage, mode and number of games. Models come from the CLIProxy `/v1/models`. Jobs, their results and LLM token spend (with a list-price estimate) are in `data/web.sqlite` (gitignored); replays and decision logs of job N go to `replays/jobs/N/`.
+- **Games**: every `.slp` under `replays/` and the bot-writer ladders, with players and results from whichever results file knows the game; a game page embeds Slippi Lab and the decision log as a timeline. The patched Slippi Lab posts its frame to the page and accepts seeks (`patches/slippilab.patch`), so the current decision follows the replay and clicking a decision jumps to the state the model saw.
+- **Arena**, **Coach** (pilot summaries), **Bot-writer** (sessions with cost, time and bot source; ladder boards computed with `botwriter.ladder.leaderboard`), **Play vs bot** (placeholder for netplay).
+
+Two user services run it:
 
 ```sh
-systemd-run --user --unit=melee-arena --working-directory=$PWD --setenv=DISPLAY=:99 $PWD/.venv/bin/python arena.py --iso ~/melee.iso
-systemctl --user stop melee-arena
+# web server
+systemd-run --user --unit=melee-web --working-directory=$PWD --setenv=BIND=127.0.0.1 --setenv=PORT=8770 \
+    $PWD/.venv/bin/python -m melee_llm.web.server
+# worker: owns the live slot (display :99, Slippi port 51441) and the headless pool
+systemd-run --user --unit=melee-arena --working-directory=$PWD --setenv=DISPLAY=:99 \
+    $PWD/.venv/bin/python -m melee_llm.web.worker --iso ~/melee.iso
 ```
+
+The worker runs queued live jobs (lockstep or paused) one at a time on :99. When none is queued, the arena fills the slot one game at a time; a queued job waits for the arena game to end, or aborts it if "start now" was ticked. The arena can be switched off from the UI. Fast jobs run headless on :98, up to 4 at once, on Slippi ports 51700-51799. Each job is `python -m melee_llm.web.runjob` in its own process group, so cancelling one kills its Dolphin and bots. The process on the live slot writes `data/live.json` (players, score, decision-log paths, steer state) and the overlay strip under the video. To take :99 for a manual `match.py` run, switch the arena off and wait for the slot to go idle.
+
+## Arena
+
+`arena.py` runs the learned bots and a level-9 CPU on display :99, in lockstep at about 60 fps. Each game uses the least-played pairing, random characters (Fox, Falco, Marth or Falcon) and a random legal stage. It writes the overlay strip with the matchup and Elo, and results go to `arena/results.jsonl` and `arena/standings.json`. The worker above starts it with `--games 1 --no-retry` whenever the live slot is free; standalone, `DISPLAY=:99 uv run arena.py --iso ~/melee.iso` loops forever (stop the worker first). Standings are on the Arena page, and still at http://m19182:8767/arena (`viewer.py`, Tailscale only).
