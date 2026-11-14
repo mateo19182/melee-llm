@@ -339,7 +339,10 @@ It is the closest published work to this repo's coach track: an LLM above a lear
   - Launch: around 19 Oct 2026, the date of the domain's first TLS certificate.
   - On 14 Nov 2026 the ladder leader was 67–3, and the most active bot had played over 600 games.
 - **Simulators:**
-  - [melee-sim-light](https://github.com/kyhavlov/melee-sim-light), linked from the Reyn post.
+  - [melee-sim-light](https://github.com/kyhavlov/melee-sim-light): Melee's gameplay code from the decompilation as a batched C library, with a Python API.
+    - It matched 287 of 300 of our Dolphin replays frame for frame; the other 13 were unfinished files.
+    - It runs about 100× faster than our headless Dolphin.
+    - slippi-ai's `sim_env` is built on it. See [simulator.md](simulator.md).
   - Enzyme's decomp-based simulator, used for slippi-ai training.
 - **[melee-unlocked](https://github.com/hero88go/melee-unlocked)** (Sep 2026): a native Windows source port compiled from the decompilation, with Slippi rollback.
   - Its training mode has "Fight a pro": play Phillip as Zain's Marth, Cody's Fox or aMSa's Yoshi, with an 18–21 frame reaction delay. Offline only.
