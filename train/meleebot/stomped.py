@@ -21,7 +21,7 @@ import numpy as np
 import torch
 
 from . import features as fe
-from .model import load
+from .model import check_rank, default_rank, load
 from .play import RawFrames
 from .schema import BUTTONS, CHARACTERS, FRAME, RANKS
 
@@ -82,13 +82,15 @@ def wire(frame: int, c) -> bytes:
 class Brain:
     """The model, one match at a time. `decide(F)` returns (frame, pad record) for frame F + lead."""
 
-    def __init__(self, checkpoint, device=None, rank="MASTER", win=1, temperature=1.0, threads=4):
+    def __init__(self, checkpoint, device=None, rank=None, win=1, temperature=1.0, threads=4):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         torch.set_num_threads(threads)
         self.model, self.ckpt = load(checkpoint, self.device)
         self.centers = self.model.stick_centers.cpu().numpy().astype(np.int64)
         self.cached = self.model.config.pos == "rope"
         self.context = self.model.config.context
+        rank = rank or default_rank(self.ckpt)
+        check_rank(self.ckpt, rank)
         self.rank, self.win, self.temperature = RANKS.index(rank), {0: 0, 1: 1, None: 2}[win], temperature
 
     def new_match(self, port, me_char, opp_char, stage, lead):
@@ -338,7 +340,7 @@ def main():
     ap.add_argument("--device"); ap.add_argument("--threads", type=int, default=4)
     ap.add_argument("--lead", type=int, help="frames to aim ahead, fixed; default: from the measured round trip, raised when pads land late")
     ap.add_argument("--compute-ms", type=float, default=5.0, help="expected decision time, for the lead")
-    ap.add_argument("--rank", default="MASTER", choices=RANKS); ap.add_argument("--temperature", type=float, default=1.0)
+    ap.add_argument("--rank", default=None, choices=RANKS, help="default: the model's most-trained rank"); ap.add_argument("--temperature", type=float, default=1.0)
     ap.add_argument("--costume", type=int, default=0)
     ap.add_argument("--log", default=os.path.expanduser("~/projects/ai/melee-llm/data/stomped/matches.jsonl"))
     ap.add_argument("--no-verify", action="store_true", help="accept unsigned upgrades (local tests only)")
