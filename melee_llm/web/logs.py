@@ -6,7 +6,7 @@ from collections import defaultdict
 from pathlib import Path
 
 # USD per million tokens (input, output), list prices by model family; an estimate only. Edit as prices change.
-PRICES = {"haiku": (1.0, 5.0), "sonnet": (3.0, 15.0), "opus": (5.0, 25.0)}
+PRICES = {"haiku": (1.0, 5.0), "sonnet": (3.0, 15.0), "opus": (5.0, 25.0), "jev": (0.042, 0.0)}
 
 
 def logs_for(slp: Path) -> list[Path]:

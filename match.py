@@ -28,6 +28,11 @@ from melee_llm.agents.coach import CoachedBot  # noqa: E402
 
 AGENTS["coach"] = CoachedBot  # coach:<model|random>[,body=reyn|hal,interval=60]; see docs/coach.md
 
+from melee_llm.agents.jev_coach import JevCoach  # noqa: E402
+from melee_llm.agents.jev_player import JevLive, JevPaused  # noqa: E402
+
+AGENTS |= {"jev_live": JevLive, "jev_paused": JevPaused, "coach_jev": JevCoach}  # TypeSafe Jev; see docs/jev.md
+
 
 def make(spec: str, character: str):
     kind, _, arg = spec.partition(":")

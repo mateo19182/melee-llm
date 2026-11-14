@@ -21,6 +21,7 @@ LEARNED = {"hal", "phillip", "mimic", "faynt", "reyn"}
 MIMIC_CHARS = {"fox": "FOX", "falco": "FALCO", "marth": "MARTH", "sheik": "SHEIK", "cptfalcon": "CPTFALCON",
                "puff": "JIGGLYPUFF", "luigi": "LUIGI", "peach": "PEACH"}
 COACH_ALIASES = ["haiku", "sonnet", "random"]
+JEV_MODELS = ["jev-latest", "jev-preview"]  # TypeSafe System One models (melee_llm/jev.py), not served by the proxy
 
 
 def char_name(c: str) -> str:
@@ -45,6 +46,10 @@ def label(spec: str) -> str:
         return f"CPU {arg or 9}"
     if kind in ("llm_paused", "llm_live"):
         return f"LLM {short_model(head)}" + (" (live)" if kind == "llm_live" else "")
+    if kind in ("jev_live", "jev_paused"):
+        return f"Jev {head or 'jev-latest'}" + (" (live)" if kind == "jev_live" else "")
+    if kind == "coach_jev":
+        return f"Coach {head or 'jev-latest'} → Reyn"
     if kind == "coach":
         body = next((o.split("=", 1)[1] for o in opts if o.startswith("body=")), "reyn")
         return f"Coach {short_model(head) or 'haiku'} → {body.title() if body != 'hal' else 'HAL'}"
@@ -129,6 +134,13 @@ def catalog() -> dict:
             {"kind": "coach", "label": "LLM coach steering a learned bot",
              "arg": {"type": "select", "options": COACH_ALIASES + models, "default": "haiku"},
              "options": "body=reyn,interval=120"},
+            {"kind": "jev_paused", "label": "Jev player, paused (TypeSafe System One)",
+             "arg": {"type": "select", "options": JEV_MODELS, "default": "jev-latest"}, "options": "interval=30",
+             "mode": "paused"},
+            {"kind": "jev_live", "label": "Jev player, live (TypeSafe System One)",
+             "arg": {"type": "select", "options": JEV_MODELS, "default": "jev-latest"}, "options": "interval=15,max_stale=60"},
+            {"kind": "coach_jev", "label": "Jev coach steering Reyn",
+             "arg": {"type": "select", "options": JEV_MODELS, "default": "jev-latest"}, "options": "interval=120"},
             {"kind": "hal", "label": "HAL (250M transformer)",
              "arg": {"type": "text", "options": ["MASTER", "DIAMOND", "PLATINUM"], "default": "MASTER",
                      "placeholder": "MASTER, DIAMOND, PLATINUM or a connect code"}},
@@ -184,6 +196,13 @@ def validate(p1: str, p2: str, char1: str, char2: str, stage: str, mode: str, ga
                     errors.append(f"{who}: coach body must be reyn or hal")
                 if body == "reyn" and mode != "fast":
                     warnings.append(f"{who}: Reyn runs at 15-60 fps, the live view may look slow")
+        elif kind in ("jev_live", "jev_paused", "coach_jev"):
+            if head and head not in JEV_MODELS and not head.startswith("jev-"):
+                errors.append(f"{who}: unknown Jev model {head!r}")
+            if kind == "jev_paused" and mode not in ("paused", "lockstep", "fast"):
+                errors.append(f"{who}: jev_paused blocks the game; use paused mode")
+            if kind == "coach_jev" and mode == "watch":
+                errors.append(f"{who}: the Reyn body needs lockstep or fast mode")
         elif kind == "hal":
             if port not in (1, 2):
                 errors.append(f"{who}: HAL only plays on ports 1 and 2")
