@@ -98,6 +98,19 @@ export function resultText(g) {
   return `${w} · ${Math.round(s1 ?? 0)}–${Math.round(s2 ?? 0)} stocks`;
 }
 
+// Score cell for win-rate grids: below 50% tints toward P1 red, above toward the cyan highlight.
+export function heat(v, text) {
+  if (v === undefined || v === null) return h("span.faint", {}, "·");
+  const d = Math.min(1, Math.abs(v - 0.5) * 2);
+  const [r, g, b] = v < 0.5 ? [255, 79, 97] : [102, 224, 255];
+  return h("span.heat", { style: { background: `rgba(${r}, ${g}, ${b}, ${0.05 + d * 0.28})`, color: d < 0.15 ? "var(--dim)" : `rgb(${r}, ${g}, ${b})` } },
+    text ?? `${Math.round(v * 100)}%`);
+}
+
+export function emptyState(title, text) {
+  return h("div.empty-state", {}, h("b", {}, title), text ? h("div", {}, text) : null);
+}
+
 export function toast(msg, kind = "") {
   const el = h(`div.toast${kind ? "." + kind : ""}`, {}, msg);
   document.body.append(el);
@@ -114,7 +127,7 @@ export function table(cols, rows, opts = {}) {
     h("thead", {}, h("tr", {}, cols.map((c) => h("th", { class: c.cls }, c.label)))),
     h("tbody", {}, rows.length ? rows.map((r) => h("tr", { class: opts.rowClass?.(r), onclick: opts.onRow ? (e) => { if (!e.target.closest("a, button, input")) opts.onRow(r); } : undefined },
       cols.map((c) => h("td", { class: c.cls }, c.render ? c.render(r) : r[c.key] ?? "–"))))
-      : h("tr", {}, h("td.empty", { colSpan: cols.length }, opts.empty || "nothing yet")))));
+      : h("tr", {}, h("td.empty", { colSpan: cols.length }, opts.empty || "Nothing yet.")))));
 }
 
 // Periodic refresh that stops when the page changes.
