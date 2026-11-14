@@ -243,7 +243,7 @@ def cmd_windows(results):
 
 def elo_table(path=ROOT / "data/bench/standings.json"):
     st = json.loads(Path(path).read_text())
-    return {r["id"]: r["elo"] for r in st["tracks"]["realtime"]["players"]}
+    return {r["id"]: r["elo"] for r in st["board"]["players"]}
 
 
 def cmd_games(results):

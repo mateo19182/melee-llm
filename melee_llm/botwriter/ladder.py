@@ -5,11 +5,11 @@
 
 Config (JSON):
   {"entrants": {"opus-5/run1": "path/to/bot.py", ...},          # name "<model>/<run>" groups runs
-   "roster": ["cpu:1", ..., "cpu:9", "baseline:rusher", ...],        # main score
-   "hard_tier": ["agent:melee_llm.bots:HAL:MASTER", ...],            # learned bots, scored separately
+   "roster": ["cpu:7", "cpu:8", "cpu:9"],                            # main score
+   "hard_tier": ["agent:melee_llm.bots:MIMIC"],                      # learned bots, scored separately
    "stages": ["FINAL_DESTINATION", "BATTLEFIELD"], "character": "FOX", "allowed_characters": ["FOX"],
    "games_per_side": 2, "hard_games_per_side": 1, "workers": 8, "budget_ms": 16, "iso": "...", "out": "DIR",
-   "entrants_play_each_other": false, "calibrate_roster": false, "anchor": "cpu:1", "job_timeout_s": 1800}
+   "entrants_play_each_other": false, "calibrate_roster": false, "anchor": "cpu:9", "job_timeout_s": 1800}
 
 Games append to DIR/games.jsonl (re-running resumes); DIR/leaderboard.json holds the scores.
 Primary score = mean over roster opponents of the entrant's win rate (draw = half), so it does
@@ -36,10 +36,10 @@ from melee_llm.ratings import elo_ratings
 
 DEFAULTS = {"stages": ["FINAL_DESTINATION", "BATTLEFIELD"], "character": "FOX", "allowed_characters": ["FOX"],
             "games_per_side": 2, "workers": 4, "budget_ms": 16.0, "entrants_play_each_other": False,
-            "calibrate_roster": False, "hard_games_per_side": None, "anchor": "cpu:1", "job_timeout_s": 1800,
-            "roster": [f"cpu:{i}" for i in range(1, 10)] + ["baseline:laser", "baseline:rusher", "baseline:shine"],
-            "hard_tier": ["agent:melee_llm.bots:HAL:MASTER", "agent:melee_llm.bots:Phillip:gm",
-                          "agent:melee_llm.bots:MIMIC", "agent:melee_llm.bots:Faynt"]}
+            "calibrate_roster": False, "hard_games_per_side": None, "anchor": "cpu:9", "job_timeout_s": 1800,
+            # CPUs 1-6 lose to nearly every written bot and the scripted baselines stall into timeouts, so neither
+            # is in the roster; HAL, Phillip and Faynt win every game, so MIMIC is the hard tier
+            "roster": ["cpu:7", "cpu:8", "cpu:9"], "hard_tier": ["agent:melee_llm.bots:MIMIC"]}
 
 
 def load_config(path: str | Path) -> dict:

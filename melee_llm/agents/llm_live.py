@@ -14,7 +14,8 @@ END_WAIT_S = 5.0  # at game end, how long to wait for an in-flight call so its t
 
 class LiveLLM(LLMAgent):
     """Real-time play. While a request is in flight the executor keeps running the last macro, or a safe
-    default (dash dance when far, shield when an attack is coming close). Logged per decision:
+    default (dash dance when far, shield when an attack is coming close). Model "none" never asks, so it plays
+    that default all game: the control for a live player whose replies arrive too late. Logged per decision:
     `latency_frames` (asked → reply) and `stale_frames` (observed state → macro actually started)."""
     kind = "llm_live"
 
@@ -72,7 +73,7 @@ class LiveLLM(LLMAgent):
                 self.apply(gs, obs, user, rep, asked, latency_frames=arrived - asked, stale_frames=stale, shots=shots)
             else:
                 self._drop(got, int(gs.frame), "stale")
-        if not self.inflight and self.can_decide(me) and (
+        if self.model != "none" and not self.inflight and self.can_decide(me) and (
                 self.ex.idle or gs.frame - self.last_asked >= self.interval):
             obs, user = self.snapshot(gs)
             self._req.put_nowait((int(gs.frame), obs, user))

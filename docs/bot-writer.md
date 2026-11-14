@@ -72,9 +72,9 @@ One file defines `class Bot` with a `character` attribute and `step(gamestate, c
 ## Ladder and scoring
 
 - **Format v0:** Fox ditto on Final Destination and Battlefield, both spawn sides, `games_per_side` games per (entrant, opponent, stage, side): 2 × 2 × 2 = 8 games per pairing by default. Each job is one `play()` call in its own Dolphin. `SIGALRM` kills a job that hangs past `job_timeout_s` (default 1800).
-- **Default roster:** CPU 1-9 plus `baseline:laser`, `baseline:rusher` and `baseline:shine`. Learned bots go in as `agent:melee_llm.bots.<module>:<Class>`, in a separate hard tier (`hard_tier`, `hard_games_per_side`).
+- **Default roster:** CPU 7, 8 and 9, with MIMIC as the hard tier (`hard_tier`, `hard_games_per_side`; learned bots go in as `agent:melee_llm.bots.<module>:<Class>`). The first ladder also had CPU 1-6, the three scripted baselines, HAL, Phillip and Faynt; they were dropped because written bots beat CPU 1-6 almost every time, the baselines stall into time-outs, and the other three win every game.
 - **Primary score:** `roster_score`, the mean over roster opponents of the entrant's win rate (a draw counts ½), with a Wilson 95 % interval. Opponents weigh the same whatever the game counts. Like StarSkirmish v0.2, which dropped Elo for plain win rates against a fixed roster, the score ignores the other entrants: a new bot is scored without replaying the field, and the bar stays comparable across model generations.
-- **Secondary:** Elo from the project's shared Bradley-Terry fit (`melee_llm/ratings.py`, see [architecture.md](architecture.md#tracks)) over all games, anchored at `cpu:1` = 0. `entrants_play_each_other` and `calibrate_roster` add entrant-vs-entrant and roster-vs-roster games. `cpu_ladder_level` is the highest CPU level beaten at least half the time, with every lower roster CPU beaten too.
+- **Secondary:** Elo from the project's shared Bradley-Terry fit (`melee_llm/ratings.py`, see [architecture.md](architecture.md#tracks)) over all games, anchored at `cpu:9` = 0. `entrants_play_each_other` and `calibrate_roster` add entrant-vs-entrant and roster-vs-roster games. `cpu_ladder_level` is the highest CPU level beaten at least half the time, with every lower roster CPU beaten too.
 - **Per model:** entrants are named `<model>/<run>`. `models` reports the mean and SD of `roster_score` over runs, mean Elo and the best run. Report the mean, not the best: StarSkirmish saw an 18-point spread between runs of one model.
 - **Integrity:** each entrant gets totals of late/skipped frames, exceptions, crashes, policy violations and forfeits. Any policy violation or forfeit sets `flagged`. A bot that fails to load or picks a disallowed character forfeits its games. A broken roster opponent is an `error` (excluded from scoring, retried on the next run), not a free win.
 
@@ -137,6 +137,25 @@ Notes on the table:
 - **Haiku run1:** the simplest bot. It calls libmelee's built-in `melee.techskill.multishine` at close range, with an up-smash, a dash-in jab and a firefox recovery around it. Best against the scripted baselines (0.75 against each), and the only hard-tier win.
 - **Opus run1:** the most engineered bot (macro queue, reactive defence from `FrameData.in_range`, punishes, throw and shine combos, ledge mix-ups), yet the weakest of the three against `rusher` (0.25) and CPU 8-9 (0.5 and 0.33). More machinery did not pay off in 30 minutes.
 - **Common pattern:** all bots except the pilot beat CPU 1-6 almost every time, and all lose every game to HAL, Phillip and Faynt. `rusher` is the hardest scripted baseline. The main score saturates near 83, because 9/12 of the roster is CPUs.
+
+**Second wave, 2026-11-14: three runs each at medium effort.** Opus 5.5, Sonnet 5.5 and Haiku 5.5 on Claude Code, 30 minutes, `--effort medium`, all nine at once (plan and log in `rounds/r1-medium/`). Ladder: 8 games against each of CPU 7, 8 and 9 and 4 against MIMIC, 28 per bot, in the same directory as ladder v1.
+
+| model | run | vs CPU 7 | vs CPU 8 | vs CPU 9 | vs MIMIC | bench Elo | cost | LoC |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Opus 5.5 | 3 | 100% | 100% | 100% | 1 / 4 | 1931 | $3.95 | 467 |
+| Opus 5.5 | 1 | 100% | 100% | 100% | 0 / 4 | 1864 | $3.30 | 400 |
+| Opus 5.5 | 2 | 88% | 100% | 50% | 1 / 4 | 1668 | $2.10 | 381 |
+| Haiku 5.5 | 3 | 50% | 75% | 38% | 0 / 4 | 1441 | $0.06 | 75 |
+| Sonnet 5.5 | 3 | 50% | 0% | 50% | 0 / 4 | 1292 | $0.68 | 145 |
+| Sonnet 5.5 | 2 | 38% | 13% | 13% | 0 / 4 | 1185 | $0.67 | 130 |
+| Sonnet 5.5 | 1 | 25% | 13% | 13% | 0 / 4 | 1142 | $0.37 | 68 |
+| Haiku 5.5 | 1 | 25% | 13% | 13% | 0 / 4 | 1142 | $0.11 | 180 |
+| Haiku 5.5 | 2 | 0% | 0% | 0% | 0 / 4 | < 1160 | $0.12 | 74 |
+
+- **Opus is clearly ahead** here, the opposite of the first wave. Two of its bots won all 24 CPU games and two took a game off MIMIC. With 28 games a bot the intervals are about ±200, so only the gap between Opus and the other two is reliable.
+- **Not separable from the first wave:** effort (medium against the default) and load (nine sessions at once against three) both changed.
+- **No session used its 30 minutes.** They ended after 24 to 29 minutes; eight hit the cap of 30 "keep improving" nudges.
+- **Practice games stalled.** 227 of 329 simulator practice games ran to the 8-minute timer, because `rusher` stops attacking after its first up-smash and the starter bot jabs out of range. Seven of the nine sessions mention stalls. The scripted baselines are retired from the ladder and the bench for this reason; they are still in the sandbox as `opponents/` until round 2 replaces them.
 
 **Harness observations**
 

@@ -1,9 +1,10 @@
-"""Bench ratings: one Bradley-Terry fit per track on the Elo scale, cpu:9 pinned at 1500.
+"""Bench ratings: one Bradley-Terry fit over every rated game, on the Elo scale, cpu:9 pinned at 1500.
 
-The fit is the shared one in melee_llm/ratings.py (MAP with a Gaussian prior, sd 2 per log-strength, draws = half wins). A track's games are
-those whose two players both play that track; games between two token-free players (CPUs and bots) count on both
-boards, which puts the two scales on the same anchors. CIs: 2.5/97.5 percentiles of bootstrap resamples of games,
-refit and re-anchored; the scheduler uses the faster Laplace (inverse Hessian) half-width.
+The fit is the shared one in melee_llm/ratings.py (MAP with a Gaussian prior, sd 2 per log-strength, draws = half wins).
+Real-time and untimed players never meet, but both play the CPUs and bots, which step every frame and so play the
+same on either clock: one fit puts everyone on one scale. Games of retired entrants are left out. CIs: 2.5/97.5
+percentiles of bootstrap resamples of games, refit and re-anchored; the scheduler uses the faster Laplace
+(inverse Hessian) half-width.
 """
 from __future__ import annotations
 
@@ -20,19 +21,40 @@ ANCHOR, ANCHOR_ELO = "cpu:9", 1500.0
 TRACK_NAMES = ("realtime", "untimed")
 
 
+def winner(r: dict) -> int | None:
+    """1, 2 or None (a draw). A game with no recorded winner (older sources call every timeout a draw) goes to
+    the player with more stocks, then the lower percent, as in the standard game."""
+    if r.get("winner") in (1, 2):
+        return r["winner"]
+    for key, more_wins in (("stocks", True), ("percent", False)):
+        v = r.get(key) or {}
+        a, b = v.get("1", v.get(1)), v.get("2", v.get(2))
+        if a is not None and b is not None and a != b:
+            return 1 if (a > b) == more_wins else 2
+    return None
+
+
 def score(r: dict) -> float:
-    return {1: 1.0, 2: 0.0}.get(r.get("winner"), 0.5)
+    return {1: 1.0, 2: 0.0}.get(winner(r), 0.5)
+
+
+def rated_games(games: list[dict], entrants: dict[str, Entrant]) -> list[dict]:
+    """The games the fit uses: finished, between two entrants that are not retired."""
+    return [g for g in games if g.get("status") == "ok" and g["p1"] in entrants and g["p2"] in entrants
+            and "retired" not in (entrants[g["p1"]].group, entrants[g["p2"]].group)]
 
 
 def track_games(games: list[dict], track: str, entrants: dict[str, Entrant]) -> list[dict]:
-    out = []
+    """The rated games played on one clock (plus those of every-frame players, which either clock can use)."""
+    return [g for g in rated_games(games, entrants) if game_track(entrants[g["p1"]], entrants[g["p2"]]) in (track, "shared")]
+
+
+def decided_pairs(games: list[dict], n: int = 8) -> set[frozenset]:
+    """Pairings where one side has won every one of at least `n` games: another game would say nothing new."""
+    seen: dict[frozenset, list] = defaultdict(list)
     for g in games:
-        if g.get("status") != "ok" or g["p1"] not in entrants or g["p2"] not in entrants:
-            continue
-        t = game_track(entrants[g["p1"]], entrants[g["p2"]])
-        if t in (track, "shared"):
-            out.append(g)
-    return out
+        seen[frozenset((g["p1"], g["p2"]))].append((min(g["p1"], g["p2"]) == g["p1"]) == (score(g) == 1) if score(g) != 0.5 else None)
+    return {k for k, v in seen.items() if len(v) >= n and None not in v and len(set(v)) == 1}
 
 
 def precision(pairs: list[tuple[int, int]], th: np.ndarray, n: int) -> np.ndarray:
@@ -49,7 +71,7 @@ def precision(pairs: list[tuple[int, int]], th: np.ndarray, n: int) -> np.ndarra
 
 
 class Fit:
-    """MAP strengths and Laplace covariance for one track."""
+    """MAP strengths and Laplace covariance."""
 
     def __init__(self, games: list[dict], extra_players: list[str] = ()):
         self.games = games
@@ -103,7 +125,7 @@ def record(p: str, games: list[dict]) -> dict:
             if g[f"p{me}"] != p:
                 continue
             o = g[f"p{op}"]
-            res = "w" if g.get("winner") == me else "l" if g.get("winner") == op else "d"
+            res = "w" if winner(g) == me else "l" if winner(g) == op else "d"
             w, lost, d = w + (res == "w"), lost + (res == "l"), d + (res == "d")
             opp[o][res] += 1
             st = g.get("stocks") or {}
@@ -151,38 +173,41 @@ def spend(results: list[dict]) -> dict:
 def standings(results: list[dict], imported: list[dict], excluded: dict | None = None, boot: int = 500,
               target: float = 125.0) -> dict:
     entrants = by_id()
-    games = results + imported
-    sp = spend(results)
-    out = {"generated": round(time.time(), 1), "anchor": {"player": ANCHOR, "elo": ANCHOR_ELO}, "target_half_width": target,
-           "method": f"Bradley-Terry MAP per track (Gaussian prior sd {PRIOR_SD} per log-strength), draws = half wins; "
-                     f"95% CI = 2.5/97.5 percentiles of {boot} bootstrap resamples of games",
-           "games": {"bench": sum(r.get("status") == "ok" for r in results), "imported": len(imported),
-                     "by_status": dict(sorted(_count(results).items())), "excluded": excluded or {}},
-           "tracks": {}}
-    for t in TRACK_NAMES:
-        tg = track_games(games, t, entrants)
-        f = Fit(tg)
-        lo, hi = bootstrap(tg, f.players, boot) if tg and boot else (None, None)
-        rows = []
-        for i, p in enumerate(f.players):
-            e = entrants[p]
-            rec = record(p, tg)
-            if not rec["games"] and p != ANCHOR:
-                continue
-            elo = round(f.elo(p))
-            row = {"id": p, "elo": elo, "laplace_half": round(f.half_width(p)),
-                   "elo_lo": round(float(lo[i])) if lo is not None else None,
-                   "elo_hi": round(float(hi[i])) if hi is not None else None, **rec,
-                   "imported_games": sum(g.get("imported", False) and p in (g["p1"], g["p2"]) for g in tg)}
-            row["half_width"] = 0 if p == ANCHOR else max(row["laplace_half"], (row["elo_hi"] - row["elo_lo"]) / 2
-                                                          if lo is not None else 0)
-            row["converged"] = row["half_width"] <= target
-            rows.append(row)
-        rows.sort(key=lambda r: -r["elo"])
-        out["tracks"][t] = {"games": len(tg), "players": rows}
-    out["spend"] = sp
-    out["entrants"] = {k: e.view() for k, e in entrants.items()}
-    return out
+    games = rated_games(results + imported, entrants)
+    retired = sum(g.get("status") == "ok" for g in results + imported) - len(games)
+    f = Fit(games)
+    lo, hi = bootstrap(games, f.players, boot) if games and boot else (None, None)
+    rows = []
+    for i, p in enumerate(f.players):
+        e = entrants[p]
+        rec = record(p, games)
+        if not rec["games"] and p != ANCHOR:
+            continue
+        row = {"id": p, "elo": round(f.elo(p)), "laplace_half": round(f.half_width(p)),
+               "elo_lo": round(float(lo[i])) if lo is not None else None,
+               "elo_hi": round(float(hi[i])) if hi is not None else None, **rec, "clock": e.track, "group": e.group,
+               "imported_games": sum(g.get("imported", False) and p in (g["p1"], g["p2"]) for g in games)}
+        row["half_width"] = 0 if p == ANCHOR else max(row["laplace_half"], (row["elo_hi"] - row["elo_lo"]) / 2
+                                                      if lo is not None else 0)
+        row["converged"] = row["half_width"] <= target
+        # never lost (or never won): the games bound the rating on one side only; the other side is the prior
+        row["bound"] = None if rec["draws"] or (rec["wins"] and rec["losses"]) or p == ANCHOR else \
+            "lower" if rec["wins"] else "upper"
+        rows.append(row)
+    rows.sort(key=lambda r: -r["elo"])
+    exc = dict(excluded or {})
+    if retired:
+        exc["retired entrants (stalling scripted bots, the pilot bot)"] = retired
+    return {"generated": round(time.time(), 1), "anchor": {"player": ANCHOR, "elo": ANCHOR_ELO}, "target_half_width": target,
+            "method": f"Bradley-Terry MAP, one fit (Gaussian prior sd {PRIOR_SD} per log-strength), draws = half wins; "
+                      f"95% CI = 2.5/97.5 percentiles of {boot} bootstrap resamples of games",
+            "games": {"bench": sum(r.get("status") == "ok" for r in results), "imported": len(imported),
+                      "rated": len(games), "by_status": dict(sorted(_count(results).items())), "excluded": exc},
+            "board": {"games": len(games), "players": rows},
+            # the same ratings split by clock, for readers written against the two-board layout (writeup/)
+            "tracks": {t: {"games": sum(game_track(entrants[g["p1"]], entrants[g["p2"]]) in (t, "shared") for g in games),
+                           "players": [r for r in rows if r["clock"] in (t, "both")]} for t in TRACK_NAMES},
+            "spend": spend(results), "entrants": {k: e.view() for k, e in entrants.items()}}
 
 
 def _count(results: list[dict]) -> dict:

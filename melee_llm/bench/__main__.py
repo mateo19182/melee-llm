@@ -68,11 +68,11 @@ def main() -> None:
                                imp, exc, boot=a.boot)
         out.mkdir(parents=True, exist_ok=True)
         scheduler._write_json(out / "standings.json", st)
-        for t, tr in st["tracks"].items():
-            print(f"\n== {t}: {tr['games']} games")
-            for i, row in enumerate(tr["players"], 1):
-                print(f"{i:3d} {row['id']:42s} {row['elo']:5d}  [{row['elo_lo']}, {row['elo_hi']}] ±{row['half_width']:.0f} "
-                      f"n={row['games']} {row['wins']}-{row['losses']}-{row['draws']}")
+        print(f"{st['board']['games']} rated games")
+        for i, row in enumerate(st["board"]["players"], 1):
+            bound = {"lower": " (never lost: a lower bound)", "upper": " (never won: an upper bound)"}.get(row["bound"], "")
+            print(f"{i:3d} {row['id']:42s} {row['elo']:5d}  [{row['elo_lo']}, {row['elo_hi']}] ±{row['half_width']:.0f} "
+                  f"n={row['games']} {row['wins']}-{row['losses']}-{row['draws']} {row['clock']}/{row['group']}{bound}")
     elif a.cmd == "recount":
         from melee_llm.bench import recount
         from melee_llm.bench.entrants import by_id

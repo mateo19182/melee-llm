@@ -18,6 +18,39 @@ def test_resolve_and_tracks():
     assert entrants.game_track(cpu, ents["faynt"]) == "shared"
 
 
+def test_timeouts_retired_and_decided_pairings():
+    # a game with no recorded winner goes to more stocks, then lower percent
+    assert ratings.winner({"winner": None, "stocks": {"1": 2, "2": 3}}) == 2
+    assert ratings.winner({"winner": None, "stocks": {"1": 2, "2": 2}, "percent": {"1": 40.0, "2": 90.5}}) == 1
+    assert ratings.winner({"winner": None, "stocks": {"1": 2, "2": 2}, "percent": {"1": 0.0, "2": 0.0}}) is None
+    ents = entrants.by_id()
+    g = lambda a, b, w: {"p1": a, "p2": b, "winner": w, "status": "ok"}
+    games = [g("faynt", "phillip:gm", 1)] * 8 + [g("cpu:9", "cpu:7", 1)] * 7 + [g("cpu:7", "cpu:9", 1)] + \
+            [g("baseline:rusher", "cpu:9", 1)] * 5
+    rated = ratings.rated_games(games, ents)
+    assert len(rated) == 16  # the retired scripted bot's games are left out
+    assert ratings.decided_pairs(rated) == {frozenset(("faynt", "phillip:gm"))}
+    st = ratings.standings(games, [], boot=0)
+    rows = {r["id"]: r for r in st["board"]["players"]}
+    assert "baseline:rusher" not in rows and rows["faynt"]["bound"] == "lower" and rows["cpu:7"]["bound"] is None
+    assert [r["id"] for r in st["tracks"]["untimed"]["players"]] == [r["id"] for r in st["board"]["players"]]
+
+
+def test_control_players_need_no_model():
+    import random as rnd
+
+    from melee_llm.actions import ACTIONS
+    from melee_llm.agents.llm_common import random_decision
+    from melee_llm.agents.llm_paused import PausedLLM
+
+    rng = rnd.Random(0)
+    assert all(random_decision(rng)["action"] in ACTIONS for _ in range(200))
+    p = PausedLLM("random")
+    assert p.llm is None and p.think("state").args["action"] in ACTIONS
+    ents = entrants.by_id()
+    assert ents["llm_live:none"].provider == "none" and ents["llm_paused:random"].group == "control"
+
+
 def test_fit_recovers_order():
     rng = random.Random(0)
     true = {"cpu:9": 0.0, "cpu:5": -1.0, "faynt": 1.5}
@@ -38,6 +71,7 @@ def test_pick_returns_a_feasible_job(tmp_path, monkeypatch):
     job = b.pick()
     assert job and job["p1"] != job["p2"] and job["mode"] in ("fast", "realtime")
     assert job["track"] in ("realtime", "untimed", "shared")
+    assert "retired" not in (b.entrants[job["p1"]].group, b.entrants[job["p2"]].group)
 
 
 def test_spend_counts_discarded_replies(tmp_path):

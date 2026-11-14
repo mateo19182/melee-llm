@@ -3,13 +3,14 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import time
 from pathlib import Path
 
 import melee
 from melee import Action as A
 
-from melee_llm.actions import ACTIONS, Executor, action_help, tool_schema
+from melee_llm.actions import ACTIONS, SCHEMA_FIELDS, Executor, action_help, tool_schema
 from melee_llm.agents.base import Agent
 from melee_llm.llm import LLM, Reply
 from melee_llm.paths import REPLAYS
@@ -46,6 +47,24 @@ damage % and stocks from the picture. The camera zooms to fit both fighters, so 
 (a fighter is about 15 units tall)."""
 READ_BOTH = READ_TEXT + "\nYou also get a screenshot of the current frame; the text state is exact, the picture shows the scene."
 COSTUMES = {melee.Character.FOX: {0: "default: white jacket, green trousers", 1: "orange"}}  # PlayerState.costume, as seen in screenshots
+
+
+CONTROLS = ("random", "none")  # model names with no model behind them: bench controls for the LLM players
+
+
+def random_decision(rng: random.Random) -> dict:
+    """A uniformly random macro with uniformly random parameters: what the macro set alone is worth."""
+    name = rng.choice(list(ACTIONS))
+    d = {"action": name}
+    for f in ACTIONS[name].params:
+        sch = SCHEMA_FIELDS[f]
+        if "enum" in sch:
+            d[f] = rng.choice(sch["enum"])
+        elif sch["type"] == "integer":
+            d[f] = rng.randint(sch.get("minimum", 1), sch.get("maximum", 60))
+        elif sch["type"] == "boolean":
+            d[f] = rng.random() < 0.5
+    return d
 
 
 def parse_spec(arg: str | None) -> dict:
@@ -109,7 +128,8 @@ class LLMAgent(Agent):
                  img_quality: int = 80, log_dir: Path | None = None, system_extra: str = "", **_):
         super().__init__()
         self.model, self.interval, self.history_len = model, interval, history
-        self.llm = LLM(model, base_url=base_url, timeout=timeout, mode=mode, effort=effort)
+        self.llm = None if model in CONTROLS else LLM(model, base_url=base_url, timeout=timeout, mode=mode, effort=effort)
+        self.rng = random.Random()
         self.tool = tool_schema()
         self.reflexes, self.system_extra = reflexes, system_extra
         self.log_dir = Path(log_dir) if log_dir else REPLAYS
@@ -153,7 +173,8 @@ class LLMAgent(Agent):
             self.system = self.system.replace(READ_TEXT, READ_IMAGE if self.obs_mode == "image" else READ_BOTH)
         self.log.write({"type": "game_start", "agent": self.kind, "model": self.model, "port": self.port,
                         "character": me.character.name, "opponent": op.character.name, "stage": gs.stage.name,
-                        "interval": self.interval, "mode": self.llm.mode, "effort": self.llm.effort,
+                        "interval": self.interval, "mode": self.llm.mode if self.llm else "control",
+                        "effort": self.llm.effort if self.llm else None,
                         "obs_mode": self.obs_mode, "clip": self.clip, "system_prompt": self.system})
 
     def can_decide(self, me: melee.PlayerState) -> bool:
@@ -206,6 +227,8 @@ class LLMAgent(Agent):
     def think(self, user: str, images: list[str] | None = None) -> Reply:
         images = images if images is not None else self.next_images
         self.next_images = None
+        if self.llm is None:
+            return Reply(random_decision(self.rng), model=self.model, mode="control")
         return self.llm.choose(self.system, user, self.tool, images=images or None)
 
     def _save_shots(self, shots: list, asked_frame: int) -> dict:

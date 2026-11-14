@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 
 from melee_llm.bench import imports, ratings, recount
-from melee_llm.bench.entrants import CATEGORIES, TRACKS, by_id
+from melee_llm.bench.entrants import CATEGORIES, GROUPS, TRACKS, by_id
 from melee_llm.bench.scheduler import DATA, read_results
 
 _cache: dict = {"imports": (0.0, [], {})}
@@ -29,7 +29,7 @@ def _json(path: Path) -> dict | None:
 
 def standings() -> dict:
     st = _json(DATA / "standings.json")
-    if st is None:
+    if st is None or "board" not in st:  # missing, or written before the single board
         imp, exc = _imports()
         st = ratings.standings(recount.apply(read_results(DATA / "results.jsonl")), imp, exc, boot=200)
     return st
@@ -39,7 +39,7 @@ def board() -> dict:
     status = _json(DATA / "status.json") or {"phase": "not started"}
     if status.get("phase") == "running" and time.time() - status.get("updated", 0) > 120:
         status["phase"] = "stale"  # the scheduler stopped writing: crashed or killed
-    return {"standings": standings(), "status": status, "categories": CATEGORIES, "tracks": TRACKS}
+    return {"standings": standings(), "status": status, "categories": CATEGORIES, "clocks": TRACKS, "groups": GROUPS}
 
 
 def _game_id(replay: str | None) -> str | None:
@@ -76,7 +76,7 @@ def entrant(eid: str) -> dict | None:
     results = read_results(DATA / "results.jsonl")
     imp, _ = _imports()
     st = standings()
-    rows = {t: next((r for r in tr["players"] if r["id"] == eid), None) for t, tr in st["tracks"].items()}
+    row = next((r for r in st["board"]["players"] if r["id"] == eid), None)
     mine = [g for g in results + imp if eid in (g["p1"], g["p2"])]
     mine.sort(key=lambda g: g.get("ts") or 0, reverse=True)
     games = []
@@ -87,7 +87,7 @@ def entrant(eid: str) -> dict | None:
                       "opponent_label": ents[opp].label if opp in ents else opp, "port": me, "stage": g.get("stage"),
                       "mode": g.get("mode"), "status": g.get("status"), "imported": bool(g.get("imported")),
                       "source": g.get("source", "bench"), "result": None if g.get("status") != "ok" else
-                      ("win" if g.get("winner") == me else "loss" if g.get("winner") == 3 - me else "draw"),
+                      {me: "win", 3 - me: "loss"}.get(ratings.winner(g), "draw"),
                       "stocks": g.get("stocks"), "frames": g.get("frames"), "fps": g.get("fps"),
                       "tokens": sum(s.get("prompt_tokens", 0) + s.get("completion_tokens", 0)
                                     for p, s in (g.get("sides") or {}).items() if p == str(me)),
@@ -101,6 +101,6 @@ def entrant(eid: str) -> dict | None:
             sample_game = {"id": g["id"], "game_id": _game_id(g.get("replay")),
                            "opponent": ents[g["p2" if g["p1"] == eid else "p1"]].label}
             break
-    return {"entrant": e.view(), "tracks": rows, "spend": st.get("spend", {}).get(eid),
+    return {"entrant": e.view(), "row": row, "spend": st.get("spend", {}).get(eid),
             "labels": {k: v.label for k, v in ents.items()}, "games": games, "total_games": len(mine),
             "samples": samples, "sample_game": sample_game}
