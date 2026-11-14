@@ -1,4 +1,5 @@
-# Live WebRTC view of the game: http://m19182:8889/live (bound to the Tailscale IP only).
+# Live view of display :99. WebRTC on the Tailscale IP (http://m19182:8889/live/); LL-HLS on localhost:8888
+# for the web UI at https://melee.m19182.dev (Cloudflare tunnel + Access).
 logLevel: warn
 api: no
 metrics: no
@@ -7,7 +8,13 @@ playback: no
 rtsp: yes
 rtspAddress: 127.0.0.1:8554
 rtmp: no
-hls: no
+hls: yes  # low-latency HLS for the web UI, which proxies it through the Cloudflare tunnel (WebRTC/UDP can't)
+hlsAddress: 127.0.0.1:8888
+hlsVariant: lowLatency
+hlsSegmentCount: 7
+hlsSegmentDuration: 1s
+hlsPartDuration: 200ms
+hlsAlwaysRemux: no
 srt: no
 webrtc: yes
 webrtcAddress: 100.83.166.6:8889
