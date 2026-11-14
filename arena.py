@@ -1,7 +1,7 @@
 """Arena channel: learned bots (and CPU 9) play back to back on display :99 in lockstep.
 
 Each game picks the pair that has played least, random characters both bots support, and a legal stage.
-Writes the stream overlay and the live status (melee_llm.web.live), every result to arena/results.jsonl
+Writes the live status (melee_llm.web.live), every result to arena/results.jsonl
 and Elo standings to arena/standings.json (shown at https://melee.m19182.dev/arena).
 
 The web worker (melee_llm/web/worker.py, unit melee-arena) runs it as the live slot's idle filler, one
@@ -17,7 +17,6 @@ import signal
 import sys
 import time
 from collections import Counter
-from dataclasses import asdict
 from pathlib import Path
 
 import melee
@@ -89,9 +88,7 @@ def main() -> None:
         p1, p2 = pick(results, rng)
         c1, c2, stage = rng.choice(CHARACTERS), rng.choice(CHARACTERS), rng.choice(STAGES)
         elo = {row["spec"]: row["elo"] for row in table["table"]}
-        overlay = (f"{label(p1)} ({char_name(c1)}) {elo.get(p1, 1500)}  vs  {label(p2)} ({char_name(c2)}) {elo.get(p2, 1500)}"
-                   f"   |   {stage.replace('_', ' ').title()}   |   arena game {len(results) + 1}")
-        live = LiveReporter("arena", p1, p2, c1, c2, stage, "lockstep", overlay=overlay,
+        live = LiveReporter("arena", p1, p2, c1, c2, stage, "lockstep",
                             extra={"elo": {"1": elo.get(p1, 1500), "2": elo.get(p2, 1500)}, "arena_game": len(results) + 1})
         t0 = time.time()
         try:

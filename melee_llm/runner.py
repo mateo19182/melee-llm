@@ -2,9 +2,14 @@
 from __future__ import annotations
 
 import configparser
+import ctypes
 import os
+import re
 import signal
 import socket
+import struct
+import subprocess
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -27,12 +32,16 @@ DOLPHIN = {
 
 HEADLESS_DISPLAY = os.environ.get("MELEE_HEADLESS_DISPLAY", ":98")  # the ExiAI build still wants an X display
 WINDOW = (1280, 960)  # matches the Xvfb :99 screen that live.sh starts
+LIVE_WINDOW = (1168, 960)  # the streamed game window on :99: Melee's 73:60 at the screen's full height
 
 
 class Console(melee.Console):
-    """Rendered modes: put Dolphin's game window at (0, 0) filling the screen, at 2x internal resolution.
+    """Rendered modes: Dolphin's game window at (0, 0), at 2x internal resolution.
 
-    Xvfb has no window manager, so Dolphin's fullscreen flag is ignored; an explicit window size works.
+    Xvfb has no window manager, so Dolphin's fullscreen flag is ignored, and so are the RenderWindow sizes in
+    Dolphin.ini: the game window opens at 640x480 (Qt's default) and resizing it later breaks the picture, since
+    VirtualGL keeps its first buffer size. On the live display the window is instead created at LIVE_WINDOW from
+    Qt's saved geometry, with the picture stretched to it (same aspect, so no distortion and no black bars).
     """
 
     def _setup_dolphin_ini(self):
@@ -40,11 +49,15 @@ class Console(melee.Console):
         if self.gfx_backend == "Null":
             return
         cfg_dir = self._get_dolphin_config_path()
+        gfx = {"InternalResolution": "2"}
+        if self._live():
+            gfx["AspectRatio"] = "3"  # stretch to window
+            _set_qt_geometry(os.path.join(cfg_dir, "Qt.ini"), LIVE_WINDOW)
         for name, section, values in [
             ("Dolphin.ini", "Display", {"Fullscreen": "False", "RenderToMain": "False", "RenderWindowAutoSize": "False",
                                         "RenderWindowXPos": "0", "RenderWindowYPos": "0",
                                         "RenderWindowWidth": str(WINDOW[0]), "RenderWindowHeight": str(WINDOW[1])}),
-            ("GFX.ini", "Settings", {"InternalResolution": "2"}),  # window size is ignored by this build; viewer.py crops to the game window
+            ("GFX.ini", "Settings", gfx),
         ]:
             path, cfg = os.path.join(cfg_dir, name), configparser.ConfigParser()
             cfg.read(path)
@@ -55,6 +68,16 @@ class Console(melee.Console):
             with open(path, "w") as f:
                 cfg.write(f)
 
+    def _live(self) -> bool:
+        return os.environ.get("DISPLAY") == matches.LIVE_DISPLAY
+
+    def run(self, *args, **kwargs):
+        super().run(*args, **kwargs)
+        if self.gfx_backend != "Null" and self._live():
+            # Qt leaves room for a title bar no window manager draws: the window lands at y=20 with its bottom
+            # off screen. Moving it (unlike resizing) is safe.
+            threading.Thread(target=_move_game_window_home, args=(os.environ["DISPLAY"],), daemon=True).start()
+
     def stop(self):
         # The AppImage launcher dies on kill() but the Dolphin inside it (AppRun.wrapped) survives and keeps
         # the Slippi port, so the next match would silently attach to it. Kill everything using our temp home.
@@ -62,6 +85,43 @@ class Console(melee.Console):
         super().stop()
         if home:
             _kill_matching(home)
+
+
+def _set_qt_geometry(path: str, size: tuple[int, int]) -> None:
+    """Write the game window's saved geometry ([renderwidget] in Qt.ini, QWidget::saveGeometry v3.0 format)."""
+    w, h = size
+    rect = struct.pack(">4i", 0, 0, w - 1, h - 1)
+    blob = struct.pack(">IHH", 0x1D9D0CB, 3, 0) + rect + rect + struct.pack(">iBBi", 0, 0, 0, WINDOW[0]) + rect
+    value = "@ByteArray(" + "".join(f"\\x{b:02x}" for b in blob) + ")"
+    try:
+        text = open(path).read()
+    except OSError:
+        text = ""
+    # Qt keys are case-sensitive, so no configparser (it lowercases them): drop any old section, append ours.
+    text = re.sub(r"(?ms)^\[renderwidget\]\n.*?(?=^\[|\Z)", "", text).rstrip("\n")
+    with open(path, "w") as f:
+        f.write(f"{text}\n\n[renderwidget]\ngeometry={value}\n".lstrip("\n"))
+
+
+def _move_game_window_home(display: str, timeout: float = 60, settle: float = 10) -> None:
+    """Keep Dolphin's game window on `display` at (0, 0) for `settle` s after it appears (Qt places it after mapping)."""
+    end, x11, dpy = time.time() + timeout, None, None
+    while time.time() < end:
+        out = subprocess.run(["xwininfo", "-root", "-tree"], env={**os.environ, "DISPLAY": display},
+                             capture_output=True, text=True).stdout
+        if m := re.search(r"^\s*(0x[0-9a-f]+) \"[^\"]*GALE01[^\"]*\".*?\d+x\d+\+(-?\d+)\+(-?\d+)", out, re.M):
+            end = min(end, time.time() + settle)
+            if (m[2], m[3]) != ("0", "0"):
+                if x11 is None:
+                    x11 = ctypes.CDLL("libX11.so.6")
+                    x11.XOpenDisplay.restype = ctypes.c_void_p
+                    dpy = ctypes.c_void_p(x11.XOpenDisplay(display.encode()))
+                if dpy.value:
+                    x11.XMoveWindow(dpy, ctypes.c_ulong(int(m[1], 16)), 0, 0)
+                    x11.XFlush(dpy)
+        time.sleep(0.25)
+    if dpy and dpy.value:
+        x11.XCloseDisplay(dpy)
 
 
 def _kill_matching(needle: str) -> None:

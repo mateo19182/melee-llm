@@ -1,4 +1,4 @@
-"""What the live slot is playing: data/live.json (read by the web server) and the stream overlay strip.
+"""What the live slot is playing: data/live.json, read by the web server.
 
 The process that owns display :99 (a job or an arena game) creates a `LiveReporter` and passes
 `reporter.observer(agents)` to `runner.play`. Writes are atomic and throttled to ~5 per second.
@@ -13,18 +13,11 @@ from pathlib import Path
 from melee_llm.web.paths import LIVE
 from melee_llm.web.specs import char_name, kind_of, label, stage_name
 
-OVERLAY = Path("/tmp/melee-arena/overlay.txt")  # drawn under the video by scripts/stream.sh
-
-
 def write_atomic(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     tmp.write_text(text)
-    tmp.replace(path)  # ffmpeg's drawtext and the server never read a half-written file
-
-
-def write_overlay(text: str) -> None:
-    write_atomic(OVERLAY, text)
+    tmp.replace(path)  # the server never reads a half-written file
 
 
 def write_status(status: dict) -> None:
@@ -40,7 +33,6 @@ def read_status() -> dict:
 
 def idle(next_up: str = "") -> None:
     write_status({"source": "idle", "phase": "idle", "next": next_up})
-    write_overlay(next_up)
 
 
 def _plain(d: dict) -> dict:
@@ -49,7 +41,7 @@ def _plain(d: dict) -> dict:
 
 class LiveReporter:
     def __init__(self, source: str, p1: str, p2: str, char1: str, char2: str, stage: str, mode: str, games: int = 1,
-                 job_id: int | None = None, overlay: str | None = None, extra: dict | None = None):
+                 job_id: int | None = None, extra: dict | None = None):
         self.status = {
             "source": source, "job_id": job_id, "phase": "starting", "mode": mode, "stage": stage,
             "stage_name": stage_name(stage), "game": 0, "games": games, "started": round(time.time(), 3),
@@ -57,19 +49,8 @@ class LiveReporter:
                         for p, s, c in ((1, p1, char1), (2, p2, char2))},
             "frame": None, "stocks": {}, "percent": {}, "logs": [], "steer": {}, "replay": None, "results": [],
             **(extra or {})}
-        self.overlay = overlay
         self.last = 0.0
-        self._overlay()
         write_status(self.status)
-
-    def _overlay(self) -> None:
-        if self.overlay is not None:
-            return write_overlay(self.overlay)
-        s, pl = self.status, self.status["players"]
-        tag = f"job #{s['job_id']}" if s["job_id"] else s["source"]
-        games = f"   |   game {s['game'] + 1}/{s['games']}" if s["games"] > 1 else ""
-        write_overlay(f"{pl['1']['label']} ({pl['1']['char_name']})  vs  {pl['2']['label']} ({pl['2']['char_name']})"
-                      f"   |   {s['stage_name']}   |   {tag}{games}")
 
     def observer(self, agents: dict):
         def on(event: str, info: dict) -> None:
@@ -77,7 +58,6 @@ class LiveReporter:
             if event == "game_start":
                 s.update(phase="in_game", game=info["game"], replay=str(info["replay"]) if info["replay"] else None,
                          logs=[], steer={})
-                self._overlay()
                 self._sample(info["gs"], agents)
             elif event == "frame":
                 if time.time() - self.last >= 0.2:
