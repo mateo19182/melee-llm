@@ -8,9 +8,9 @@ from pathlib import Path
 
 import numpy as np
 
-ELO = 400 / np.log(10)  # natural BT units → Elo points
+from melee_llm.ratings import ELO, PRIOR_SD, fit
+
 ANCHOR, ANCHOR_ELO = "cpu:9", 1500.0
-PRIOR_SD = 2.0  # Gaussian prior on each log-strength (≈350 Elo): keeps all-win/all-loss records finite
 
 
 def outcomes(rows: list[dict]) -> list[tuple[str, str, float]]:
@@ -21,32 +21,6 @@ def outcomes(rows: list[dict]) -> list[tuple[str, str, float]]:
         s = {1: 1.0, 2: 0.0}.get(r["winner"], 0.5)
         out.append((player_name(r["p1"]), player_name(r["p2"]), s))
     return out
-
-
-def fit(games: list[tuple[str, str, float]], players: list[str], iters: int = 50) -> np.ndarray:
-    """MAP Bradley-Terry log-strengths by Newton's method."""
-    idx = {p: i for i, p in enumerate(players)}
-    n = len(players)
-    a = np.array([idx[g[0]] for g in games], dtype=int)
-    b = np.array([idx[g[1]] for g in games], dtype=int)
-    s = np.array([g[2] for g in games])
-    th = np.zeros(n)
-    for _ in range(iters):
-        p = 1 / (1 + np.exp(-(th[a] - th[b])))
-        grad = -th / PRIOR_SD**2
-        np.add.at(grad, a, s - p)
-        np.add.at(grad, b, p - s)
-        w = p * (1 - p)
-        H = -np.eye(n) / PRIOR_SD**2
-        np.add.at(H, (a, a), -w)
-        np.add.at(H, (b, b), -w)
-        np.add.at(H, (a, b), w)
-        np.add.at(H, (b, a), w)
-        step = np.linalg.solve(H, grad)
-        th -= step
-        if np.abs(step).max() < 1e-9:
-            break
-    return th
 
 
 def elo(games, players, anchor: str) -> np.ndarray:

@@ -10,6 +10,7 @@ Everything is built on one function, `runner.play()`: it boots a Slippi Dolphin,
 
 | Path | What |
 |---|---|
+| `melee_llm/ratings.py` | The one rating fit (Bradley-Terry on the Elo scale) every track uses |
 | `melee_llm/paths.py` | Every location (repo root, `replays/`, `data/`, `vendor/`, the bot-writer home), the two X displays and each track's Slippi port block. Nothing else computes paths from `__file__` |
 | `melee_llm/players.py` | `make(spec, character, log_dir=None)`: the one place a spec string becomes an Agent. Classes are imported on first use |
 | `melee_llm/runner.py` | `play()`: Dolphin, controllers, menus, the frame loop, results. `replay_states()` yields game states from a `.slp` for tests without the ISO |
@@ -21,7 +22,7 @@ Everything is built on one function, `runner.play()`: it boots a Slippi Dolphin,
 | `melee_llm/actions.py`, `state.py`, `vision.py`, `llm.py`, `jev.py` | What the LLM players are made of: macro-actions run frame by frame, the game state as prompt text plus an event tracker, screenshots, the OpenAI-compatible client, the TypeSafe Jev client |
 | `melee_llm/bots/` | Learned bots (HAL, Phillip, MIMIC, Faynt, Reyn). `agent.py` is the parent side, `server.py` and `bot_*.py` run in each bot's own venv under `vendor/`, `protocol.py` is the pipe format between them |
 | `melee_llm/bench/` | Melee Bench: `entrants.py` (registry), `scheduler.py` (active sampling), `game.py` (one game), `ratings.py`, `imports.py` (older results), `views.py` (what the web shows) |
-| `melee_llm/llm_arena/` | LLM vs LLM round robins: `tournament.py`, `agent.py` (retries and frame cap), `ratings.py` (the Bradley-Terry fit the bench reuses) |
+| `melee_llm/llm_arena/` | LLM vs LLM round robins: `tournament.py`, `agent.py` (retries and frame cap), `ratings.py` (standings and per-model stats) |
 | `melee_llm/botwriter/` | LLM writes a bot: `session.py` (coding agent in a sandbox), `practice.py` (its tools), `agent.py` and `host.py` (run a submitted bot behind a time budget), `ladder.py`, `specs.py`, `dolphin.py` (port claiming), `template/`, `baselines/` |
 | `melee_llm/netplay/` | Play our bots from another machine over Slippi Direct Connect |
 | `melee_llm/web/` | Web UI: `server.py` (Starlette), `worker.py` (owns the live slot and the headless pool), `runjob.py` (one job), `jobs.py` (SQLite queue), `games.py` (game index), `registry.py` (reads the match registry; `live_status` is what the Live page shows), `specs.py` (launcher catalog and labels), `logs.py`, `slp.py`, `docs.py`, `static/` |
@@ -76,14 +77,14 @@ The web launcher keeps its own description of the kinds (`web/specs.py`: labels,
 |---|---|---|---|---|
 | Single match | `python -m melee_llm.match` | in process | stdout, `replays/` | none |
 | Web jobs | `web/worker.py` | `python -m melee_llm.web.runjob` per job | `data/web.sqlite`, `replays/jobs/<id>/` | none |
-| Learned-bot arena | `python -m melee_llm.arena` (started by the worker) | in process, one game per process | `data/arena/results.jsonl`, `data/arena/standings.json` | sequential Elo, K = 24 |
-| Melee Bench | `python -m melee_llm.bench run` | `python -m melee_llm.bench one` per game | `data/bench/`, `replays/bench/<id>/` | Bradley-Terry with a Gaussian prior, CPU 9 = 1500, bootstrap intervals |
-| LLM arena | `python -m melee_llm.llm_arena run` | `python -m melee_llm.llm_arena one` per game | `data/llm-arena/<name>/` | the same fit, anchored to the CPUs |
-| Bot-writer ladder | `python -m melee_llm.botwriter.ladder run` | worker processes, `games_per_side` games per Dolphin | `~/.local/share/melee-llm/botwriter/ladders/<name>/` | Bradley-Terry by MM with a virtual draw, no prior |
+| Learned-bot arena | `python -m melee_llm.arena` (started by the worker) | in process, one game per process | `data/arena/results.jsonl`, `data/arena/standings.json` | the shared fit, CPU 9 = 1500 |
+| Melee Bench | `python -m melee_llm.bench run` | `python -m melee_llm.bench one` per game | `data/bench/`, `replays/bench/<id>/` | the shared fit per track, CPU 9 = 1500, bootstrap intervals |
+| LLM arena | `python -m melee_llm.llm_arena run` | `python -m melee_llm.llm_arena one` per game | `data/llm-arena/<name>/` | the shared fit, CPU 9 = 1500, bootstrap intervals |
+| Bot-writer ladder | `python -m melee_llm.botwriter.ladder run` | worker processes, `games_per_side` games per Dolphin | `~/.local/share/melee-llm/botwriter/ladders/<name>/` | the shared fit, the ladder's anchor (`cpu:1`) = 0 |
 | Pilots | `scripts/coach_pilot.py`, `scripts/perception_pilot.py` | the script itself with `one` | `replays/coach-pilot/`, `replays/perception/` | win rates |
 | Netplay | `python -m melee_llm.netplay` | in process | `replays/netplay/` | none |
 
-The three rating methods give different numbers on purpose (the arena's Elo is order-dependent and cheap to show live; the ladder has no anchor). The bench is the one scale meant for comparing players across kinds; it imports the other tracks' games where they meet its standard ([bench.md](bench.md)).
+Every track rates with one fit, `melee_llm/ratings.py`: Bradley-Terry by MAP with a Gaussian prior (sd 2 per log-strength), a draw counting as half a win. The tracks differ only in which games go in and where the anchor sits, so their numbers are still not comparable across tracks. The bench is the one scale meant for comparing players across kinds; it imports the other tracks' games where they meet its standard ([bench.md](bench.md)).
 
 ## Displays and ports
 
@@ -154,5 +155,4 @@ Results files are append-only jsonl; readers skip a line that was cut by a crash
 
 ## Known duplication, left in place
 
-- **Three rating implementations** (see Tracks). Merging the ladder or the arena into the bench's fit would change published numbers.
 - **Spec knowledge in two places**: `players.KINDS` builds players, `web/specs.py` labels and validates them.

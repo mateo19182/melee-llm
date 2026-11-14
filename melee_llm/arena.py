@@ -21,13 +21,14 @@ import melee
 
 from melee_llm.paths import ARENA as DATA
 from melee_llm.players import make
+from melee_llm.ratings import elo_ratings
 from melee_llm.runner import play
 from melee_llm.util import append_jsonl, exit_on_term, read_jsonl, write_atomic
 
 ENTRANTS = ["hal:MASTER", "phillip:gm", "mimic", "faynt", "cpu:9"]
 CHARACTERS = ["FOX", "FALCO", "MARTH", "CPTFALCON"]  # every bot (incl. MIMIC's per-character checkpoints) has these
 STAGES = ["BATTLEFIELD", "FINAL_DESTINATION", "YOSHIS_STORY", "DREAMLAND", "FOUNTAIN_OF_DREAMS"]
-K = 24
+ANCHOR, ANCHOR_ELO = "cpu:9", 1500.0
 
 
 def label(spec: str) -> str:
@@ -39,18 +40,14 @@ def load_results() -> list[dict]:
 
 
 def standings(results: list[dict]) -> dict:
-    elo = {e: 1500.0 for e in ENTRANTS}
     record = {e: Counter() for e in ENTRANTS}
+    games = []
     for r in results:
-        a, b = r["p1"], r["p2"]
-        elo.setdefault(a, 1500.0), elo.setdefault(b, 1500.0)
-        record.setdefault(a, Counter()), record.setdefault(b, Counter())
         score = 1.0 if r["winner"] == 1 else 0.0 if r["winner"] == 2 else 0.5
-        expected = 1 / (1 + 10 ** ((elo[b] - elo[a]) / 400))
-        elo[a] += K * (score - expected)
-        elo[b] -= K * (score - expected)
-        for spec, s in ((a, score), (b, 1 - score)):
-            record[spec]["W" if s == 1 else "L" if s == 0 else "D"] += 1
+        games.append((r["p1"], r["p2"], score))
+        for spec, s in ((r["p1"], score), (r["p2"], 1 - score)):
+            record.setdefault(spec, Counter())["W" if s == 1 else "L" if s == 0 else "D"] += 1
+    elo = elo_ratings(games, ANCHOR, ANCHOR_ELO, ENTRANTS)
     rows = sorted(({"entrant": label(e), "spec": e, "elo": round(elo[e]), "wins": record[e]["W"],
                     "losses": record[e]["L"], "draws": record[e]["D"]} for e in elo), key=lambda r: -r["elo"])
     return {"updated": time.strftime("%Y-%m-%d %H:%M:%S"), "games": len(results), "table": rows}

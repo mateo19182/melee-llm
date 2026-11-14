@@ -116,3 +116,24 @@ def test_live_status_is_the_live_slot_match_or_idle():
     assert (st["phase"], st["error"]) == ("finished", "boom")
     assert registry.live_status([{**ended, "finished": time.time() - 60}])["phase"] == "idle"
 
+
+def test_one_fit_rates_every_track():
+    from melee_llm import arena, ratings
+    from melee_llm.botwriter import ladder
+    games = [("a", "b", 1.0)] * 6 + [("a", "b", 0.0)] * 2 + [("b", "c", 1.0)] * 5 + [("b", "c", 0.5)] * 2
+    elo = ratings.elo_ratings(games, "c", 100.0, ["idle"])
+    assert elo["a"] > elo["b"] > elo["idle"] > elo["c"] == 100.0  # a player with no games sits at the prior mean
+    assert abs(elo["a"] - elo["b"] - 400 * 0.477) < 60  # 3:1 odds are about 191 Elo; the prior pulls it in a little
+    assert ratings.elo_ratings([], "c", 5.0, ["c", "d"]) == {"c": 5.0, "d": 5.0}
+    assert ratings.elo_ratings(games)["a"] > 0 > ratings.elo_ratings(games)["c"]  # no anchor: centred by the prior
+
+    rows = [{"p1": "hal:MASTER", "p2": "cpu:9", "winner": 1}] * 3 + [{"p1": "cpu:9", "p2": "mimic", "winner": None}]
+    table = {r["spec"]: r for r in arena.standings(rows)["table"]}
+    assert table["cpu:9"]["elo"] == 1500 and table["hal:MASTER"]["elo"] > table["faynt"]["elo"] > 1500  # faynt: no games yet
+    assert (table["hal:MASTER"]["wins"], table["cpu:9"]["losses"], table["mimic"]["draws"]) == (3, 3, 1)
+
+    cfg = {"anchor": "cpu:1", "roster": ["cpu:1"], "hard_tier": [], "entrants": ["m/x"], "stages": [], "character": "FOX",
+           "games_per_side": 1, "hard_games_per_side": 1, "budget_ms": 16}
+    board = ladder.leaderboard(cfg, [{"a": "m/x", "b": "cpu:1", "winner": "a"}] * 3 + [{"a": "m/x", "b": "cpu:1", "winner": "b"}])
+    want = ratings.elo_ratings([("m/x", "cpu:1", 1.0)] * 3 + [("m/x", "cpu:1", 0.0)], "cpu:1")
+    assert board["roster_elo"]["cpu:1"] == 0.0 and board["entrants"]["m/x"]["elo"] == round(want["m/x"], 1) > 0

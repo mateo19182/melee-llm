@@ -31,10 +31,10 @@ import numpy as np
 from melee_llm.bench import imports, ratings, recount
 from melee_llm.bench.entrants import Entrant, by_id, game_mode, game_track, tracks_of
 from melee_llm.bench.game import status_of
-from melee_llm.llm_arena.ratings import ELO
 from melee_llm.paths import BENCH_PORTS as PORTS
 from melee_llm.paths import DATA as _DATA
 from melee_llm.paths import REPLAYS
+from melee_llm.ratings import ELO
 from melee_llm.util import append_jsonl, port_free, run_game_process, write_atomic
 from melee_llm.util import read_jsonl as read_results
 
