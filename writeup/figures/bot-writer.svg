@@ -6,12 +6,12 @@
 <text x="16.0" y="45.0" class="t2" font-size="12" text-anchor="start">Real-time board (token-free bots rate the same on both). Right: API-equivalent cost of the coding session.</text>
 <rect x="16.5" y="59.5" width="9.0" height="9.0" rx="1" class="c-written ring" stroke-width="2"/>
 <text x="31.0" y="68.0" class="t2" font-size="11.5" text-anchor="start">Written by an LLM</text>
-<circle cx="157.2" cy="64.0" r="4.5" class="c-learned ring" stroke-width="2"/>
-<text x="167.2" y="68.0" class="t2" font-size="11.5" text-anchor="start">Learned bot</text>
-<circle cx="253.8" cy="64.0" r="4.5" class="c-ref ring" stroke-width="2"/>
-<text x="263.8" y="68.0" class="t2" font-size="11.5" text-anchor="start">Built-in CPU</text>
-<rect x="352.5" y="59.5" width="9.0" height="9.0" rx="1" class="c-ref ring" stroke-width="2"/>
-<text x="367.0" y="68.0" class="t2" font-size="11.5" text-anchor="start">Scripted bot</text>
+<circle cx="166.3" cy="64.0" r="4.5" class="c-learned ring" stroke-width="2"/>
+<text x="176.3" y="68.0" class="t2" font-size="11.5" text-anchor="start">Learned bot</text>
+<circle cx="270.2" cy="64.0" r="4.5" class="c-ref ring" stroke-width="2"/>
+<text x="280.2" y="68.0" class="t2" font-size="11.5" text-anchor="start">Built-in CPU</text>
+<rect x="376.5" y="59.5" width="9.0" height="9.0" rx="1" class="c-ref ring" stroke-width="2"/>
+<text x="391.0" y="68.0" class="t2" font-size="11.5" text-anchor="start">Scripted bot</text>
 <line x1="251.2" x2="251.2" y1="76" y2="328" class="grid" stroke-width="1"/>
 <text x="251.2" y="344.0" class="tm" font-size="11" text-anchor="middle">1,000</text>
 <line x1="321.5" x2="321.5" y1="76" y2="328" class="grid" stroke-width="1"/>
@@ -28,43 +28,43 @@
 <line x1="427.0" x2="427.0" y1="76" y2="328" class="axis" stroke-width="1.5"/>
 <text x="431.0" y="86.0" class="tm" font-size="10.5" text-anchor="start">CPU 9 anchor</text>
 <text x="200.0" y="96.0" class="t2" font-size="12" text-anchor="end">Phillip plat</text>
-<line x1="569.4" x2="628.2" y1="92.0" y2="92.0" class="ci c-learned" stroke-opacity=".55"/>
-<circle cx="595.1" cy="92.0" r="4.5" class="c-learned ring" stroke-width="2"/>
+<line x1="558.9" x2="610.2" y1="92.0" y2="92.0" class="ci c-learned" stroke-opacity=".55"/>
+<circle cx="583.5" cy="92.0" r="4.5" class="c-learned ring" stroke-width="2"/>
 <text x="200.0" y="116.0" class="t1" font-size="12" text-anchor="end" font-weight="600">Sonnet 5.5 bot</text>
-<line x1="463.6" x2="507.5" y1="112.0" y2="112.0" class="ci c-written" stroke-opacity=".55"/>
-<rect x="480.2" y="107.5" width="9.0" height="9.0" rx="1" class="c-written ring" stroke-width="2"/>
+<line x1="463.2" x2="507.2" y1="112.0" y2="112.0" class="ci c-written" stroke-opacity=".55"/>
+<rect x="479.8" y="107.5" width="9.0" height="9.0" rx="1" class="c-written ring" stroke-width="2"/>
 <text x="746.0" y="116.0" class="tm" font-size="11" text-anchor="end">$0.45, 135 lines</text>
 <text x="200.0" y="136.0" class="t2" font-size="12" text-anchor="end">Script: rusher</text>
-<line x1="446.7" x2="494.9" y1="132.0" y2="132.0" class="ci c-ref" stroke-opacity=".55"/>
-<rect x="466.1" y="127.5" width="9.0" height="9.0" rx="1" class="c-ref ring" stroke-width="2"/>
+<line x1="450.2" x2="497.3" y1="132.0" y2="132.0" class="ci c-ref" stroke-opacity=".55"/>
+<rect x="466.8" y="127.5" width="9.0" height="9.0" rx="1" class="c-ref ring" stroke-width="2"/>
 <text x="200.0" y="156.0" class="t1" font-size="12" text-anchor="end" font-weight="600">Haiku 4.5 bot</text>
-<line x1="440.4" x2="492.1" y1="152.0" y2="152.0" class="ci c-written" stroke-opacity=".55"/>
-<rect x="459.4" y="147.5" width="9.0" height="9.0" rx="1" class="c-written ring" stroke-width="2"/>
+<line x1="442.5" x2="491.4" y1="152.0" y2="152.0" class="ci c-written" stroke-opacity=".55"/>
+<rect x="460.8" y="147.5" width="9.0" height="9.0" rx="1" class="c-written ring" stroke-width="2"/>
 <text x="746.0" y="156.0" class="tm" font-size="11" text-anchor="end">$0.44, 108 lines</text>
 <text x="200.0" y="176.0" class="t1" font-size="12" text-anchor="end" font-weight="600">Opus 5.5 bot</text>
-<line x1="414.7" x2="465.0" y1="172.0" y2="172.0" class="ci c-written" stroke-opacity=".55"/>
-<rect x="435.2" y="167.5" width="9.0" height="9.0" rx="1" class="c-written ring" stroke-width="2"/>
+<line x1="418.9" x2="468.5" y1="172.0" y2="172.0" class="ci c-written" stroke-opacity=".55"/>
+<rect x="437.3" y="167.5" width="9.0" height="9.0" rx="1" class="c-written ring" stroke-width="2"/>
 <text x="746.0" y="176.0" class="tm" font-size="11" text-anchor="end">$1.82, 303 lines</text>
 <text x="200.0" y="196.0" class="t2" font-size="12" text-anchor="end">Phillip silver</text>
-<line x1="400.6" x2="476.6" y1="192.0" y2="192.0" class="ci c-learned" stroke-opacity=".55"/>
-<circle cx="439.7" cy="192.0" r="4.5" class="c-learned ring" stroke-width="2"/>
+<line x1="401.3" x2="477.6" y1="192.0" y2="192.0" class="ci c-learned" stroke-opacity=".55"/>
+<circle cx="439.3" cy="192.0" r="4.5" class="c-learned ring" stroke-width="2"/>
 <text x="200.0" y="216.0" class="t2" font-size="12" text-anchor="end">CPU 9</text>
 <line x1="427.0" x2="427.0" y1="212.0" y2="212.0" class="ci c-ref" stroke-opacity=".55"/>
 <circle cx="427.0" cy="212.0" r="4.5" class="c-ref ring" stroke-width="2"/>
 <text x="200.0" y="236.0" class="t2" font-size="12" text-anchor="end">CPU 8</text>
-<line x1="360.2" x2="444.6" y1="232.0" y2="232.0" class="ci c-ref" stroke-opacity=".55"/>
-<circle cx="403.1" cy="232.0" r="4.5" class="c-ref ring" stroke-width="2"/>
+<line x1="364.8" x2="444.9" y1="232.0" y2="232.0" class="ci c-ref" stroke-opacity=".55"/>
+<circle cx="405.5" cy="232.0" r="4.5" class="c-ref ring" stroke-width="2"/>
 <text x="200.0" y="256.0" class="t2" font-size="12" text-anchor="end">Script: shine</text>
-<line x1="356.0" x2="423.5" y1="252.0" y2="252.0" class="ci c-ref" stroke-opacity=".55"/>
-<rect x="385.9" y="247.5" width="9.0" height="9.0" rx="1" class="c-ref ring" stroke-width="2"/>
+<line x1="357.0" x2="424.2" y1="252.0" y2="252.0" class="ci c-ref" stroke-opacity=".55"/>
+<rect x="388.0" y="247.5" width="9.0" height="9.0" rx="1" class="c-ref ring" stroke-width="2"/>
 <text x="200.0" y="276.0" class="t2" font-size="12" text-anchor="end">Script: laser</text>
-<line x1="327.1" x2="388.7" y1="272.0" y2="272.0" class="ci c-ref" stroke-opacity=".55"/>
-<rect x="355.3" y="267.5" width="9.0" height="9.0" rx="1" class="c-ref ring" stroke-width="2"/>
+<line x1="332.8" x2="390.4" y1="272.0" y2="272.0" class="ci c-ref" stroke-opacity=".55"/>
+<rect x="357.8" y="267.5" width="9.0" height="9.0" rx="1" class="c-ref ring" stroke-width="2"/>
 <text x="200.0" y="296.0" class="t2" font-size="12" text-anchor="end">CPU 7</text>
-<line x1="311.7" x2="374.2" y1="292.0" y2="292.0" class="ci c-ref" stroke-opacity=".55"/>
-<circle cx="344.7" cy="292.0" r="4.5" class="c-ref ring" stroke-width="2"/>
+<line x1="313.1" x2="378.8" y1="292.0" y2="292.0" class="ci c-ref" stroke-opacity=".55"/>
+<circle cx="347.9" cy="292.0" r="4.5" class="c-ref ring" stroke-width="2"/>
 <text x="200.0" y="316.0" class="t1" font-size="12" text-anchor="end" font-weight="600">Sonnet 5.5 bot (pilot)</text>
-<line x1="216.0" x2="260.7" y1="312.0" y2="312.0" class="ci c-written" stroke-opacity=".55"/>
-<rect x="231.5" y="307.5" width="9.0" height="9.0" rx="1" class="c-written ring" stroke-width="2"/>
+<line x1="216.0" x2="264.2" y1="312.0" y2="312.0" class="ci c-written" stroke-opacity=".55"/>
+<rect x="235.4" y="307.5" width="9.0" height="9.0" rx="1" class="c-written ring" stroke-width="2"/>
 <text x="746.0" y="316.0" class="tm" font-size="11" text-anchor="end">$0.32, 148 lines</text>
 </svg>

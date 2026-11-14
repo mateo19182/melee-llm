@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Melee Bot Elo</title>
+<meta name="description" content="LLMs, learned bots and Melee's CPUs on one Elo scale, in real-time Super Smash Bros. Melee.">
+<style>
+:root{--fg:#1b1b1a;--muted:#5d5c58;--bg:#fcfcfb;--rule:#e1e0d9;--code:#f1f0ec;--link:#1f63b8;--p1:#e5383b;--p2:#2a78d6}
+@media (prefers-color-scheme:dark){:root{--fg:#ecebe7;--muted:#a9a8a1;--bg:#1a1a19;--rule:#33332f;--code:#252523;--link:#7fb2f0}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:18px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:46rem;margin:0 auto;padding:3rem 1.25rem 5rem}
+h1{font-size:2.6rem;line-height:1.1;margin:0 0 .3rem;letter-spacing:-.02em}
+.meta{color:var(--muted);margin-bottom:2rem;font-size:.95rem}
+h2{font-size:1.6rem;margin:2.6rem 0 .6rem;line-height:1.2}
+h3{font-size:1.2rem;margin:2rem 0 .4rem}
+a{color:var(--link)}
+hr{border:0;border-top:1px solid var(--rule);margin:2.5rem 0}
+img{display:block;max-width:100%;height:auto;margin:1.4rem auto;border-radius:8px}
+blockquote{margin:1.4rem 0;padding:.2rem 1.1rem;border-left:4px solid var(--p2);background:var(--code);border-radius:0 8px 8px 0}
+blockquote:first-of-type{border-left-color:var(--p1)}
+code{background:var(--code);padding:.1em .3em;border-radius:4px;font-size:.88em}
+pre{background:var(--code);padding:1rem;border-radius:8px;overflow-x:auto;font-size:.8rem;line-height:1.45}
+pre code{background:none;padding:0}
+table{border-collapse:collapse;width:100%;font-size:.88rem;margin:1rem 0;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:.35rem .5rem;border-bottom:1px solid var(--rule)}
+em{color:var(--muted)}
+p>em:only-child{display:block;text-align:center;font-size:.9rem;margin-top:-.8rem}
+</style></head>
+<body><main><h1>Melee Bot Elo</h1><div class="meta">Mateo Amado · 2026-11-14</div>
+<blockquote>
+<p><strong>TL;DR.</strong> I put frontier LLMs inside Super Smash Bros. Melee in five different ways, and rated all of them on one Elo scale next to Melee's own CPUs and the best published AI bots. LLMs pressing the buttons in real time play like a level 4 CPU. Given unlimited time to think, the best one beats the hardest CPU. Bots that LLMs wrote in 30 minutes land at that same level. The surprise came from coaching: four frontier LLMs took turns coaching a small neural bot, and the bot did best of all with no coach, just the words &quot;Don't die.&quot; on repeat.</p>
+</blockquote>
+<p>Most game benchmarks for LLMs are turn-based: chess, Pokémon, <a href="https://arxiv.org/abs/2610.12596" target="_blank" rel="noopener">Slay the Spire</a>. The model can take as long as it likes and the game waits. I wanted the opposite: a real game at 60 frames per second that waits for nobody, where one second of thinking is 60 frames in which you can get hit, grabbed and thrown off the stage.</p>
+<p>Melee is the obvious candidate. It came out in 2001, people still play it competitively, and its community has built absurdly good open tooling: <a href="https://slippi.gg" target="_blank" rel="noopener">Slippi</a> for online play and replays, <a href="https://github.com/vladfi1/libmelee" target="_blank" rel="noopener">libmelee</a> to read the game and press buttons from Python, and a line of AI bots going back to <a href="https://arxiv.org/abs/1702.06230" target="_blank" rel="noopener">Phillip</a>, which beat professional players in 2017. I couldn't find anyone benchmarking LLMs on it, so over two days I built a benchmark, a website to watch it, an AI commentary booth, and a bot of my own.</p>
+<hr />
+<h2>Melee in 30 seconds</h2>
+<p>Two characters fight on a small floating stage. Every hit raises the other player's damage percentage, and the higher it is, the further they fly. Knock them off the screen and they lose a life (a &quot;stock&quot;). Four stocks each, eight minutes, last one standing wins. It sounds simple, but at a high level it is about reactions measured in single frames and reading what your opponent will do next.</p>
+<p><img src="media/replay-2d.webp" alt="A bench game redrawn from its replay file: Faynt (blue) takes a stock from Phillip gm (red), both playing Fox on Final Destination" /></p>
+<p><em>14 seconds of a bench game, redrawn from the replay file: Faynt (blue) takes a stock off Phillip (red), both playing Fox.</em></p>
+<p>Every game in this post is Fox against Fox, a staple of top-level play, on two standard tournament stages.</p>
+<hr />
+<h2>How it works</h2>
+<p>Everything runs on my home server: the real game, from my own disc, in the Slippi version of the Dolphin emulator. A Python library reads the game state every frame and drives a virtual controller. A dozen games can run side by side.</p>
+<p>The opponents and yardsticks:</p>
+<ul>
+<li><strong>Melee's built-in CPUs</strong>, levels 1 to 9.</li>
+<li><strong>Three small scripted bots</strong> (one runs in, one shoots lasers, one spams Fox's &quot;shine&quot; move).</li>
+<li><strong>Five learned bots</strong>, neural networks trained on human replays, all published with weights:
+<a href="https://github.com/vladfi1/slippi-ai" target="_blank" rel="noopener">Phillip</a> (vladfi1, in skill tiers from silver to gm, with a human-like reaction delay built in),
+<a href="https://github.com/ericyuegu/hal" target="_blank" rel="noopener">HAL</a> (Eric Gu),
+<a href="https://github.com/erickfm/MIMIC" target="_blank" rel="noopener">MIMIC</a> (erickfm),
+<a href="https://github.com/Na00s/Faynt-Tournament" target="_blank" rel="noopener">Faynt</a> (Frisson Labs) and
+<a href="https://huggingface.co/frisson-labs/Reyn-26C" target="_blank" rel="noopener">Reyn</a>, from the same lab as Faynt: a small bot that takes <strong>orders in plain English</strong>, like &quot;be more aggressive&quot; or &quot;edgeguard from the stage&quot;, about 100 of them for Fox.</li>
+</ul>
+<p>LLMs are far too slow to press buttons every frame (a frame is 16.7 ms; a reply takes 1-3 seconds), so every setup gives the LLM a higher-level job and lets something faster handle the frames:</p>
+<ol>
+<li><strong>The LLM plays, untimed.</strong> It reads a short text description of the game and picks a move (<code>laser</code>, <code>shine</code>, <code>wavedash</code>, <code>recover</code>, <code>grab then up-throw</code>...), which my code turns into button presses. The game pauses while it thinks, so this only measures how good its choices are.</li>
+<li><strong>The LLM plays, live.</strong> The same, at full speed. While the model thinks, the character keeps doing the last move or a safe default, and a few reflexes never wait for the model. A reply older than 2 seconds is thrown away.</li>
+<li><strong>Jev plays.</strong> <a href="https://typesafe.ai/blog/introducing-system-one-models-and-jev" target="_blank" rel="noopener">Jev</a> is TypeSafe's fast decision model: it answers multiple-choice questions in about 0.15 seconds instead of 1-3, but it can't write text.</li>
+<li><strong>The LLM coaches Reyn.</strong> Reyn plays every frame, and every 5 seconds the coach looks at the game and picks one of Reyn's English commands.</li>
+<li><strong>The LLM writes a bot.</strong> A coding agent gets 30 minutes, a sandbox, the docs and a practice tool, and has to write a Python bot that then plays like any other entrant.</li>
+</ol>
+<p>Here is what the model sees, about 150 words per moment:</p>
+<pre><code>f1370 time 7:38
+YOU FALCO 58% 4stk | pos (-36,38) vel (+0.0,-2.0) face L air | nair f19 [ACTIVE] | jumps 1, busy | 33 from edge
+OPP SAMUS 60% 4stk | pos (-25,0) vel (+0.9,+0.0) face R ground | walk_fast f15 | jumps 2, actionable | 44 from edge
+REL opp is right+below: dx +11 dy -38 dist 40; you face AWAY from opp; opp faces away from you
+EVENTS you hit opp 10x +27%
+RECENT DECISIONS:
+f1230 laser(short,1) → laser: fired 1, landed
+</code></pre>
+<p>The models were Claude Haiku 4.5, Claude Sonnet 5.5, GPT-6 Luna and GPT-6.1 Sol, with reasoning turned off (with it on, Haiku spent its whole budget thinking and never answered).</p>
+<h3>One scale for everyone</h3>
+<p>Every entrant plays the same game: Fox vs Fox, Battlefield or Final Destination, 4 stocks, 8 minutes. All the results go into one Elo fit, the rating system from chess: 400 points of difference means the stronger side wins about 10 games out of 11. The hardest CPU, level 9, is pinned at <strong>1500</strong>, and every rating comes with a 95% interval.</p>
+<p>There are two boards, because &quot;LLM plays&quot; means two things: a <strong>real-time</strong> board where the game never waits, and an <strong>untimed</strong> board where it waits for every decision. CPUs and bots play the same either way, so they appear on both and tie the two scales together.</p>
+<p>Nobody picked the games by hand. A scheduler chooses the next game every few seconds, favouring games that would tighten the widest intervals for the fewest tokens. Cheap bot games get played a lot; expensive LLM games go where they teach the most. Overnight it played 1,573 games in 9.0 hours, and with older games that met the same rules and a follow-up study, the boards hold 2,459 real-time and 2,018 untimed games.</p>
+<hr />
+<h2>What I found</h2>
+<p><img src="figures/leaderboard-realtime.svg" alt="Real-time board: every entrant's Elo with its 95% interval, coloured by kind" /></p>
+<p>From the top:</p>
+<ul>
+<li><strong>Faynt never lost</strong>: 390–0, most of it against Phillip gm. With a perfect record the fit can only say &quot;much better than everyone&quot;, so its 3358 is really a floor. Then Phillip gm (2488) and HAL (2234).</li>
+<li><strong>Reyn being coached</strong> sits around HAL, whoever the coach is. And right near the top, <strong>Reyn with no coach, holding &quot;Don't die.&quot;</strong> More on that below.</li>
+<li><strong>The bots LLMs wrote</strong> cluster around the level 9 CPU.</li>
+<li><strong>CPU levels barely matter in a Fox mirror.</strong> Level 9 is 1500 and level 8 1439, but levels 1-7 sit between 1074 and 1275 in no useful order: level 1 (1250) is above level 5 (1194). The CPU Fox jumps off the stage by itself a lot, and that matters more than its level.</li>
+<li><strong>At the bottom: every LLM playing live</strong>, 1055 to 1114, about a level 4 CPU, together with live Jev.</li>
+</ul>
+<h3>1. In real time, speed beats smarts</h3>
+<p><img src="figures/latency-tax.svg" alt="Untimed vs real-time Elo for each model, with the share of live replies thrown away for arriving too late" /></p>
+<p>Given time to think, the models spread out: GPT-6.1 Sol beats the level 9 CPU (1692), the other three land between 1327 and 1438, and all of them beat Jev (1107). Bigger models make better choices than the fast one.</p>
+<p>Live, all of that disappears. Every model loses 272 to 578 points, and they end up level with each other and with Jev. Sol, the best thinker, is the clearest case: its replies take 2-3 seconds, so <strong>95%</strong> of them arrive too late and get thrown away. Live Sol is basically my default behaviour with an LLM occasionally getting a word in, and it still rates as high as any other live LLM (1114). At this speed, the LLMs add nothing measurable over the simple autopilot they're wrapped in. Even Haiku, fast enough that only 5% of its replies are dropped, acts on a game state about 70 frames old, and in Melee that's several exchanges ago.</p>
+<p><a href="https://github.com/OpenGenerativeAI/llm-colosseum" target="_blank" rel="noopener">LLM Colosseum</a> found the same thing in Street Fighter (GPT-3.5 beat GPT-4 by being faster); this puts it on a scale with error bars.</p>
+<h3>2. The best coach is two words</h3>
+<p><img src="figures/coaching.svg" alt="Reyn's rating with no command, with random commands, with each LLM and Jev as coach, and holding &quot;Don't die.&quot; all game" /></p>
+<p>Reyn with no orders rates 1746. With any coach it jumps by about 300 points, to HAL's level. But the obvious control, a &quot;coach&quot; that picks a random command every 5 seconds without looking at the game, gets most of that jump (2068). The four LLM coaches land +64 to +191 above random, and each of their intervals overlaps the random coach's. Only Jev is clearly better (2346).</p>
+<p>So I dug in, with about 25 extra games per variant:</p>
+<ul>
+<li><strong>Reyn mostly needs <em>any</em> command.</strong> One random command held for the whole game already gets it to 2018. Changing it every 5 seconds adds little on top.</li>
+<li><strong>Holding &quot;Don't die.&quot; all game, with no coach at all, rates 2398</strong>: level with the Jev coach, above every LLM coach, and about 330 above the random one.</li>
+<li><strong>Jev wins by accident.</strong> Its favourite pick is &quot;kill now&quot;, and Reyn's language layer maps that, every single time, to &quot;Don't die.&quot; Counting that, Jev holds &quot;Don't die.&quot; 41% of the time. The LLMs pick sensible-sounding plans (edgeguard, play aggressively) that turn out to be worth less.</li>
+<li>How often the coach speaks (every 1, 5 or 15 seconds) and giving it extra computed features made no measurable difference.</li>
+</ul>
+<p>The lesson is less about LLMs than about the bot: the instruction that matters most is the boring one, and a language interface can quietly turn your coach's words into something else.</p>
+<h3>3. An LLM can write a level 9 CPU in 30 minutes</h3>
+<p><img src="figures/bot-writer.svg" alt="Bench rating of the bots LLMs wrote in 30 minutes, next to CPUs, scripted bots and Phillip's low tiers" /></p>
+<p>One 30-minute coding session per model, so <strong>one run each</strong>:</p>
+<ul>
+<li><strong>Sonnet 5.5</strong> wrote a compact 135-line bot that shines, grabs shielding opponents and shoots lasers from afar: 1663, just above the level 9 CPU. It declared itself done after 21 minutes and ignored about 25 &quot;keep improving&quot; nudges.</li>
+<li><strong>Haiku 4.5</strong> wrote the simplest bot, 108 lines that mostly call a built-in shine combo: 1609, and the only written bot to take a game off a learned bot.</li>
+<li><strong>Opus 5.5</strong> wrote the most engineered one, 303 lines with a move queue, frame-data-based defence and combos: 1542, the weakest of the three.</li>
+<li>An earlier <strong>Sonnet</strong> pilot held a button instead of tapping it, so its main move rarely came out, and it fell off the bottom twice a game: 968, the lowest rating on the board.</li>
+</ul>
+<p>Two runs of the same model differ far more than different models do. A few lines of input timing decide everything, so this ranks nothing yet.</p>
+<h3>4. Screenshots don't help</h3>
+<p>Given a screenshot instead of (or with) the text description, Haiku did worse: against a level 5 CPU, text only went 4–4, screenshot only 1–7, both 5–3 (8 games each). On images alone it mostly didn't notice it was hanging off the ledge. In a test on 100 frames, every model read the damage numbers almost perfectly but got left/right and facing at about chance.</p>
+<hr />
+<h2>What else I built</h2>
+<h3>A website to watch it all</h3>
+<p>The <a href="https://melee.m19182.dev" target="_blank" rel="noopener">website</a> shows the boards with a page per entrant (record, recent games, sample decisions), every game running on the server drawn live in 2D, a launcher to set up any matchup, every replay with the AI's decisions on a timeline, and these docs. The <strong>Live</strong> page streams the real game with a broadcast-style score bar and a feed of what each AI is thinking, timed to the video.</p>
+<h3>An AI commentary booth</h3>
+<p>The Live page has two AI casters: Charlie on play-by-play (&quot;loud, fast, loses his mind on big moments&quot;) and Laura on colour (&quot;quick, dry wit, teases Charlie&quot;). A fast LLM watches the game's events (combos, stocks lost, zero-to-deaths, self-destructs) and writes a line or two every few seconds, and ElevenLabs voices them. To keep costs down, voices are only made while someone is listening. A real exchange from a Faynt vs HAL game:</p>
+<blockquote>
+<p><strong>Charlie:</strong> HAL MASTER's Fox is in the air and Faynt's Marth is waiting for him!
+<strong>Laura:</strong> Waiting is the right word. Faynt doesn't chase, Charlie, he collects.</p>
+</blockquote>
+<h3>Our own bot: MeleeBot</h3>
+<p>On the second day I trained a bot of my own: a 5.4M-parameter transformer that copies human play, trained on 23,000 ranked online Yoshi games. It reads the last 4 seconds of the game and predicts the next controller input, in 2 ms per frame. Its first game, against the level 9 CPU, ended 0-3: it took one stock and lost all four of its own by falling below the stage. A bigger version is training now.</p>
+<h3>A simulator</h3>
+<p>Melee's community has decompiled the game's code back into C, and <a href="https://github.com/kyhavlov/melee-sim-light" target="_blank" rel="noopener">melee-sim-light</a> runs it without an emulator. I hooked all our players into it, including the learned bots, and checked it against real games: 287 of 300 replays matched frame for frame (the other 13 were unfinished files), and the game itself runs about 100 times faster than in the emulator. Its catch: there are no built-in CPUs.</p>
+<h3>Playing the bots yourself</h3>
+<p>You can play the bots yourself, on a laptop with a controller (Phillip at any skill tier, Faynt or Reyn with a command of your choice) or from home over Slippi's online direct connect. The board has a slot waiting for human results. Come try.</p>
+<hr />
+<h2>What it cost</h2>
+<p>The Claude and GPT tokens went through my subscriptions, so the real bill is the subscriptions. The main bench used 115.1M tokens: 69.8M on Claude and 45.4M on GPT. At list prices the Claude part alone would be about $161. Jev is billed separately and cost $3.94 in total. The bots LLMs wrote cost under $2 each to write.</p>
+<p>Per game:</p>
+<table>
+<thead>
+<tr>
+<th>Entrant</th>
+<th>Games</th>
+<th>Tokens per game</th>
+<th>List-price USD per game</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Haiku 4.5, untimed</td>
+<td>27</td>
+<td>635k</td>
+<td>$0.72</td>
+</tr>
+<tr>
+<td>Sonnet 5.5, untimed</td>
+<td>31</td>
+<td>560k</td>
+<td>$1.96</td>
+</tr>
+<tr>
+<td>GPT-6 Luna, untimed</td>
+<td>33</td>
+<td>362k</td>
+<td>n/a</td>
+</tr>
+<tr>
+<td>GPT-6.1 Sol, untimed</td>
+<td>41</td>
+<td>261k</td>
+<td>n/a</td>
+</tr>
+<tr>
+<td>Haiku 4.5, live</td>
+<td>30</td>
+<td>457k</td>
+<td>$0.51</td>
+</tr>
+<tr>
+<td>Sonnet 5.5, live</td>
+<td>45</td>
+<td>363k</td>
+<td>$1.17</td>
+</tr>
+<tr>
+<td>GPT-6 Luna, live</td>
+<td>48</td>
+<td>241k</td>
+<td>n/a</td>
+</tr>
+<tr>
+<td>GPT-6.1 Sol, live</td>
+<td>56</td>
+<td>112k</td>
+<td>n/a</td>
+</tr>
+<tr>
+<td>Haiku 4.5 coach</td>
+<td>50</td>
+<td>49k</td>
+<td>$0.05</td>
+</tr>
+<tr>
+<td>Sonnet 5.5 coach</td>
+<td>43</td>
+<td>64k</td>
+<td>$0.23</td>
+</tr>
+<tr>
+<td>GPT-6 Luna coach</td>
+<td>50</td>
+<td>39k</td>
+<td>n/a</td>
+</tr>
+<tr>
+<td>GPT-6.1 Sol coach</td>
+<td>71</td>
+<td>42k</td>
+<td>n/a</td>
+</tr>
+<tr>
+<td>Jev, untimed</td>
+<td>59</td>
+<td>705k</td>
+<td>$0.024 (billed)</td>
+</tr>
+<tr>
+<td>Jev, live</td>
+<td>82</td>
+<td>815k</td>
+<td>$0.029 (billed)</td>
+</tr>
+<tr>
+<td>Jev coach</td>
+<td>72</td>
+<td>94k</td>
+<td>$0.003 (billed)</td>
+</tr>
+</tbody>
+</table>
+<p>&quot;Tokens&quot; counts every call, including the live replies that arrived too late and were thrown away. A coach is called every 5 seconds instead of every half second, so it costs 5-10 times less than a player and plays far better.</p>
+<hr />
+<h2>Caveats</h2>
+<ul>
+<li><strong>One matchup.</strong> Fox vs Fox on two stages. Other characters could change everything, and the CPU results in particular are a quirk of Fox.</li>
+<li><strong>The intervals are real.</strong> Neighbours on the board usually overlap. The big gaps (learned bots vs everything, live vs untimed, coached vs uncoached Reyn, &quot;Don't die.&quot;) are well outside the noise; most orderings inside a group are not.</li>
+<li><strong>The harness is part of the result.</strong> The moves, reflexes, prompt and 2-second cutoff are mine. A better harness would score higher; the live LLMs are partly a measure of my autopilot.</li>
+<li><strong>Model names can change underneath.</strong> Models were called through subscriptions, and providers can change what's behind a name.</li>
+</ul>
+<hr />
+<h2>What's next</h2>
+<ul>
+<li><strong>Impressive bots and TASs</strong>: the simulator can save and restore any moment of a game and runs about 100 times faster than the emulator. So a program can try thousands of inputs from the same moment and keep the best. That's how tool-assisted &quot;superplay&quot; works: frame-perfect combos, recoveries and edgeguards no human could pull off. It's also a way to train bots on far more games than a human could ever play.</li>
+<li><strong>A faster brain</strong>: a small local model on my GPU at about half a second per decision, since speed is what matters live.</li>
+<li><strong>A better coach</strong>: start from &quot;Don't die.&quot; and only switch with a good reason.</li>
+<li><strong>MeleeBot, bigger</strong>: the 20M version, then onto the board.</li>
+<li><strong>Bot-writer round 2</strong>: three runs per model, so it can actually rank something.</li>
+<li><strong>Me</strong>: the board has a slot for a human. I'm not expecting a good number.</li>
+</ul>
+<hr />
+<p>Built on <a href="https://slippi.gg" target="_blank" rel="noopener">Slippi</a>, <a href="https://github.com/vladfi1/libmelee" target="_blank" rel="noopener">libmelee</a>, <a href="https://github.com/frankborden/slippilab" target="_blank" rel="noopener">Slippi Lab</a> and <a href="https://github.com/kyhavlov/melee-sim-light" target="_blank" rel="noopener">melee-sim-light</a>, with the bots of vladfi1 (Phillip), Eric Gu (HAL), erickfm (MIMIC) and Frisson Labs (Faynt, Reyn), <a href="https://typesafe.ai/blog/introducing-system-one-models-and-jev" target="_blank" rel="noopener">TypeSafe's Jev</a> and <a href="https://elevenlabs.io" target="_blank" rel="noopener">ElevenLabs</a> voices. Related work I leaned on: <a href="https://starskirmish.com/bench/v0-1/" target="_blank" rel="noopener">StarSkirmish</a>, <a href="https://arxiv.org/abs/2610.12596" target="_blank" rel="noopener">SpireBench</a>, <a href="https://arxiv.org/abs/2505.18134" target="_blank" rel="noopener">VideoGameBench</a> and <a href="https://hgali.sh/reflex" target="_blank" rel="noopener">Qwen plays Smash</a>. Technical details for every part are in the <a href="https://melee.m19182.dev/docs/status" target="_blank" rel="noopener">docs</a>.</p>
+</main></body></html>

@@ -49,7 +49,17 @@ LABELS = {
     "written:sonnet-5.5/run1": "Sonnet 5.5 bot", "written:haiku-4.5/run1": "Haiku 4.5 bot",
     "written:opus-5.5/run1": "Opus 5.5 bot", "written:sonnet/pilot1": "Sonnet 5.5 bot (pilot)",
     "coach:random": "Random coach", "coach_jev": "Jev coach", "jev_live": "Jev, live", "jev_paused": "Jev, untimed",
+    "reyn:stock_protection": "Reyn holding \"Don't die.\"", "coach:random,fixed": "One random command, held",
+    "coach:random,sticky": "Random coach, sticky", "coach:random,jev6": "Random coach, Jev's top 6",
+    "coach_jev,interval=60": "Jev coach, every 1 s", "coach_jev,interval=900": "Jev coach, every 15 s",
+    "coach_jev,features": "Jev coach + features", "coach:claude-haiku-4-5-20251001,features": "Haiku 4.5 coach + features",
 }
+# Coach deep-dive variants share the board's fit but stay off the overview chart, except this one.
+SHOW_INACTIVE = {"reyn:stock_protection"}
+
+
+def deepdive(p: dict) -> bool:
+    return not p.get("active", True) and ("," in p["id"] or p["id"].startswith("reyn:")) and p["id"] not in SHOW_INACTIVE
 for _m, _n in LLMS:
     LABELS[f"llm_live:{_m}"] = f"{_n}, live"
     LABELS[f"llm_paused:{_m}"] = f"{_n}, untimed"
@@ -71,7 +81,8 @@ def extract() -> dict:
         boards[key] = [
             {"id": p["id"], "category": ents.get(p["id"], {}).get("category", "?"), "elo": p["elo"],
              "lo": p["elo_lo"], "hi": p["elo_hi"], "games": p["games"], "w": p["wins"], "l": p["losses"],
-             "d": p["draws"], "stock_diff": p["stock_diff"], "converged": p.get("converged")}
+             "d": p["draws"], "stock_diff": p["stock_diff"], "converged": p.get("converged"),
+             "active": ents.get(p["id"], {}).get("active", True)}
             for p in st["tracks"][track]["players"]
         ]
 
@@ -134,7 +145,7 @@ def extract() -> dict:
         "games": {"bench": st["games"]["bench"], "imported": st["games"]["imported"],
                   "rt": st["tracks"]["realtime"]["games"], "ut": st["tracks"]["untimed"]["games"]},
         "status": {k: status[k] for k in ("started_at", "updated", "phase", "stop_reason", "budget_tokens",
-                                          "spent", "games_started", "unconverged")},
+                                          "spent", "spent_recounted", "games_started", "unconverged") if k in status},
         "boards": boards, "spend": spend, "live": drops, "perception": perception, "botwriter": botwriter,
     }
 
@@ -142,7 +153,7 @@ def extract() -> dict:
 # ---------------------------------------------------------------- numbers
 
 def numbers(s: dict) -> dict:
-    sp = s["status"]["spent"]
+    sp = s["status"].get("spent_recounted") or s["status"]["spent"]  # the recount includes replies never applied
     t0, t1 = s["status"]["started_at"], s["status"]["updated"]
     rt = {p["id"]: p for p in s["boards"]["rt"]}
     coaches = [rt[f"coach:{m}"]["elo"] for m, _ in LLMS if f"coach:{m}" in rt]
@@ -167,7 +178,6 @@ def numbers(s: dict) -> dict:
         "paused_rest_min": f"{sorted(paused)[0]:.0f}", "paused_rest_max": f"{sorted(paused)[-2]:.0f}",
         "tax_min": f"{min(taxes):.0f}", "tax_max": f"{max(taxes):.0f}",
         "phase": s["status"]["phase"],
-        "uncounted_m": f"{sum(d['tokens_est_total'] - d['tokens_counted'] for k, d in s['live'].items() if k.startswith('llm_live')) / 1e6:.0f}",
         "n_entrants": str(len({p["id"] for b in s["boards"].values() for p in b})),
         **{f"perc_{k}": f"{v['w']}–{v['n'] - v['w']}" for k, v in per.items()},
         **{f"perc_{k}_n": str(v["n"]) for k, v in per.items()},
@@ -214,10 +224,7 @@ def tables(s: dict) -> dict:
         v = s["spend"].get(i)
         if not v:
             continue
-        tpg = v["tokens_per_game"]
-        if i in s["live"]:
-            d = s["live"][i]
-            tpg = d["tokens_est_total"] / d["games"]
+        tpg = v["tokens_per_game"]  # the standings already count dropped replies (bench recount)
         usd = f"${v['usd_per_game']:.2f}" if v["usd"] else ("n/a" if not i.startswith(("jev", "coach_jev")) else "")
         if i.startswith(("jev", "coach_jev")):
             usd = f"${v['usd_per_game']:.3f} (billed)"
@@ -294,7 +301,7 @@ class Chart:
         self.x0, self.x1, self.ticks = x0, x1, ticks
         rows, x = [[]], 16
         for item in legend or []:
-            w = 24 + len(item[2]) * 6.6
+            w = 28 + len(item[2]) * 6.9
             if x + w > width - 16:
                 rows.append([])
                 x = 16
@@ -364,7 +371,7 @@ def kind(p):
 
 
 def fig_leaderboard(s, n):
-    rows = s["boards"]["rt"]
+    rows = [p for p in s["boards"]["rt"] if not deepdive(p)]
     c = Chart("Melee Bench, real-time board",
               f"Fox ditto, BF/FD, full games. Dot: Bradley-Terry Elo; line: 95% interval. Snapshot {n['as_of']}.",
               len(rows), 900, 2700, list(range(1000, 2701, 250)), legend=LEGEND)
@@ -374,18 +381,20 @@ def fig_leaderboard(s, n):
         right = f"{p['elo']:.0f}"
         if p["elo"] > c.x1:
             right = f"{p['elo']:.0f}, {p['w']}–{p['l']}"
-        c.row(i, label(p["id"]), p["elo"], p["lo"], p["hi"], cls, shape, right)
+        c.row(i, label(p["id"]), p["elo"], p["lo"], p["hi"], cls, shape, right, emph=p["id"] in SHOW_INACTIVE)
     c.save("leaderboard-realtime.svg")
 
 
 def fig_coach(s, n):
     rt = {p["id"]: p for p in s["boards"]["rt"]}
-    ids = ["reyn", "coach:random"] + [f"coach:{m}" for m, _ in LLMS] + ["coach_jev"]
-    ids = [i for i in ids if i in rt]
-    ids = ids[:2] + sorted(ids[2:], key=lambda i: rt[i]["elo"])
-    c = Chart("Coaching Reyn: does the coach's brain matter?",
-              "Real-time board. One coach call every 5 s picks one of Reyn's ~100 commands. Shaded: random coach's 95% interval.",
-              len(ids), 1600, 2700, list(range(1600, 2701, 200)), top_extra=6)
+    coaches = sorted((f"coach:{m}" for m, _ in LLMS if f"coach:{m}" in rt), key=lambda i: rt[i]["elo"])
+    ids = [i for i in ["reyn", "coach:random,fixed", "coach:random", *coaches, "coach_jev", "reyn:stock_protection"]
+           if i in rt]
+    c = Chart("Coaching Reyn: what actually helps?",
+              "Real-time board. Coaches pick one of Reyn's ~100 commands every 5 s. Shaded: random coach's 95% interval.",
+              len(ids), 1600, 2700, list(range(1600, 2701, 200)), top_extra=6,
+              legend=[("learned", "learned", "Reyn, no coach"), ("ref", "coach", "Random commands"),
+                      ("coach", "coach", "LLM or Jev coach")])
     rnd = rt["coach:random"]
     c.band(rnd["lo"], rnd["hi"], "random coach")
     for ref in ("hal:MASTER", "phillip:gm"):
@@ -393,10 +402,10 @@ def fig_coach(s, n):
             c.ref(rt[ref]["elo"], label(ref))
     for i, k in enumerate(ids):
         p = rt[k]
-        cls = "learned" if k == "reyn" else ("ref" if k == "coach:random" else "coach")
-        shape = "circle" if k == "reyn" else "diamond"
+        cls = "learned" if k.startswith("reyn") else ("ref" if k.startswith("coach:random") else "coach")
+        shape = "circle" if k.startswith("reyn") else "diamond"
         c.row(i, label(k), p["elo"], p["lo"], p["hi"], cls, shape, f"{p['elo']:.0f}  n={p['games']}",
-              emph=k in ("coach_jev",))
+              emph=k in ("coach_jev", "reyn:stock_protection"))
     c.save("coaching.svg")
 
 
