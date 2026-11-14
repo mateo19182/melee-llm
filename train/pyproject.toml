@@ -8,6 +8,8 @@ dependencies = [
     "numpy>=2.0",
     "peppi-py>=0.8",
     "torch>=2.11",
+    "websockets>=15",
+    "cryptography>=44",
 ]
 
 [tool.uv]
