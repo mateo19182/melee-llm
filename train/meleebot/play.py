@@ -135,6 +135,9 @@ class Policy:
         torch.manual_seed(seed)
         self.history: list = []
         self.last_frame = None
+        # rope models keep a per-layer key/value cache and run one frame per step
+        self.cached = self.model.config.pos == "rope"
+        self.caches, self.n = None, 0
 
     def set_steer(self, steer: dict) -> dict:
         new = {**self.steer, **steer}
@@ -150,9 +153,9 @@ class Policy:
                           temperature=float(new["temperature"]))
         return dict(self.steer)
 
-    def _batch(self, gs):
+    def _batch(self, gs, last_only=False):
         frames = np.stack(self.history[-(self.context + fe.MAX_DELAY):])
-        T = min(self.context, len(frames))
+        T = 1 if last_only else min(self.context, len(frames))
         start = len(frames) - T
         d = self.steer["delay"]
         # Early in a game there may be fewer than `delay` older frames: repeat the first one.
@@ -182,7 +185,7 @@ class Policy:
     def act(self, gs) -> dict | None:
         """Controller for the next frame, or None (leave the controller alone) before the game starts."""
         if self.last_frame is not None and gs.frame < self.last_frame:
-            self.history = []
+            self.history, self.caches, self.n = [], None, 0
         self.last_frame = gs.frame
         f = self.raw.frame(gs.frame, self.port, self.opp)
         self.raw.forget_before(gs.frame - 2)
@@ -192,7 +195,14 @@ class Policy:
         if len(self.history) > 4 * self.context:
             del self.history[:-(self.context + fe.MAX_DELAY)]
         with torch.autocast(self.device, torch.bfloat16, enabled=self.device == "cuda"):
-            choice = self.model.sample(self._batch(gs), self.steer["temperature"])
+            if self.cached:
+                if self.caches is None:
+                    self.caches, self.n = self.model.new_caches(), 0
+                b = self._batch(gs, last_only=True)
+                choice = self.model.step(b, self.n, self.caches, self.steer["temperature"])
+                self.n += 1
+            else:
+                choice = self.model.sample(self._batch(gs), self.steer["temperature"])
         return self.to_controller({k: v.item() for k, v in choice.items()})
 
 
@@ -226,11 +236,18 @@ def bench_speed(checkpoint, device="cpu", threads=8, n=300):
     b = dict(num=torch.zeros(1, T, fe.NUM), actions=torch.zeros(1, T, 2, dtype=torch.long),
              **{k: torch.zeros(1, dtype=torch.long) for k in ("delay", "me_char", "opp_char", "stage", "rank", "win")})
     b = {k: v.to(device) for k, v in b.items()}
-    times = []
+    one = {**b, "num": b["num"][:, :1], "actions": b["actions"][:, :1]}
+    times, caches = [], model.new_caches()
     with torch.inference_mode():
-        for _ in range(n):
+        if model.config.pos == "rope":  # fill the cache first, as in a game past its first 4 seconds
+            for i in range(T):
+                model.step(one, i, caches)
+        for i in range(n):
             t0 = time.perf_counter()
-            model.sample(b)
+            if model.config.pos == "rope":
+                model.step(one, T + i, caches)
+            else:
+                model.sample(b)
             times.append((time.perf_counter() - t0) * 1000)
     times = sorted(times[20:])
     return {"p50": round(times[len(times) // 2], 2), "p95": round(times[int(len(times) * .95)], 2), "max": round(times[-1], 2)}

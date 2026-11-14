@@ -86,6 +86,8 @@ def main():
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--eval-every", type=int, default=1000)
     ap.add_argument("--overfit-game", type=int)
+    ap.add_argument("--pos", choices=["rope", "learned"], default="rope")
+    ap.add_argument("--compile", action="store_true")
     a = ap.parse_args()
 
     os.makedirs(a.run_dir, exist_ok=True)
@@ -100,13 +102,14 @@ def main():
     else:
         train_g, val_g, dropout = subset(games, games["val"] == 0), subset(games, games["val"] == 1), 0.1
 
-    c = Config(layers=a.layers, width=a.width, heads=a.width // 32, context=a.context, dropout=dropout)
+    c = Config(layers=a.layers, width=a.width, heads=a.width // 32, context=a.context, dropout=dropout, pos=a.pos)
     model = Policy(c)
     model.num_mean.copy_(torch.from_numpy(mean)); model.num_std.copy_(torch.from_numpy(std))
     centers = fe.kmeans_stick(pads, c.n_stick)
     model.stick_centers.copy_(torch.from_numpy(centers))
     dev = "cuda"
     model.to(dev)
+    fwd = torch.compile(model) if a.compile else model   # `model` stays uncompiled for saving
     n_params = sum(p.numel() for p in model.parameters())
     print(f"{n_params / 1e6:.1f}M params, train {train_g['length'].sum() / 1e6:.0f}M frames "
           f"in {len(train_g['length'])} games, val {len(val_g['length'])} games", flush=True)
@@ -131,7 +134,7 @@ def main():
         with torch.no_grad(), torch.autocast("cuda", torch.bfloat16):
             for vb in val_batches:
                 vb = {k: v.to(dev) for k, v in vb.items()}
-                _, parts, acc = loss_fn(model(vb), vb)
+                _, parts, acc = loss_fn(fwd(vb), vb)
                 for h in HEADS:
                     tot[h] += parts[h].item() / len(val_batches)
                     tot[f"acc_{h}"] += acc[h].item() / len(val_batches)
@@ -154,7 +157,7 @@ def main():
     for step, b in enumerate(loader, 1):
         b = {k: v.to(dev, non_blocking=True) for k, v in b.items()}
         with torch.autocast("cuda", torch.bfloat16):
-            loss, parts, _ = loss_fn(model(b), b)
+            loss, parts, _ = loss_fn(fwd(b), b)
         opt.zero_grad(set_to_none=True)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
