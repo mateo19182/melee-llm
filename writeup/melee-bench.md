@@ -179,7 +179,7 @@ The Live page has two AI casters: Charlie on play-by-play ("loud, fast, loses hi
 > **Charlie:** HAL MASTER's Fox is in the air and Faynt's Marth is waiting for him!
 > **Laura:** Waiting is the right word. Faynt doesn't chase, Charlie, he collects.
 
-### Our own bot: MeleeBot
+### Our own bot: m19182-yoshi
 
 On the second day I trained a bot of my own, the way HAL did: a small transformer that copies human play, trained on 23,000 ranked online Yoshi games. It reads the last 4 seconds of the game and predicts the next controller input.
 

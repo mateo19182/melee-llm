@@ -52,7 +52,7 @@ def label(spec: str) -> str:
     if kind == "coach":
         body = next((o.split("=", 1)[1] for o in opts if o.startswith("body=")), "reyn")
         return f"Coach {short_model(head) or 'haiku'} → {body.title() if body != 'hal' else 'HAL'}"
-    names = {"hal": "HAL", "phillip": "Phillip", "mimic": "MIMIC", "faynt": "Faynt", "reyn": "Reyn", "meleebot": "MeleeBot"}
+    names = {"hal": "HAL", "phillip": "Phillip", "mimic": "MIMIC", "faynt": "Faynt", "reyn": "Reyn", "meleebot": "m19182-yoshi"}
     if kind in names:
         if kind == "reyn" and arg:
             return f'Reyn "{arg[:30]}"'
@@ -155,7 +155,7 @@ def catalog() -> dict:
             {"kind": "faynt", "label": "Faynt", "arg": {"type": "select", "options": faynt_variants(), "default": "10M-Arena"}},
             {"kind": "reyn", "label": "Reyn (language-steerable)",
              "arg": {"type": "text", "default": "", "placeholder": "optional command, e.g. Be more aggressive."}},
-            {"kind": "meleebot", "label": "MeleeBot (our behaviour-cloned Yoshi)",
+            {"kind": "meleebot", "label": "m19182-yoshi (our behaviour-cloned Yoshi)",
              "arg": {"type": "select", "options": meleebot_runs(), "default": "bc-6m-v1"}},
             {"kind": "shine", "label": "Multishine demo"},
             {"kind": "idle", "label": "Idle (does nothing)"},
@@ -284,9 +284,9 @@ def validate(p1: str, p2: str, char1: str, char2: str, stage: str, mode: str, ga
                 warnings.append(f"{who}: Faynt 75M is too slow for real time")
         elif kind == "meleebot":
             if arg and arg not in meleebot_runs():
-                errors.append(f"{who}: no MeleeBot run {arg!r} with a checkpoint")
+                errors.append(f"{who}: no m19182-yoshi run {arg!r} with a checkpoint")
             if char != "YOSHI":
-                warnings.append(f"{who}: MeleeBot was trained on Yoshi only")
+                warnings.append(f"{who}: m19182-yoshi was trained on Yoshi only")
         elif kind not in ("reyn", "shine", "idle"):
             errors.append(f"{who}: unknown player kind {kind!r}")
         if kind in LEARNED and mode == "watch":
