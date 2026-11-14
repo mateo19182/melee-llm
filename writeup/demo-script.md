@@ -8,7 +8,7 @@ About 5-7 minutes. Three parts: website tour, a live commentated match, you vs a
 - [ ] Tabs open, in order: **Bench**, **Live**, **Launch**, **Games** (one replay), the **write-up** page, and the backup clip (`writeup/media/backup-clip.mp4`, downloaded locally).
 - [ ] Server: nothing queued on the live slot (Live page → "Up next" says "Queue empty."). Turn **Arena fills idle time** off so the slot is free when you launch.
 - [ ] Commentator test: on the Live page tick **Commentator** and **Voice**, and hear one line during any game. If no voice comes, check `~/.config/melee-llm/elevenlabs.env` on the server.
-- [ ] Controller plugged into the laptop and `play.py` tested once (see part 3). NordVPN off.
+- [ ] Laptop: charger in, GameCube controller on the Wii U adapter (switch on "Wii U") and one short `play.py` game with it (see part 4).
 
 ## 1. The hook (30 s, write-up open)
 
@@ -53,18 +53,25 @@ Other good ones: `meleebot` (our own Yoshi) vs `cpu:9`, honest about it losing; 
 
 ## 4. You vs a bot, on the laptop (2 min)
 
-From the repo on the laptop (thread D's `play.py`, see `docs/local-play.md`):
+Full cheat sheet: `docs/local-play.md` ("Demo cheat sheet"). On the laptop:
 
 ```sh
-uv run play.py --iso "$HOME/Downloads/Super Smash Bros. Melee (v1.02 NTSC).iso" --bot phillip:silver --bot-char FOX
+cd ~/Work/personal/melee-llm
+ISO="$HOME/Downloads/Super Smash Bros. Melee (v1.02 NTSC).iso"
+uv run play.py --iso "$ISO" --bot meleebot:bc-6m-v1 --bot-char YOSHI   # our Yoshi
+uv run play.py --iso "$ISO" --bot phillip:gm --bot-char FOX             # Phillip gm
 ```
 
-- Pick your character, press Start; the bot picks its character and the stage.
-- Start easy (`phillip:silver`), offer a brave volunteer `phillip:gm`.
-- `--humans 2` puts a second player on port 3 for a free-for-all against the bot.
-- Close Dolphin or Ctrl-C to stop; the score prints after each game.
+- Dolphin opens in a few seconds and the bot loads. At character select, pick yours and press Start; the bot picks its character and the stage.
+- **Our Yoshi first**: "trained today on 23,000 ranked online games; it lost its first game 0-3 to the hardest CPU, so you have a chance." Then offer a brave volunteer **Phillip gm**.
+- After each game a score line prints and you're back at character select; press Start for another.
+- **Stop:** Ctrl-C in the terminal or close the Dolphin window (everything exits in under 10 s).
 
-**Fallback:** if the controller isn't detected, Dolphin → Controllers → Port 1 → set the device again (or keyboard). If `play.py` won't start, skip to the outro; the live match already showed bots playing.
+**Fallbacks:**
+- Crash or freeze: Ctrl-C, `pkill -f AppRun.wrapped`, run the command again.
+- Controller does nothing: replug it and restart `play.py` (Dolphin only finds devices at start). Keyboard works as a last resort (arrows = stick, X = A, Z = B, Enter = Start).
+- Yoshi won't start: play Phillip instead.
+- Nothing works: skip to the outro; the live match already showed bots playing.
 
 ## 5. Outro (20 s)
 
