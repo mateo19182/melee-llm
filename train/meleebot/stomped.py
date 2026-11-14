@@ -135,7 +135,7 @@ class Brain:
             return None
         f = np.zeros((), FRAME)
         f["me"], f["opp"], f["opp_pad"] = me, opp, opp_pad
-        state, _, opp_num, actions = fe.frame_parts(f[None])
+        state, _, opp_num, actions = fe.frame_parts(f[None], self.model.config.features)
         t = F + self.lead - 1
         own = fe.pad_num(self.sent.get(t, NEUTRAL)[None])
         self.tokens.append((np.concatenate([state[0], own[0], opp_num[0]]), actions[0]))

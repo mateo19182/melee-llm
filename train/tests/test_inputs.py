@@ -36,7 +36,7 @@ def reference_window(frames, start, length, delay):
 
 def play_policy(context):
     p = Policy.__new__(Policy)
-    p.context, p.port, p.opp, p.device = context, 1, 2, "cpu"
+    p.context, p.port, p.opp, p.device, p.features = context, 1, 2, "cpu", "v1"
     p.steer = dict(delay=0, rank="MASTER", win=1, temperature=1.0)
     cap = 4 * context
     p.feats = (np.zeros((cap, 2 * fe.PLAYER_NUM), np.float32), np.zeros((cap, fe.PAD_NUM), np.float32),

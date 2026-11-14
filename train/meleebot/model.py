@@ -22,6 +22,7 @@ class Config:
     dropout: float = 0.1
     n_stick: int = 40
     pos: str = "learned"
+    features: str = "v1"       # features.FEATURES: which input fields the dataset fills
 
 
 HEADS = ("shoulder", "cstick", "stick", "buttons")

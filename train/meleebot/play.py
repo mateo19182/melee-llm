@@ -127,6 +127,7 @@ class Policy:
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         torch.set_num_threads(threads)
         self.model, self.ckpt = load(checkpoint, self.device)
+        self.features = self.model.config.features
         self.port, self.opp = port, opponent_port
         self.steer = {}
         self.set_steer(dict(delay=delay, rank=rank, win=win, temperature=temperature))
@@ -163,7 +164,7 @@ class Policy:
             for x in self.feats:
                 x[:keep] = x[self.size - keep:self.size]
             self.size = keep
-        for store, part in zip(self.feats, fe.frame_parts(f[None])):
+        for store, part in zip(self.feats, fe.frame_parts(f[None], self.features)):
             store[self.size] = part[0]
         self.size += 1
 
