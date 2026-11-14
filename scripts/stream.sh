@@ -2,12 +2,19 @@
 # Publish display :99 (cropped to Dolphin's game window) as low-latency H.264 (NVENC) to mediamtx.
 # mediamtx starts this on demand when a viewer connects (scripts/mediamtx.yml).
 DISPLAY_NAME=${LIVE_DISPLAY:-:99}
-geom=$(DISPLAY=$DISPLAY_NAME xwininfo -root -tree 2>/dev/null | grep GALE01 | grep -oE '[0-9]+x[0-9]+\+[0-9]+\+[0-9]+ +\+[0-9]+\+[0-9]+' | head -1)
+# Dolphin opens its game window only once the ISO boots; a viewer who connects while it loads would otherwise
+# get the whole screen (Dolphin's white main window) for the rest of the stream. Wait for it (within mediamtx's
+# 10 s start timeout), else assume where runner.Console always puts it.
+for _ in $(seq 16); do
+  geom=$(DISPLAY=$DISPLAY_NAME xwininfo -root -tree 2>/dev/null | grep GALE01 | grep -oE '[0-9]+x[0-9]+\+[0-9]+\+[0-9]+ +\+[0-9]+\+[0-9]+' | head -1)
+  [ -n "$geom" ] && break
+  sleep 0.5
+done
 if [ -n "$geom" ]; then
   size=${geom%%+*}; pos=$(echo "$geom" | awk '{print $2}'); x=$(echo "$pos" | cut -d+ -f2); y=$(echo "$pos" | cut -d+ -f3)
   src="$DISPLAY_NAME+$x,$y"
 else
-  size=1280x960; src=$DISPLAY_NAME
+  size=640x480; src=$DISPLAY_NAME+0,0
 fi
 OVERLAY=/tmp/melee-arena/overlay.txt  # written by arena.py; empty outside arena runs
 mkdir -p "$(dirname "$OVERLAY")"; [ -f "$OVERLAY" ] || : > "$OVERLAY"
