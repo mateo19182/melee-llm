@@ -125,6 +125,10 @@ Init options go through `**config` on the agent class, e.g. `Faynt(character=...
 - **Steering** (next frame): `delay` 0-12 (frames of pretended reaction delay, default 0), `rank` (UNKNOWN, PLATINUM, DIAMOND, MASTER, PRO; default MASTER), `win` (1, 0 or None), `temperature`.
 - **Speed:** 2.1 ms per frame on the 3090. On the CPU with 8 threads, 6.3 ms p50 and 9.4 ms p95.
 - **First game** (2026-11-14, Yoshi vs CPU 9 Fox on Battlefield, fast mode): lost 0-3. It took one stock and lost four, all below the stage, at 21-125%.
+- **On stomped.dev:** `uv run python -m meleebot.stomped CHECKPOINT --url https://HOST/SECRET --lead 11` serves the [match socket](https://docs.stomped.dev/llms-full.txt): `/ping`, the signed WebSocket, picks Yoshi, reads the raw `.slp` stream and sends a 12-byte pad per frame.
+  - Pads are aimed `lead` frames ahead, and the model plays with `delay = lead - 1`, the setting it was trained for. Without `--lead` it picks one from the measured round trip and raises it when the stream shows pads read late.
+  - From this server the round trip to the arena (Ashburn) is ~135 ms, so lead 11 (10 frames behind). In the local arena with a simulated 135 ms trip, lead 10 lost 4% of pads and lead 9 nearly all.
+  - `meleebot.stomped_arena REPLAY URL [--rtt-ms N]` streams a recorded game the way stomped does and counts pads that arrive before their frame is polled. `tests/test_stomped.py` checks the stream reader against the dataset builder (3 replays, every field equal).
 - **Setup:** `cd train && uv sync`. On a machine without NVIDIA, `uv venv && uv pip install --torch-backend cpu torch numpy "melee>=0.47.6" "peppi-py>=0.8"` avoids the CUDA wheels. Copy the run's `last.pt` (21 MB).
 
 ## Reyn (language-steerable)
