@@ -140,9 +140,11 @@ async def api_job_cancel(request: Request) -> Response:
 async def api_settings(request: Request) -> Response:
     if request.method == "POST":
         body = await request.json()
-        if "arena" in body:
-            await blocking(jobs.set_setting, "arena", "on" if body["arena"] else "off")
-    return ok({"arena": await blocking(jobs.setting, "arena", "on") == "on"})
+        for key in ("arena", "commentator"):
+            if key in body:
+                await blocking(jobs.set_setting, key, "on" if body[key] else "off")
+    return ok({"arena": await blocking(jobs.setting, "arena", "on") == "on",
+               "commentator": await blocking(jobs.setting, "commentator", "off") == "on"})
 
 
 # --------------------------------------------------------------------------- API: live

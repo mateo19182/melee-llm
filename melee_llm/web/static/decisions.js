@@ -33,7 +33,18 @@ function entry(rec, port, attrs, head, reason, more) {
   return el;
 }
 
+// Live commentary (melee_llm/commentary.py): ticker events from the game state and the commentator's lines.
+function commentaryCard(rec) {
+  if (rec.type === "event") return h("div.ev.cm-event", {}, rec.text);
+  if (rec.type === "line") {
+    return h("div.ev.cm-line", { title: [callsign(rec.model), lat(rec.latency_s)].filter(Boolean).join(" · ") },
+      h("span.cm-tag", {}, "Cast"), h("span", {}, rec.text));
+  }
+  return null; // commentator errors stay in the log
+}
+
 export function recordCard(rec, port, kind, opts = {}) {
+  if (kind === "commentary") return commentaryCard(rec);
   const frame = rec.frame !== undefined && rec.frame !== null ? `f${rec.frame}` : null;
   const attrs = { onclick: opts.onclick };
   const who = opts.callsign || callsign(rec.model) || (kind === "coach" ? "coach" : `P${port}`);

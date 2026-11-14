@@ -42,12 +42,17 @@ export default async function live(root, _params, signal) {
     await api("/api/settings", { method: "POST", body: { arena: e.target.checked } });
     toast(e.target.checked ? "Arena will fill the live slot when the queue is empty" : "Arena paused after the current game");
   } });
+  const castToggle = h("input", { type: "checkbox", onchange: async (e) => {
+    await api("/api/settings", { method: "POST", body: { commentator: e.target.checked } });
+    toast(e.target.checked ? "Commentator on: an LLM calls the game in the feed" : "Commentator off: the play-by-play ticker stays");
+  } });
 
   mount(root, h("div.live-layout", {},
     h("div.live-main", {},
       scorebug,
       videoWrap,
       h("div.video-bar", {}, h("span.spacer"),
+        h("label.check", { title: "An LLM commentates the live game in the feed (uses tokens)" }, castToggle, "Commentator"),
         h("label.check", {}, arenaToggle, "Arena fills idle time"), link("/launch", h("button.primary.small", {}, "Launch a match"))),
       h("div.queue-strip", {}, h("h3", {}, "Up next"), queueBox)),
     h("div.card.panel", {},
@@ -177,7 +182,7 @@ export default async function live(root, _params, signal) {
       if (s.source !== "idle" && s.players) {
         addEvent(h("div.ev.sys.divider", {}, `${s.source === "job" ? `Job #${s.job_id}` : s.source === "arena" ? "Arena" : s.label || s.source} · ${s.players["1"].label} vs ${s.players["2"].label} · game ${s.game + 1}/${s.games}`));
         const quiet = Object.values(s.players).every((p) => p.kind === "cpu" || p.kind === "bot" || p.kind === "shine" || p.kind === "idle");
-        if (quiet) addEvent(h("div.ev.sys", {}, "No LLM in this game. Learned bots show their steer state above; CPUs show nothing."));
+        if (quiet) addEvent(h("div.ev.sys", {}, "No LLM plays this game. The ticker calls the action, plus the commentator when it is on."));
       }
     }
     for (const [port, st] of Object.entries(s.steer || {})) {
@@ -243,8 +248,9 @@ export default async function live(root, _params, signal) {
 
   // ---------------------------------------------------------------- queue
   every(4000, async () => {
-    const { jobs, arena } = await api("/api/jobs?limit=5");
+    const [{ jobs, arena }, settings] = await Promise.all([api("/api/jobs?limit=5"), api("/api/settings")]);
     arenaToggle.checked = arena === "on";
+    castToggle.checked = settings.commentator;
     const active = jobs.filter((j) => j.status === "running" || j.status === "queued");
     mount(queueBox, active.length ? active.map((j) => h("div.queue-item", {},
       link(`/job/${j.id}`, `#${j.id}`), statusBadge(j.status),

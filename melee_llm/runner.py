@@ -71,14 +71,18 @@ class Console(melee.Console):
     def run(self, *args, **kwargs):
         super().run(*args, **kwargs)
         if self.gfx_backend != "Null" and self._live():
-            # Qt leaves room for a title bar no window manager draws: the window lands at y=20 with its bottom
-            # off screen. Moving it (unlike resizing) is safe.
-            threading.Thread(target=_move_game_window_home, args=(os.environ["DISPLAY"],), daemon=True).start()
+            # Qt leaves room for a title bar no window manager draws and puts the window back at y=20 (bottom
+            # off screen, Dolphin's menu bar showing above it) when the game starts, so keep moving it home
+            # while Dolphin runs. Moving it (unlike resizing) is safe.
+            self._home_stop = threading.Event()
+            threading.Thread(target=_keep_game_window_home, args=(os.environ["DISPLAY"], self._home_stop), daemon=True).start()
 
     def stop(self):
         # The AppImage launcher dies on kill() but the Dolphin inside it (AppRun.wrapped) survives and keeps
         # the Slippi port, so the next match would silently attach to it. Kill everything using our temp home.
         home = self.temp_dir
+        if stop := getattr(self, "_home_stop", None):
+            stop.set()
         super().stop()
         if home:
             _kill_matching(home)
@@ -100,24 +104,22 @@ def _set_qt_geometry(path: str, size: tuple[int, int]) -> None:
         f.write(f"{text}\n\n[renderwidget]\ngeometry={value}\n".lstrip("\n"))
 
 
-def _move_game_window_home(display: str, timeout: float = 60, settle: float = 10) -> None:
-    """Keep Dolphin's game window on `display` at (0, 0) for `settle` s after it appears (Qt places it after mapping)."""
-    end, x11, dpy = time.time() + timeout, None, None
-    while time.time() < end:
-        out = subprocess.run(["xwininfo", "-root", "-tree"], env={**os.environ, "DISPLAY": display},
-                             capture_output=True, text=True).stdout
-        if m := re.search(r"^\s*(0x[0-9a-f]+) \"[^\"]*GALE01[^\"]*\".*?\d+x\d+\+(-?\d+)\+(-?\d+)", out, re.M):
-            end = min(end, time.time() + settle)
-            if (m[2], m[3]) != ("0", "0"):
-                if x11 is None:
-                    x11 = ctypes.CDLL("libX11.so.6")
-                    x11.XOpenDisplay.restype = ctypes.c_void_p
-                    dpy = ctypes.c_void_p(x11.XOpenDisplay(display.encode()))
-                if dpy.value:
-                    x11.XMoveWindow(dpy, ctypes.c_ulong(int(m[1], 16)), 0, 0)
-                    x11.XFlush(dpy)
-        time.sleep(0.25)
-    if dpy and dpy.value:
+def _keep_game_window_home(display: str, stop: threading.Event) -> None:
+    """Keep Dolphin's game window on `display` at (0, 0) until `stop` is set."""
+    x11 = ctypes.CDLL("libX11.so.6")
+    x11.XOpenDisplay.restype = ctypes.c_void_p
+    dpy = ctypes.c_void_p(x11.XOpenDisplay(display.encode()))
+    if not dpy.value:
+        return
+    try:
+        while not stop.wait(0.5):
+            out = subprocess.run(["xwininfo", "-root", "-tree"], env={**os.environ, "DISPLAY": display},
+                                 capture_output=True, text=True).stdout
+            m = re.search(r"^\s*(0x[0-9a-f]+) \"[^\"]*GALE01[^\"]*\".*?\d+x\d+\+(-?\d+)\+(-?\d+)", out, re.M)
+            if m and (m[2], m[3]) != ("0", "0"):
+                x11.XMoveWindow(dpy, ctypes.c_ulong(int(m[1], 16)), 0, 0)
+                x11.XFlush(dpy)
+    finally:
         x11.XCloseDisplay(dpy)
 
 

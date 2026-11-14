@@ -78,6 +78,7 @@ class MatchPublisher:
         self.rate_t, self.rate_n = 0.0, 0
         self.cost_s, self.cost_n = 0.0, 0  # time spent in frame(): reported as overhead_us (mean per frame)
         self._pending, self._thread, self._wake, self._lock = None, None, threading.Event(), threading.Lock()
+        self.commentary = None  # melee_llm.commentary.Commentary, live slot only
         self.write()
 
     # ------------------------------------------------------------------ events from play()
@@ -91,6 +92,13 @@ class MatchPublisher:
         for p in self.ports:
             if p in gs.players:
                 s["players"][str(p)]["character"] = gs.players[p].character.name
+        if s["live_slot"]:
+            self._end_commentary()
+            try:
+                from melee_llm.commentary import for_match
+                self.commentary = for_match(s, replay)
+            except Exception as e:  # noqa: BLE001 - commentary is a nicety: never break a game over it
+                print(f"commentary disabled: {type(e).__name__}: {e}", file=sys.stderr)
         s["logs"] = self._logs()
         self._sample(gs)
         self.write()
@@ -99,6 +107,8 @@ class MatchPublisher:
         t = time.perf_counter()
         now = time.monotonic()
         self.rate_n += 1
+        if self.commentary:
+            self.commentary.update(gs)
         if now - self.last_sample_t >= 1 / SAMPLE_FPS:
             self.last_sample_t = now
             self._sample(gs)
@@ -115,6 +125,13 @@ class MatchPublisher:
         s["results"].append(r)
         s.update(phase="between", stocks=r["stocks"], percent=r["percent"], replay=result.replay)
         self.write()
+        if self.commentary:
+            w = str(result.winner) if result.winner else None
+            if w:
+                o = next(p for p in s["players"] if p != w)
+                self._end_commentary(f"Game! {self.commentary.names[int(w)]} wins, {r['stocks'].get(w, 0)} stocks to {r['stocks'].get(o, 0)}")
+            else:
+                self._end_commentary("Game! It ends in a draw")
 
     def close(self, error: BaseException | None = None) -> None:
         s = self.status
@@ -123,6 +140,9 @@ class MatchPublisher:
         s.update(phase="failed" if s.get("error") and len(s["results"]) < s["games"] else "finished",
                  finished=round(time.time(), 3))
         self.write()
+        if self.commentary:  # let the last line about the result land before the process exits
+            self._end_commentary()
+            self.commentary.join()
 
     # ------------------------------------------------------------------ internals
 
@@ -182,8 +202,14 @@ class MatchPublisher:
                 if data is not None:
                     self._dump(data)
 
+    def _end_commentary(self, text: str | None = None) -> None:
+        if self.commentary:
+            self.commentary.end(text)
+
     def _logs(self) -> list[dict]:
         out = []
+        if self.commentary:
+            out.append({"port": 0, "kind": "commentary", "path": str(self.commentary.path)})
         for p, a in self.agents.items():
             log = getattr(a, "log", None)
             path = getattr(log, "path", None)

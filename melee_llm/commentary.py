@@ -1,0 +1,267 @@
+"""Live commentary for the live slot: a play-by-play ticker from game state, plus optional LLM colour lines.
+
+`PlayTracker` turns frames into events (combo strings, stocks, offstage hits, shield breaks). `Commentary`
+writes the notable ones to a JSONL the Live page tails (kind "commentary"; matches.MatchPublisher starts one per
+game of the live-slot match and lists it in the registry's logs), and, while the `commentator`
+setting is on, a background thread turns recent events into one or two lines of LLM commentary. Nothing here
+blocks the game loop: update() is a few comparisons per frame and the LLM call runs on its own thread.
+
+Records: {"type": "event", "text", "frame", "big", "ts"} and {"type": "line", "text", "frame", "model",
+"latency_s", "ts"}. `ts` is when the moment happened (a line carries the ts of the newest event it covers),
+so the page shows both when the video reaches that moment.
+"""
+from __future__ import annotations
+
+import json
+import queue
+import threading
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import melee
+from melee import Action as A
+
+from melee_llm.state import DAMAGED, actionable, in_hitstun
+
+FPS = 60
+STRING_END = 30  # frames the victim must be actionable (and not hit) before a combo string counts as over
+SELF_DESTRUCT = 240  # a stock lost this long after the last hit taken is a self-destruct
+DEFAULT_MODEL = "claude-haiku-5-5"
+
+
+@dataclass
+class Event:
+    frame: int
+    text: str
+    big: bool = False  # shown in the ticker (small ones only feed the LLM)
+    ts: float = field(default_factory=time.time)
+
+
+@dataclass
+class _String:
+    """Hits on one victim without them getting free in between."""
+    attacker: int
+    start_pct: float
+    hits: int = 0
+    damage: float = 0.0
+    free_frames: int = 0
+
+
+class PlayTracker:
+    def __init__(self, names: dict[int, str]):
+        self.names = names  # port → "Faynt's Marth"
+        self.prev: dict[int, tuple] = {}
+        self.strings: dict[int, _String] = {}  # victim port → current string
+        self.last_hit: dict[int, int] = {}  # victim port → frame of the last hit taken
+        self.last_stock_called = False
+
+    def update(self, gs: melee.GameState) -> list[Event]:
+        out: list[Event] = []
+        f = int(gs.frame)
+        ports = [p for p in self.names if p in gs.players]
+        for p in ports:
+            ps, opp = gs.players[p], next((q for q in ports if q != p), None)
+            name = self.names[p]
+            cur = (float(ps.percent), int(ps.stock), ps.action, bool(ps.off_stage))
+            if p not in self.prev:
+                self.prev[p] = cur
+                continue
+            pct, stock, act, off = self.prev[p]
+            s = self.strings.get(p)
+            if cur[1] < stock:
+                out.append(self._stock_lost(p, opp, f, pct, cur[1], s))
+                self.strings.pop(p, None)
+            elif cur[0] > pct + 0.5 and opp is not None:
+                if s is None:
+                    s = self.strings[p] = _String(opp, pct)
+                s.hits, s.damage, s.free_frames = s.hits + 1, s.damage + cur[0] - pct, 0
+                self.last_hit[p] = f
+            elif s is not None:
+                s.free_frames = s.free_frames + 1 if actionable(ps) and not in_hitstun(ps) else 0
+                if s.free_frames >= STRING_END:
+                    if s.hits >= 3 or s.damage >= 35:
+                        out.append(Event(f, f"{self.names[s.attacker]}: {s.hits}-hit string, {s.damage:.0f}% on {name}", big=True))
+                    elif s.hits:
+                        out.append(Event(f, f"{self.names[s.attacker]} hits {name} ({s.damage:.0f}%)"))
+                    self.strings.pop(p, None)
+            if ps.action != act:
+                a = ps.action
+                if a == A.SHIELD_BREAK_FLY:
+                    out.append(Event(f, f"{name}'s shield breaks!", big=True))
+                elif a in (A.TECH_MISS_UP, A.TECH_MISS_DOWN):
+                    out.append(Event(f, f"{name} misses the tech"))
+                elif a == A.EDGE_CATCHING and off:
+                    out.append(Event(f, f"{name} grabs the ledge"))
+            if cur[3] and not off and ps.action in DAMAGED:
+                out.append(Event(f, f"{name} knocked offstage at {cur[0]:.0f}%", big=cur[0] >= 60))
+            self.prev[p] = cur
+        if (not self.last_stock_called and len(ports) == 2
+                and all(int(gs.players[p].stock) == 1 for p in ports) and all(self.prev[p][1] == 1 for p in ports)):
+            self.last_stock_called = True
+            out.append(Event(f, "Last stock each!", big=True))
+        return out
+
+    def _stock_lost(self, p: int, opp: int | None, f: int, pct: float, left: int, s: _String | None) -> Event:
+        name, tail = self.names[p], f"({left} left)" if left else "(that's the game)"
+        if f - self.last_hit.get(p, -10**9) > SELF_DESTRUCT or opp is None:
+            return Event(f, f"{name} self-destructs at {pct:.0f}% {tail}", big=True)
+        killer = self.names[opp]
+        if s and s.start_pct < 5 and s.hits >= 3:
+            return Event(f, f"Zero-to-death! {killer} takes {name}'s stock with a {s.hits}-hit string {tail}", big=True)
+        return Event(f, f"{killer} takes {name}'s stock at {pct:.0f}% {tail}", big=True)
+
+
+def commentator_enabled() -> bool:
+    from melee_llm.web import jobs  # the web package's settings table; imported lazily (live slot only)
+    try:
+        return jobs.setting("commentator", "off") == "on"
+    except Exception:
+        return False
+
+
+def commentator_model() -> str:
+    from melee_llm.web import jobs
+    try:
+        return jobs.setting("commentator_model", DEFAULT_MODEL) or DEFAULT_MODEL
+    except Exception:
+        return DEFAULT_MODEL
+
+
+SYSTEM = """You are the play-by-play commentator for a live exhibition of Super Smash Bros. Melee where AI bots \
+play each other. Write ONE short line (at most 25 words) for the viewers about what just happened, in the voice of \
+an energetic but knowledgeable Melee caster. Stay accurate: only describe what the events and score say, never \
+invent specific moves or techniques. Vary your phrasing, don't repeat earlier lines, and when nothing big \
+happened, talk about momentum, the score, or the matchup instead."""
+
+TOOL = {"type": "function", "function": {
+    "name": "say", "description": "Say one commentary line on stream.",
+    "parameters": {"type": "object", "properties": {"line": {"type": "string"}}, "required": ["line"]}}}
+
+
+def for_match(status: dict, replay) -> "Commentary":
+    """A Commentary for the game that just started, from a matches.MatchPublisher status."""
+    from melee_llm.paths import DATA
+    from melee_llm.web.specs import char_name, kind_of, label, stage_name
+
+    s, elo = status, status.get("elo") or {}
+    players = {}
+    for p, v in s["players"].items():
+        spec = v.get("spec")
+        who = label(spec) if spec else f"CPU {v['cpu_level']}" if v.get("cpu_level") else v.get("name") or f"P{p}"
+        kind = kind_of(spec) if spec else "cpu" if v.get("cpu_level") else "player"
+        players[int(p)] = (who, kind, char_name(v.get("character") or ""))
+    names = {p: f"{who}'s {char}" for p, (who, _, char) in players.items()}
+    vs = " vs ".join(f"{who} ({kind}, {char}{f', {elo[str(p)]} Elo' if str(p) in elo else ''})"
+                     for p, (who, kind, char) in sorted(players.items()))
+    games = f", game {s['game'] + 1} of {s['games']}" if s.get("games", 1) > 1 else ""
+    stage = stage_name(s.get("stage") or "")
+    path = (Path(replay).with_suffix(".p0.commentary.jsonl") if replay
+            else DATA / "commentary" / f"{time.strftime('%Y%m%dT%H%M%S')}.jsonl")
+    c = Commentary(path, names, f"{vs} on {stage}, {s.get('label') or s.get('source')}{games}")
+    c.start(stage)
+    return c
+
+
+class Commentary:
+    """One game's commentary: ticker events always, LLM lines while the `commentator` setting is on."""
+
+    def __init__(self, path: Path, names: dict[int, str], context: str, min_gap: float = 4.0, quiet_gap: float = 10.0):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.path, self.context = path, context
+        self.f = path.open("a")
+        self.lock = threading.Lock()
+        self.tracker = PlayTracker(names)
+        self.names = names
+        self.min_gap, self.quiet_gap = min_gap, quiet_gap
+        self.inbox: queue.Queue = queue.Queue()
+        self.score = ""
+        self.stop_ev = threading.Event()
+        self.thread = threading.Thread(target=self._run, daemon=True, name="commentator")
+        self.thread.start()
+
+    def write(self, rec: dict) -> None:
+        with self.lock:
+            if not self.f.closed:
+                self.f.write(json.dumps(rec) + "\n")
+                self.f.flush()
+
+    def start(self, stage: str) -> None:
+        a, b = (self.names[p] for p in sorted(self.names))
+        ev = Event(0, f"{a} vs {b} on {stage}. Go!", big=True)
+        self.write({"type": "event", "text": ev.text, "frame": 0, "big": True, "ts": round(ev.ts, 3)})
+        self.inbox.put(ev)
+
+    def update(self, gs: melee.GameState) -> None:
+        for ev in self.tracker.update(gs):
+            if ev.big:
+                self.write({"type": "event", "text": ev.text, "frame": ev.frame, "big": True, "ts": round(ev.ts, 3)})
+            self.inbox.put(ev)
+        if gs.frame % 30 == 0:
+            parts = [f"{self.names[p]}: {int(ps.stock)} stocks, {float(ps.percent):.0f}%" for p, ps in gs.players.items() if p in self.names]
+            secs = max(0, 8 * 60 - max(0, int(gs.frame)) // FPS)
+            self.score = "; ".join(parts) + f"; {secs // 60}:{secs % 60:02d} left on the clock"
+
+    def end(self, text: str | None = None) -> None:
+        """Game over (or aborted): the thread says one last line about `text`, closes the file and exits."""
+        if text and not self.stop_ev.is_set():
+            ev = Event(-1, text, big=True)
+            self.write({"type": "event", "text": text, "big": True, "ts": round(ev.ts, 3)})
+            self.inbox.put(ev)
+        self.stop_ev.set()
+
+    def join(self, timeout: float = 12) -> None:
+        self.thread.join(timeout)
+
+    def _run(self) -> None:
+        try:
+            self._loop()
+        finally:
+            with self.lock:
+                self.f.close()
+
+    def _loop(self) -> None:
+        llm, model, said, pending = None, "", [], []
+        last_line, last_check, enabled = 0.0, 0.0, False
+        while True:
+            try:
+                pending.append(self.inbox.get(timeout=0.25))
+                continue  # drain everything queued before deciding
+            except queue.Empty:
+                pass
+            now = time.time()
+            if now - last_check > 3:
+                last_check, enabled = now, commentator_enabled()
+                if enabled and llm is None:
+                    from melee_llm.llm import LLM
+                    model = commentator_model()
+                    llm = LLM(model, timeout=10, max_tokens=300)
+            finishing = self.stop_ev.is_set()
+            if not enabled:
+                pending.clear()
+                if finishing:
+                    return
+                continue
+            due = pending and (any(e.big for e in pending) and now - last_line >= self.min_gap or now - last_line >= self.quiet_gap)
+            if finishing and pending:
+                due = True
+            if not due:
+                if finishing:
+                    return
+                continue
+            events, pending = pending, []
+            user = (f"Match: {self.context}\nScore now: {self.score or 'game starting'}\n"
+                    f"What just happened (oldest first):\n" + "\n".join(f"- {e.text}" for e in events[-20:]) +
+                    ("\nEarlier lines you said:\n" + "\n".join(f"- {s}" for s in said[-4:]) if said else ""))
+            rep = llm.choose(SYSTEM, user, TOOL)
+            line = (rep.args or {}).get("line", "").strip()
+            last_line = time.time()
+            if line:
+                said.append(line)
+                self.write({"type": "line", "text": line, "frame": max(e.frame for e in events), "model": rep.model,
+                            "latency_s": round(rep.latency_s, 2), "prompt_tokens": rep.prompt_tokens,
+                            "completion_tokens": rep.completion_tokens, "ts": round(max(e.ts for e in events), 3)})
+            elif rep.error:
+                self.write({"type": "error", "text": rep.error[:200], "ts": round(time.time(), 3)})
+            if finishing:
+                return
