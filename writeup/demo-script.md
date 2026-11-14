@@ -5,7 +5,8 @@ About 5-7 minutes. Three parts: website tour, a live commentated match, you vs a
 ## Before you start (15 min before)
 
 - [ ] Laptop on power, sound out to speakers, browser zoom so the site fills the projector.
-- [ ] Tabs open, in order: **Bench**, **Live**, **Launch**, **Games** (one replay), the **write-up** page, and the backup clip (`writeup/media/backup-clip.mp4`, downloaded locally).
+- [ ] Sign in: open `melee.m19182.dev/login` once in the demo browser. Signed out, the site is the public view: **Commentator**, **Arena fills idle time**, **Start now** and the Cancel buttons are not shown.
+- [ ] Tabs open, in order: **Bench**, **Live**, **Launch**, **Games** (one replay), the **write-up** page (`/writeup/`, also the **Write-up** menu item), and the backup clip (`writeup/media/backup-clip.mp4`, downloaded locally).
 - [ ] Server: nothing queued on the live slot (Live page → "Up next" says "Queue empty."). Turn **Arena fills idle time** off so the slot is free when you launch.
 - [ ] Commentator test: on the Live page tick **Commentator** and **Voice**, and hear one line during any game. If no voice comes, check `~/.config/melee-llm/elevenlabs.env` on the server.
 - [ ] Laptop: charger in, GameCube controller on the Wii U adapter (switch on "Wii U") and one short `play.py` game with it (see part 4).
@@ -75,7 +76,7 @@ uv run play.py --iso "$ISO" --bot phillip:gm --bot-char FOX             # Philli
 
 ## 5. Outro (20 s)
 
-> "All of this, the bench, the coach, the commentators, the simulator, our own Yoshi bot, was built in two days. The write-up is at melee.m19182.dev."
+> "All of this, the bench, the coach, the commentators, the simulator, our own Yoshi bot, was built in two days. The write-up is at melee.m19182.dev/writeup."
 
 Leave the Bench page up.
 
