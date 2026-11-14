@@ -1,9 +1,5 @@
 """Offline checks of the bench: spec resolution, track assignment, the fit, and one scheduling decision."""
 import random
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from melee_llm.bench import entrants, ratings, scheduler
 

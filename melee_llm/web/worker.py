@@ -1,7 +1,7 @@
 """The worker owns the live slot (display :99, Slippi port 51441) and the headless pool (display :98).
 
 Live jobs run on the live slot one at a time, in queue order. When none is queued, the arena
-(arena.py, one game per process) fills the slot; a queued job waits for the arena game to finish,
+(melee_llm.arena, one game per process) fills the slot; a queued job waits for the arena game to finish,
 or aborts it if the job asked to start now. Headless (fast) jobs run in parallel, up to 4, on
 ports 51700-51799. Every job runs as `melee_llm.web.runjob` in its own process group, so cancel
 kills Dolphin and the bots with it.
@@ -20,9 +20,10 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from melee_llm.runner import _port_free
-from melee_llm.web import jobs, live, logs
-from melee_llm.web.paths import (DATA, HEADLESS_MAX, HEADLESS_PORTS, ISO, LIVE_DISPLAY, LIVE_PORT, ROOT, VENV_PY)
+from melee_llm.paths import DATA, HEADLESS_DISPLAY, HEADLESS_MAX, HEADLESS_PORTS, ISO, LIVE_DISPLAY, LIVE_PORT, ROOT, VENV_PY
+from melee_llm.players import unthrottled
+from melee_llm.util import claim_slot, port_free, read_jsonl
+from melee_llm.web import jobs, logs
 
 ARENA_LOG = DATA / "arena.log"
 KILL_AFTER = 20  # seconds between SIGTERM and SIGKILL
@@ -36,6 +37,7 @@ class Proc:
     started: float = field(default_factory=time.time)
     term_at: float | None = None
     synced: float = 0.0
+    slot: object = None  # machine slot held by an unthrottled headless job
 
     def terminate(self) -> None:
         if self.term_at is None:
@@ -88,8 +90,8 @@ class Worker:
         d = Path(job["dir"])
         spec = {k: job[k] for k in ("id", "p1", "p2", "char1", "char2", "stage", "mode", "games")}
         cmd = [str(VENV_PY), "-m", "melee_llm.web.runjob", "--job", json.dumps(spec), "--dir", str(d),
-               "--port", str(port), "--iso", self.iso] + (["--live"] if is_live else [])
-        p = self._spawn(cmd, LIVE_DISPLAY if is_live else ":98", d / "output.log")
+               "--port", str(port), "--iso", self.iso]
+        p = self._spawn(cmd, LIVE_DISPLAY if is_live else HEADLESS_DISPLAY, d / "output.log")
         jobs.update(job["id"], status="running", started=time.time(), pid=p.pid, port=port)
         print(f"job {job['id']} started on port {port}: {job['p1']} vs {job['p2']} ({job['mode']})", flush=True)
         return Proc(p, "job", job)
@@ -97,18 +99,14 @@ class Worker:
     def start_arena(self) -> Proc:
         if ARENA_LOG.exists() and ARENA_LOG.stat().st_size > 5 << 20:
             ARENA_LOG.replace(ARENA_LOG.with_suffix(".log.1"))
-        p = self._spawn([str(VENV_PY), "arena.py", "--iso", self.iso, "--games", "1", "--no-retry"], LIVE_DISPLAY, ARENA_LOG)
+        p = self._spawn([str(VENV_PY), "-m", "melee_llm.arena", "--iso", self.iso, "--games", "1", "--no-retry"], LIVE_DISPLAY, ARENA_LOG)
         return Proc(p, "arena")
 
     def sync(self, proc: Proc, final: bool = False) -> None:
         """Copy results and token counts from the job dir into the DB (while running, every 5 s)."""
         job = proc.job
         d = Path(job["dir"])
-        results = []
-        try:
-            results = [json.loads(ln) for ln in (d / "results.jsonl").read_text().splitlines() if ln.strip()]
-        except (OSError, ValueError):
-            pass
+        results = read_jsonl(d / "results.jsonl")
         found = sorted(p for p in d.rglob("*.jsonl") if p.name != "results.jsonl")  # incl. logs not yet renamed
         fields = {"results": results, "tokens": logs.tokens(found)}
         if final:
@@ -135,6 +133,8 @@ class Worker:
         for jid, proc in list(self.headless.items()):
             if proc.popen.poll() is not None:
                 self.sync(proc, final=True)
+                if proc.slot:
+                    proc.slot.close()
                 del self.headless[jid]
             elif time.time() - proc.synced > 5:
                 self.sync(proc)
@@ -145,7 +145,6 @@ class Worker:
                 self.arena_backoff = time.time() + 30
             self.live = None
             self.live_free_since = time.time()
-            live.idle()
         elif self.live and self.live.kind == "job" and time.time() - self.live.synced > 5:
             self.sync(self.live)
         if self.stopping:
@@ -155,15 +154,19 @@ class Worker:
             if len(self.headless) >= HEADLESS_MAX:
                 break
             used = {p.job["port"] for p in self.headless.values() if p.job.get("port")}
-            port = next((p for p in HEADLESS_PORTS if p not in used and _port_free(p)), None)
+            port = next((p for p in HEADLESS_PORTS if p not in used and port_free(p)), None)
             if port is None:
                 break
+            slot = None
+            if unthrottled(job["mode"], job["p1"], job["p2"]) and (slot := claim_slot(wait=False)) is None:
+                continue  # other tracks hold every slot: try again next tick, let waited-for LLM jobs through
             job["port"] = port
             self.headless[job["id"]] = self.start_job(job, port, is_live=False)
+            self.headless[job["id"]].slot = slot
         # live slot
         waiting = jobs.queued("live")
         if self.live is None:
-            port_ok = _port_free(LIVE_PORT) or time.time() - (self.live_free_since or 0) > 60
+            port_ok = port_free(LIVE_PORT) or time.time() - (self.live_free_since or 0) > 60
             if waiting and port_ok:
                 self.live = self.start_job(waiting[0], LIVE_PORT, is_live=True)
             elif not waiting and port_ok and jobs.setting("arena", "on") == "on" and time.time() > self.arena_backoff:
@@ -184,7 +187,6 @@ class Worker:
                            "WHERE status = 'running'", (time.time(),)).rowcount
         if n:
             print(f"marked {n} interrupted jobs as failed", flush=True)
-        live.idle()
 
     def run(self) -> None:
         self.recover()
@@ -202,7 +204,6 @@ class Worker:
                 for p in procs:
                     p.terminate()
             time.sleep(0.5)
-        live.idle()
 
 
 def main() -> None:

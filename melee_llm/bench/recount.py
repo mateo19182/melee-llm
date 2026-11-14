@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 
 from melee_llm.bench.game import side_stats
-from melee_llm.runner import ROOT
+from melee_llm.paths import ROOT
 
 PATH = ROOT / "data/bench/recount.json"
 KEYS = ("decisions", "dropped", "calls", "prompt_tokens", "completion_tokens", "tokens_estimated", "usd")

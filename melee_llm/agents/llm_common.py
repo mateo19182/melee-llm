@@ -12,7 +12,7 @@ from melee import Action as A
 from melee_llm.actions import ACTIONS, Executor, action_help, tool_schema
 from melee_llm.agents.base import Agent
 from melee_llm.llm import LLM, Reply
-from melee_llm.runner import ROOT
+from melee_llm.paths import REPLAYS
 from melee_llm.state import DEAD, EventTracker, actionable, framedata, observe, render, stage_text
 
 SYSTEM = """You are an AI playing Super Smash Bros. Melee (NTSC 1.02) as {me} against {opp}. {stage}
@@ -49,7 +49,7 @@ COSTUMES = {melee.Character.FOX: {0: "default: white jacket, green trousers", 1:
 
 
 def parse_spec(arg: str | None) -> dict:
-    """match.py spec text after the colon, "model[,key=value...]" → constructor kwargs."""
+    """Spec text after the colon, "model[,key=value...]" → constructor kwargs."""
     if not arg:
         return {}
     model, *rest = arg.split(",")
@@ -112,7 +112,7 @@ class LLMAgent(Agent):
         self.llm = LLM(model, base_url=base_url, timeout=timeout, mode=mode, effort=effort)
         self.tool = tool_schema()
         self.reflexes, self.system_extra = reflexes, system_extra
-        self.log_dir = Path(log_dir) if log_dir else ROOT / "replays"
+        self.log_dir = Path(log_dir) if log_dir else REPLAYS
         self.log: DecisionLog | None = None
         self.history: list[dict] = []
         self.stats: list[dict] = []

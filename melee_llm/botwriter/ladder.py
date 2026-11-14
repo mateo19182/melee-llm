@@ -85,6 +85,7 @@ def run_job(job: dict, cfg: dict) -> list[dict]:
     from melee_llm.botwriter.dolphin import claim_slippi_port, exit_on_term
     from melee_llm.botwriter.specs import make_agent
     from melee_llm.runner import play
+    from melee_llm.util import claim_slot
 
     if _PORT is None:
         _PORT = claim_slippi_port()
@@ -111,12 +112,13 @@ def run_job(job: dict, cfg: dict) -> list[dict]:
                 return [{**base, "game": i, "winner": winner, "forfeit": who, "reason": f"{type(e).__name__}: {e}"[:500],
                          "ts": time.time()} for i in range(job["games"])]
             agents[port], side[port] = ag, who
-        signal.signal(signal.SIGALRM, _alarm)
-        signal.alarm(int(cfg["job_timeout_s"]))
         rdir = out / "replays" / job["id"]
-        results = play(agents, cfg["iso"], melee.Stage[job["stage"]], mode="fast", games=job["games"], replay_dir=rdir,
-                       slippi_port=_PORT)
-        signal.alarm(0)
+        with claim_slot():  # waiting for a slot is not part of the job's time limit
+            signal.signal(signal.SIGALRM, _alarm)
+            signal.alarm(int(cfg["job_timeout_s"]))
+            results = play(agents, cfg["iso"], melee.Stage[job["stage"]], mode="fast", games=job["games"], replay_dir=rdir,
+                           slippi_port=_PORT)
+            signal.alarm(0)
         recs = []
         for i, r in enumerate(results):
             stats = {side[p]: (agents[p].game_stats[i] if i < len(getattr(agents[p], "game_stats", [])) else None) for p in agents}

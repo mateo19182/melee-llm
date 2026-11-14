@@ -7,7 +7,7 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
-from melee_llm.web.paths import DB, JOBS
+from melee_llm.paths import DB, JOBS
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -28,13 +28,19 @@ CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 FIELDS = ("p1", "p2", "char1", "char2", "stage", "mode", "games", "preempt")
 
 
+_ready: set[Path] = set()  # databases this process has already created the schema in
+
+
 @contextmanager
 def connect(path: Path = DB):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    db = sqlite3.connect(path, timeout=10)
+    db = sqlite3.connect(path, timeout=10) if path in _ready else None
+    if db is None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        db = sqlite3.connect(path, timeout=10)
+        db.execute("PRAGMA journal_mode=WAL")  # persistent: stored in the database file
+        db.executescript(SCHEMA)
+        _ready.add(path)
     db.row_factory = sqlite3.Row
-    db.execute("PRAGMA journal_mode=WAL")
-    db.executescript(SCHEMA)
     try:
         yield db
         db.commit()

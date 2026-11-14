@@ -3,10 +3,10 @@
 An LLM does not press buttons here. A fast learned policy (the **body**) plays every frame, and the LLM (the **coach**) changes the body's strategy every few seconds. The default body is [Reyn-26C](bots.md#reyn-language-steerable), which takes English commands; HAL also works, steered through two numeric knobs.
 
 ```sh
-uv run match.py --iso ~/melee.iso --p1 "coach:haiku,interval=300" --p2 cpu:9 --mode lockstep
-uv run match.py --iso ~/melee.iso --p1 "coach:haiku,body=hal,body_arg=MASTER" --p2 phillip:gm
-uv run match.py --iso ~/melee.iso --p1 "reyn:Keep your distance and shoot lasers." --p2 cpu:9   # fixed command
-uv run match.py --iso ~/melee.iso --p1 "coach:random,interval=300" --p2 cpu:9                 # random coach
+uv run -m melee_llm.match --iso ~/melee.iso --p1 "coach:haiku,interval=300" --p2 cpu:9 --mode lockstep
+uv run -m melee_llm.match --iso ~/melee.iso --p1 "coach:haiku,body=hal,body_arg=MASTER" --p2 phillip:gm
+uv run -m melee_llm.match --iso ~/melee.iso --p1 "reyn:Keep your distance and shoot lasers." --p2 cpu:9   # fixed command
+uv run -m melee_llm.match --iso ~/melee.iso --p1 "coach:random,interval=300" --p2 cpu:9                 # random coach
 ```
 
 Spec: `coach:<model>[,body=reyn|hal,interval=60,body_arg=...,command=<id>,timeout=10,history=4]`. `<model>` is a CLIProxy model id, or `haiku`/`sonnet` for short, or `random`. `interval` is the number of frames between coach calls. `command` sets a starting command id. Use `lockstep` (or `fast`) mode, as for every learned bot.

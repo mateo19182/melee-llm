@@ -1,6 +1,6 @@
 """Offline tests for the LLM-player layer: state rendering on replays, macros on a toy sim and replays.
 
-Run: uv run --with pytest pytest -q tests/ ; or `uv run python tests/test_llm_layer.py` to print traces.
+Run: uv run pytest -q tests/ ; or `uv run python tests/test_llm_layer.py` to print traces.
 """
 from __future__ import annotations
 
@@ -10,13 +10,13 @@ from pathlib import Path
 
 sys.path[:0] = [str(Path(__file__).resolve().parent.parent), str(Path(__file__).parent)]
 
+from fakesim import FakeSim  # noqa: E402
 from melee import Action as A  # noqa: E402
 
 from melee_llm import actions  # noqa: E402
 from melee_llm.actions import Executor, RecordingController  # noqa: E402
 from melee_llm.runner import replay_states  # noqa: E402
 from melee_llm.state import EventTracker, observe, render  # noqa: E402
-from fakesim import FakeSim  # noqa: E402
 
 REPLAYS = Path(__file__).resolve().parent.parent / "replays"
 SAMPLE = REPLAYS / "sample-slippi-js-itemExport.slp"  # Falco vs Samus, Battlefield, stock loss

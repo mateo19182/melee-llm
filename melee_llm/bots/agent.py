@@ -15,9 +15,8 @@ import melee
 
 from melee_llm.agents.base import Agent
 from melee_llm.bots import protocol
+from melee_llm.paths import VENDOR  # noqa: F401 - re-exported for the bot classes
 
-ROOT = Path(__file__).resolve().parents[2]
-VENDOR = ROOT / "vendor"
 SERVER = Path(__file__).resolve().parent / "server.py"
 APPLIED_BUTTONS = [melee.Button[n] for n in ("BUTTON_A", "BUTTON_B", "BUTTON_X", "BUTTON_Y", "BUTTON_Z",
                                              "BUTTON_L", "BUTTON_R", "BUTTON_D_UP")]
@@ -92,6 +91,8 @@ class BotAgent(Agent):
         self.model_ms: list[float] = []
         self.errors = 0
         self._proc = None
+        self._asked = None  # (steer sent, send time) of the frame the child is working on
+        self._loading = False  # init sent, reply not read yet
 
     @property
     def name(self) -> str:
@@ -107,6 +108,7 @@ class BotAgent(Agent):
         self._start()
 
     def _start(self) -> None:
+        """Spawn the model process and send init; `ready` collects the answer once the model has loaded."""
         if not self.python.exists():
             raise RuntimeError(f"{self.bot}: missing venv {self.python}; see docs/bots.md")
         self._proc = subprocess.Popen([str(self.python), str(SERVER), self.bot], cwd=self.cwd,
@@ -114,6 +116,12 @@ class BotAgent(Agent):
         protocol.send(self._proc.stdin, {
             "op": "init", "port": self.port, "opponent_port": self.opponent_port,
             "character": self.character.name, "config": self.init_config(), "steer": dict(self.steer)})
+        self._loading = True
+
+    def ready(self) -> None:
+        if not self._loading:
+            return
+        self._loading = False
         reply = protocol.recv(self._proc.stdout)
         if not reply["ok"]:
             self.close()
@@ -123,13 +131,21 @@ class BotAgent(Agent):
         self.steer = dict(self.applied_steer)
         self._sent_steer = dict(self.steer)
 
-    def step(self, gs: melee.GameState) -> None:
+    def begin(self, gs: melee.GameState) -> None:
+        """Send the frame. The runner does this for both players before either `step`, so two bots infer at
+        the same time and a frame costs the slower one, not the sum."""
+        self.ready()
         events = self._events[:]
         del self._events[:]
         steer = None if self.steer == self._sent_steer else dict(self.steer)
-        t0 = time.perf_counter()
+        self._asked = (steer, time.perf_counter())
         protocol.send(self._proc.stdin, {"op": "step", "events": events, "steer": steer,
                                          "open_loop": self.open_loop})
+
+    def step(self, gs: melee.GameState) -> None:
+        if self._asked is None:  # called without begin(): tests, bots/bench.py, netplay
+            self.begin(gs)
+        (steer, t0), self._asked = self._asked, None
         reply = protocol.recv(self._proc.stdout)
         self.round_trip_ms.append((time.perf_counter() - t0) * 1000)
         if steer is not None:

@@ -6,9 +6,9 @@ import json
 from pathlib import Path
 
 from melee_llm.llm_arena import ratings, tournament
-from melee_llm.runner import ROOT
+from melee_llm.paths import DATA
 
-DEFAULT_OUT = ROOT / "data/llm-arena"
+DEFAULT_OUT = DATA / "llm-arena"
 
 
 def main() -> None:

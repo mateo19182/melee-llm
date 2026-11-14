@@ -6,7 +6,6 @@ import ctypes
 import os
 import re
 import signal
-import socket
 import struct
 import subprocess
 import threading
@@ -19,19 +18,17 @@ import melee
 
 from melee_llm import matches
 from melee_llm.agents.base import Agent
+from melee_llm.paths import DOLPHIN_HEADLESS, DOLPHIN_RENDERED, HEADLESS_DISPLAY, LIVE_DISPLAY, REPLAYS
+from melee_llm.util import port_free
 
-ROOT = Path(__file__).resolve().parent.parent
 DOLPHIN = {
-    "watch": ROOT / "scripts/dolphin-gpu.sh",  # rendered on the GPU, real time (view on :99)
-    "paused": ROOT / "scripts/dolphin-gpu.sh",  # rendered, game waits for every input (slow players → slow motion)
-    "lockstep": ROOT / "scripts/dolphin-gpu.sh",  # same as paused; with fast bots it runs at real time, no dropped frames
-    "fast": ROOT / "bin/Slippi_Mainline_ExiAI.AppImage",  # headless, unthrottled
-    "realtime": ROOT / "bin/Slippi_Mainline_ExiAI.AppImage",  # headless lockstep: 60 fps cap, game waits for slow inputs
+    "watch": DOLPHIN_RENDERED,  # rendered on the GPU, real time (view on :99)
+    "paused": DOLPHIN_RENDERED,  # rendered, game waits for every input (slow players → slow motion)
+    "lockstep": DOLPHIN_RENDERED,  # same as paused; with fast bots it runs at real time, no dropped frames
+    "fast": DOLPHIN_HEADLESS,  # headless, unthrottled
+    "realtime": DOLPHIN_HEADLESS,  # headless lockstep: 60 fps cap, game waits for slow inputs
 }
-
-
-HEADLESS_DISPLAY = os.environ.get("MELEE_HEADLESS_DISPLAY", ":98")  # the ExiAI build still wants an X display
-WINDOW = (1280, 960)  # matches the Xvfb :99 screen that live.sh starts
+WINDOW = (1280, 960)  # matches the Xvfb :99 screen that scripts/live.sh starts
 LIVE_WINDOW = (1168, 960)  # the streamed game window on :99: Melee's 73:60 at the screen's full height
 
 
@@ -69,7 +66,7 @@ class Console(melee.Console):
                 cfg.write(f)
 
     def _live(self) -> bool:
-        return os.environ.get("DISPLAY") == matches.LIVE_DISPLAY
+        return os.environ.get("DISPLAY") == LIVE_DISPLAY
 
     def run(self, *args, **kwargs):
         super().run(*args, **kwargs)
@@ -134,15 +131,6 @@ def _kill_matching(needle: str) -> None:
             pass
 
 
-def _port_free(port: int) -> bool:
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-        try:
-            s.bind(("127.0.0.1", port))
-            return True
-        except OSError:
-            return False
-
-
 @dataclass
 class GameResult:
     stocks: dict[int, int]
@@ -188,12 +176,13 @@ def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BA
     page). `meta` overrides what it guesses: {"source", "label", "job_id", "specs": {port: spec}, ...}.
     """
     notify = observer or (lambda event, info: None)
+    stepping = [a for a in agents.values() if not a.cpu_level]
     assert len(agents) == 2, "two ports for now"
-    if not _port_free(slippi_port):
+    if not port_free(slippi_port):
         raise RuntimeError(f"Slippi port {slippi_port} is busy: a stale Dolphin is probably still running")
     fast, blocking = mode == "fast", mode in ("fast", "paused", "lockstep", "realtime")
     headless = mode in ("fast", "realtime")
-    replay_dir = replay_dir or ROOT / "replays"
+    replay_dir = replay_dir or REPLAYS
     replay_dir.mkdir(parents=True, exist_ok=True)
     console = Console(
         path=str(DOLPHIN[mode]), fullscreen=False, save_replays=True, replay_dir=str(replay_dir),
@@ -224,6 +213,8 @@ def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BA
                 raise RuntimeError("could not connect controller")
         for p, a in agents.items():
             a.setup(controllers[p], p, next(q for q in ports if q != p))
+        for a in agents.values():
+            a.ready()
         menu, results = melee.MenuHelper(), []
         last, frames, t0, replay = None, 0, time.time(), None
         seen = set(replay_dir.rglob("*.slp"))
@@ -233,9 +224,8 @@ def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BA
                 continue
             if gs.menu_state == melee.Menu.SUDDEN_DEATH and last is None and results:
                 # tie-break of a timed-out game that was already scored (stocks, then percent): play it out uncounted
-                for p, a in agents.items():
-                    if not a.cpu_level:
-                        a.step(gs)
+                for a in stepping:
+                    a.step(gs)
                 continue
             if gs.menu_state in (melee.Menu.IN_GAME, melee.Menu.SUDDEN_DEATH):
                 if last is None:
@@ -250,12 +240,14 @@ def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BA
                         pub.game_start(len(results), gs, replay)
                     notify("game_start", {"game": len(results), "replay": replay, "gs": gs})
                 last, frames = gs, frames + 1
-                for p, a in agents.items():
-                    if not a.cpu_level:
-                        a.step(gs)
+                for a in stepping:
+                    a.begin(gs)
+                for a in stepping:
+                    a.step(gs)
                 if pub:
                     pub.frame(gs)
-                notify("frame", {"gs": gs})
+                if observer:
+                    observer("frame", {"gs": gs})
                 continue
             if last is not None:
                 results.append(_result(last, frames, t0, agents))

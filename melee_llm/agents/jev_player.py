@@ -6,7 +6,7 @@ fan-out"): `action`, a Choice over every macro, and one question per macro param
 ledge, frames as buckets, fastfall as a Noul). Only the parameters the chosen action takes are used. Jev has no free
 text, so `reason` holds the action's probability, and the log carries the top-k probabilities of every question.
 
-match.py specs: jev_live[:<model>][,interval=15,max_stale=60,top_k=5,params=all|none,shuffle=1,timeout=1.5]
+specs: jev_live[:<model>][,interval=15,max_stale=60,top_k=5,params=all|none,shuffle=1,timeout=1.5]
                 jev_paused[:<model>][,interval=30,...]
 """
 from __future__ import annotations

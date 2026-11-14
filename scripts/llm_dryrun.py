@@ -1,6 +1,6 @@
 """Drive an LLM agent with replay states (no ISO): real LLM calls, controller output recorded, not sent.
 
-  uv run python tests/llm_dryrun.py replays/x.slp llm_paused:claude-haiku-4-5-20251001 --decisions 5
+  uv run python scripts/llm_dryrun.py replays/x.slp llm_paused:claude-haiku-4-5-20251001 --decisions 5
   --realtime streams frames at 60 fps (for llm_live latency in frames). The replay ignores our inputs, so
   this measures prompts, parsing and latency, not play quality.
 """

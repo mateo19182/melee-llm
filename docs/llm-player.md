@@ -3,8 +3,8 @@
 An LLM picks **macro-actions** from structured state, and a frame-level executor turns them into controller inputs. The LLM never presses buttons. This follows what worked in earlier projects (reflex, LLM Colosseum): give the model structured state, have it choose macros, keep the motor layer deterministic, and favour small fast models.
 
 ```sh
-uv run match.py --iso ~/melee.iso --mode paused --p1 llm_paused:claude-haiku-4-5-20251001 --p2 cpu:3
-uv run match.py --iso ~/melee.iso --p1 llm_live:claude-haiku-4-5-20251001,interval=20 --p2 cpu:3
+uv run -m melee_llm.match --iso ~/melee.iso --mode paused --p1 llm_paused:claude-haiku-4-5-20251001 --p2 cpu:3
+uv run -m melee_llm.match --iso ~/melee.iso --p1 llm_live:claude-haiku-4-5-20251001,interval=20 --p2 cpu:3
 ```
 
 The spec format is `<kind>:<model>[,key=value...]`. Keys: `interval` (frames between forced decisions, default 30), `history` (past decisions in the prompt, default 6), `mode` (`json`, the default, or `tool` for function calling), `effort` (`reasoning_effort`, default `none`), `base_url` (a local vLLM or llama.cpp server), `timeout`, `reflexes` and `max_stale` (live only). `MELEE_LLM_BASE_URL` and `MELEE_LLM_API_KEY` override the CLIProxy defaults. Otherwise the key comes from `CLIPROXY_API_KEY` in `~/.hermes/.env` and is never logged.
@@ -62,9 +62,9 @@ Each game writes a JSONL file to `replays/`, renamed at game end to `<replay>.p<
 ## Offline testing (no ISO)
 
 ```sh
-uv run --with pytest pytest -q tests/     # rendering on 5 replays, events, macro timing on a toy sim, schema
+uv run pytest -q     # rendering on 5 replays, events, macro timing on a toy sim, schema
 uv run python tests/test_llm_layer.py      # prints renderings + frame-by-frame macro traces
-uv run python tests/llm_dryrun.py replays/sample-slippi-js-itemExport.slp llm_live:claude-haiku-4-5-20251001 --decisions 5 --realtime
+uv run python scripts/llm_dryrun.py replays/sample-slippi-js-itemExport.slp llm_live:claude-haiku-4-5-20251001 --decisions 5 --realtime
 ```
 
 `tests/fakesim.py` is a toy version of Fox's physics that reacts to inputs: jumpsquat, short and full hop, fast-fall, aerials with L-cancel, airdodge into wavedash, shield, roll, grab, shine jump-cancel and ledge. It checks that inputs land on the intended frames. It is not Melee. Replay states ignore our inputs, so dry runs measure prompts, parsing and latency, not play quality.

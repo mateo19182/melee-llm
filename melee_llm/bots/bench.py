@@ -73,6 +73,7 @@ def run(bot: str, slp: Path, port: int, frames: int, arg: str | None, steer: dic
     t0 = time.perf_counter()
     controller = NullController(console)
     agent.setup(controller, port, opponent)
+    agent.ready()
     startup_s = round(time.perf_counter() - t0, 1)
     n, vram, mid_applied, moved, pressed = 0, None, None, 0, 0
     try:

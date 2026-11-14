@@ -19,8 +19,8 @@ from starlette.responses import FileResponse, HTMLResponse, JSONResponse, PlainT
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from melee_llm.web import docs, games, jobs, live, logs, registry, specs
-from melee_llm.web.paths import ROOT
+from melee_llm.paths import ROOT
+from melee_llm.web import docs, games, jobs, logs, registry, specs
 
 STATIC = Path(__file__).parent / "static"
 SLIPPILAB = ROOT / "vendor/slippilab/dist"
@@ -148,7 +148,7 @@ async def api_settings(request: Request) -> Response:
 # --------------------------------------------------------------------------- API: live
 
 async def api_live(_: Request) -> Response:
-    return ok({"status": live.read_status(), "server_time": time.time()})
+    return ok({"status": registry.live_status(await blocking(registry.snapshot)), "server_time": time.time()})
 
 
 def _sse(event: str, data) -> bytes:
@@ -173,7 +173,7 @@ class Tail:
 
 
 async def api_live_events(request: Request) -> Response:
-    """SSE: `status` whenever data/live.json changes, `log` for every decision-log line of the live game.
+    """SSE: `status` whenever the live slot's match (registry.live_status) changes, `log` for every decision-log line of the live game.
 
     Every event carries the wall-clock time it happened (`ts`); the page holds events back until the
     video (whose HLS segments carry EXT-X-PROGRAM-DATE-TIME from the same clock) has played that far.
@@ -183,7 +183,7 @@ async def api_live_events(request: Request) -> Response:
         last, tails, ping = None, {}, time.time()
         try:
             while not await request.is_disconnected():
-                st = live.read_status()
+                st = registry.live_status(await blocking(registry.snapshot))
                 key = json.dumps({k: v for k, v in st.items() if k != "updated"}, sort_keys=True, default=str)
                 if key != last:
                     last = key

@@ -13,23 +13,11 @@ from datetime import datetime
 from pathlib import Path
 
 from melee_llm.bench.entrants import BOTWRITER, Entrant, by_id, resolve
-from melee_llm.runner import ROOT
+from melee_llm.paths import ARENA, ROOT
+from melee_llm.util import read_jsonl as _jsonl
 
 STAGES = ("BATTLEFIELD", "FINAL_DESTINATION")
 MIN_FPS = 50.0
-
-
-def _jsonl(path: Path) -> list[dict]:
-    out = []
-    try:
-        for ln in path.read_text().splitlines():
-            try:
-                out.append(json.loads(ln))
-            except ValueError:
-                pass
-    except OSError:
-        pass
-    return out
 
 
 def _abs(p: str | None) -> str | None:
@@ -102,7 +90,7 @@ def load() -> tuple[list[dict], dict[str, int]]:
             c.add(src, n, r["p1"], r["p2"], r, stage=r["stage"], chars=(r.get("char1"), r.get("char2")),
                   mode=r.get("mode", "lockstep"), ts=Path(f).stat().st_mtime, replay=r.get("replay"))
     # learned-bot arena on the live slot (random characters and stages: only the Fox dittos on BF/FD qualify)
-    for n, r in enumerate(_jsonl(ROOT / "arena/results.jsonl")):
+    for n, r in enumerate(_jsonl(ARENA / "results.jsonl")):
         c.add("arena", n, r["p1"], r["p2"], r, stage=r["stage"], chars=(r["char1"], r["char2"]), mode="lockstep",
               ts=_ts(r.get("time")), replay=r.get("replay"))
     # bot-writer ladders (fast mode, Fox ditto BF/FD, full games)
@@ -128,12 +116,3 @@ def load() -> tuple[list[dict], dict[str, int]]:
             c.add(src, n, names[1], names[2], rr, stage=r["stage"], mode="fast", ts=r.get("ts"), replay=r.get("replay"))
     return c.games, dict(c.excluded)
 
-
-if __name__ == "__main__":
-    games, excluded = load()
-    print(f"{len(games)} imported")
-    for k, v in Counter(g["source"] for g in games).most_common():
-        print(f"  {v:4d} {k}")
-    print("excluded:")
-    for k, v in sorted(excluded.items()):
-        print(f"  {v:4d} {k}")

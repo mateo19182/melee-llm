@@ -4,17 +4,16 @@ from __future__ import annotations
 import json
 import os
 import random
-import signal
-import subprocess
 import sys
 import threading
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from melee_llm.runner import ROOT
+from melee_llm.paths import LLM_ARENA_PORTS as PORTS
+from melee_llm.util import append_jsonl, exit_on_term, run_game_process
+from melee_llm.util import read_jsonl as read_results  # a line cut by a crash is skipped; the game reruns
 
-PORTS = range(51880, 51920)  # the arena's Slippi port block (Jev 51840-51859, perception 51860-51879)
 STAGES = ("BATTLEFIELD", "FINAL_DESTINATION")
 ANCHORS = ("cpu:5", "cpu:9")
 VOID_API_FAILED_FRAC = 0.10  # a side whose calls failed (after retries) this often → game void, not rated
@@ -69,18 +68,6 @@ def schedule(models: list[str], stages=STAGES, games: int = 2, anchor_games: int
     return jobs
 
 
-def read_results(path: Path) -> list[dict]:
-    if not path.exists():
-        return []
-    out = []
-    for line in path.read_text().splitlines():
-        try:
-            out.append(json.loads(line))
-        except json.JSONDecodeError:
-            pass  # a line cut by a crash; the game reruns
-    return out
-
-
 def tokens_of(rec: dict) -> int:
     return sum(s.get("prompt_tokens", 0) + s.get("completion_tokens", 0) for s in (rec.get("sides") or {}).values())
 
@@ -95,7 +82,7 @@ def play_one(job: dict, iso: str, port: int, out: Path, cap_frames: int, retries
     from melee_llm.llm_arena.agent import ArenaLLM
     from melee_llm.runner import play
 
-    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))  # play()'s cleanup stops Dolphin
+    exit_on_term()  # play()'s cleanup stops Dolphin
     out.mkdir(parents=True, exist_ok=True)
     agents, quitter = {}, True
     for p, spec in ((1, job["p1"]), (2, job["p2"])):
@@ -148,8 +135,7 @@ def run(jobs: list[Job], iso: str, out: Path, parallel: int = 16, cap_frames: in
 
     def record(rec: dict) -> None:
         with lock:
-            with results.open("a") as f:
-                f.write(json.dumps(rec, default=float) + "\n")
+            append_jsonl(results, rec)
             state["spent"] += tokens_of(rec)
             if max_tokens and state["spent"] >= max_tokens and not state["stop"]:
                 state["stop"] = True
@@ -172,26 +158,14 @@ def run(jobs: list[Job], iso: str, out: Path, parallel: int = 16, cap_frames: in
                    "--job", json.dumps(asdict(job))]
             gdir.mkdir(parents=True, exist_ok=True)
             base = {**asdict(job), "port": port, "dir": str(gdir), "cap_frames": cap_frames, "ts": round(time.time(), 1)}
-            t0 = time.time()
-            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env, cwd=ROOT,
-                                 start_new_session=True)  # own process group: kill Dolphin with it
             try:
-                stdout, stderr = p.communicate(timeout=timeout_s)
-            except subprocess.TimeoutExpired:
-                os.killpg(p.pid, signal.SIGTERM)
-                try:
-                    stdout, stderr = p.communicate(timeout=30)
-                except subprocess.TimeoutExpired:
-                    os.killpg(p.pid, signal.SIGKILL)
-                    stdout, stderr = p.communicate()
-                stdout = ""
+                res, stdout, stderr, timed_out = run_game_process(cmd, timeout_s, env)
             finally:
                 with lock:
                     free.append(port)
             (gdir / "stderr.log").write_text(stderr + stdout)
-            line = next((ln for ln in reversed(stdout.splitlines()) if ln.startswith("{")), None)
-            if line:
-                rec = {**base, **json.loads(line)}
+            if res is not None:
+                rec = {**base, **res}
                 rec["status"] = status_of(rec)
                 record(rec)
                 a, b = job.players()
@@ -200,7 +174,6 @@ def run(jobs: list[Job], iso: str, out: Path, parallel: int = 16, cap_frames: in
                       f"{ {k: round(v) for k, v in rec['percent'].items()} } → {w} | {rec['frames']}f "
                       f"{rec['wall_s']}s {tokens_of(rec):,} tok | total {state['spent']:,}", flush=True)
                 return
-            timed_out = time.time() - t0 >= timeout_s
             if attempt == 0 and not timed_out and "could not connect" in stderr:
                 print(f"retry {job.key}: Dolphin did not connect", flush=True)
                 continue

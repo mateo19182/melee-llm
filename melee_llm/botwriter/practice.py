@@ -20,7 +20,8 @@ from melee_llm.botwriter.dolphin import claim_slippi_port, exit_on_term, find_is
 from melee_llm.botwriter.host import FakeController
 from melee_llm.botwriter.specs import make_agent
 from melee_llm.botwriter.summary import compact, summarize
-from melee_llm.runner import ROOT, play, replay_states
+from melee_llm.paths import REPLAYS
+from melee_llm.runner import play, replay_states
 
 STAGES = {"fd": melee.Stage.FINAL_DESTINATION, "bf": melee.Stage.BATTLEFIELD,
           "FINAL_DESTINATION": melee.Stage.FINAL_DESTINATION, "BATTLEFIELD": melee.Stage.BATTLEFIELD}
@@ -142,7 +143,7 @@ def main() -> None:
     a = ap.parse_args()
     bot = Path(a.bot).resolve()
     if a.cmd == "check":
-        reps = [Path(r) for r in a.replay] if a.replay else sorted(Path("replays").glob("*.slp")) or sorted((ROOT / "replays").glob("*.slp"))
+        reps = [Path(r) for r in a.replay] if a.replay else sorted(Path("replays").glob("*.slp")) or sorted(REPLAYS.glob("*.slp"))
         if not reps:
             raise SystemExit("no replays found; pass --replay")
         r = check(bot, reps, a.budget_ms, a.max_frames)

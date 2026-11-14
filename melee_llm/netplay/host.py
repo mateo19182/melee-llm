@@ -15,7 +15,6 @@ import configparser
 import json
 import os
 import re
-import sys
 import threading
 import time
 from dataclasses import asdict, dataclass, field
@@ -25,20 +24,23 @@ import melee
 from melee.slippstream import EnetDisconnected
 
 from melee_llm.agents.base import Agent
-from melee_llm.runner import ROOT, Console, _port_free
+from melee_llm.paths import DOLPHIN_RENDERED as DOLPHIN  # mainline beta.19 netplay build, rendered on the GPU
+from melee_llm.paths import REPLAYS
+from melee_llm.players import make as make_player
+from melee_llm.runner import Console
+from melee_llm.util import port_free
 
-DOLPHIN = ROOT / "scripts/dolphin-gpu.sh"  # mainline beta.19 netplay build, rendered on the GPU
 DISPLAY = ":98"  # hidden Xvfb (melee-xvfb-headless). Never :99, the streamed live slot
 WINDOW = (640, 480)  # :98's screen size
 SPECTATOR_PORTS = range(51800, 51820)
 USER_JSON = Path(os.environ.get("MELEE_NETPLAY_USER_JSON", Path.home() / ".config/melee-llm/slippi-bot/user.json"))
-OUT = ROOT / "replays/netplay"
+OUT = REPLAYS / "netplay"
 CODE_RE = re.compile(r"^[A-Z]{1,7}#[0-9]{1,4}$")
 
 
 @dataclass
 class HostConfig:
-    opponent: str  # any match.py player spec except cpu:N and llm_paused
+    opponent: str  # any player spec (melee_llm/players.py) except cpu:N and llm_paused
     connect_code: str  # the human's code, e.g. ABCD#123
     char: str = "FOX"
     stage: str = "BATTLEFIELD"  # used only if the bot gets the stage pick
@@ -96,7 +98,7 @@ def check(cfg: HostConfig) -> list[str]:
     elif not bot_code(cfg.user_json):
         problems.append(f"{cfg.user_json} has no connectCode: not a Slippi user.json?")
     if not Path(f"/tmp/.X11-unix/X{cfg.display.lstrip(':')}").exists():
-        problems.append(f"X display {cfg.display} is not running (./live.sh starts it as melee-xvfb-headless)")
+        problems.append(f"X display {cfg.display} is not running (scripts/live.sh starts it as melee-xvfb-headless)")
     try:
         normalize_code(cfg.connect_code)
         if normalize_code(cfg.connect_code) == bot_code(cfg.user_json):
@@ -129,13 +131,6 @@ class NetplayConsole(Console):
                 ini.set(section, k, v)
             with open(path, "w") as f:
                 ini.write(f)
-
-
-def make_player(spec: str, char: str) -> Agent:
-    if str(ROOT) not in sys.path:
-        sys.path.insert(0, str(ROOT))
-    from match import make  # the one place player specs are parsed
-    return make(spec, char)
 
 
 def _event_lists(agent: Agent) -> list[list]:
@@ -173,7 +168,7 @@ def host(cfg: HostConfig, stop: threading.Event | None = None, on_status=None) -
     code = normalize_code(cfg.connect_code)
     me_code = bot_code(cfg.user_json)
     char, stage = melee.Character[cfg.char], melee.Stage[cfg.stage]
-    port = next((p for p in SPECTATOR_PORTS if _port_free(p)), None)
+    port = next((p for p in SPECTATOR_PORTS if port_free(p)), None)
     if port is None:
         raise RuntimeError(f"no free Slippi spectator port in {SPECTATOR_PORTS.start}-{SPECTATOR_PORTS.stop - 1}")
     OUT.mkdir(parents=True, exist_ok=True)
@@ -210,6 +205,8 @@ def host(cfg: HostConfig, stop: threading.Event | None = None, on_status=None) -
             players[p] = make_player(cfg.opponent, cfg.char)
             players[p].costume = cfg.costume
             players[p].setup(controller, p, 3 - p)
+        for p in (1, 2):
+            players[p].ready()
         menu = melee.MenuHelper()
         last_frame[0] = time.time()
         threading.Thread(target=watchdog, daemon=True).start()
@@ -298,7 +295,7 @@ def smoke(cfg: HostConfig, seconds: float = 90.0, shots: Path | None = None) -> 
     shots.mkdir(parents=True, exist_ok=True)
     logged_in = Path(cfg.user_json).is_file()
     code = normalize_code(cfg.connect_code)
-    port = next(p for p in SPECTATOR_PORTS if _port_free(p))
+    port = next(p for p in SPECTATOR_PORTS if port_free(p))
     os.environ["DISPLAY"] = cfg.display
     console = NetplayConsole(path=str(DOLPHIN), fullscreen=False, save_replays=False, disable_audio=True,
                              gfx_backend="OGL", emulation_speed=1.0, blocking_input=True, slippi_port=port,

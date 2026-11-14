@@ -23,12 +23,6 @@ import pickle
 import struct
 
 _LEN = struct.Struct(">I")
-DIGITAL = ("BUTTON_A", "BUTTON_B", "BUTTON_X", "BUTTON_Y", "BUTTON_Z", "BUTTON_L", "BUTTON_R",
-           "BUTTON_START", "BUTTON_D_UP", "BUTTON_D_DOWN", "BUTTON_D_LEFT", "BUTTON_D_RIGHT")
-
-
-def neutral() -> dict:
-    return {"main": (0.5, 0.5), "c": (0.5, 0.5), "l": 0.0, "r": 0.0, "buttons": []}
 
 
 def send(f, obj) -> None:

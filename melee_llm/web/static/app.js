@@ -64,6 +64,7 @@ document.addEventListener("click", (e) => {
 window.addEventListener("popstate", render);
 
 async function onAir() {
+  if (document.hidden) return;
   const el = document.getElementById("onair");
   try {
     const { status: s } = await api("/api/live");
@@ -76,5 +77,6 @@ async function onAir() {
   } catch { mount(el, h("span.dot.off"), "offline"); }
 }
 setInterval(onAir, 5000);
+document.addEventListener("visibilitychange", onAir);
 onAir();
 render();

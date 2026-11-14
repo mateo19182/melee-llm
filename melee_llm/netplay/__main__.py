@@ -17,7 +17,7 @@ def _config_args(p: argparse.ArgumentParser, smoke_only: bool = False) -> None:
             p.add_argument(flag, required=True, help="the human's Slippi code, e.g. ABCD#123")
         elif f.name == "opponent":
             p.add_argument(flag, required=not smoke_only, default="idle",
-                           help="match.py player spec: hal:MASTER, phillip:gm, mimic, faynt, reyn, coach:haiku, "
+                           help="player spec: hal:MASTER, phillip:gm, mimic, faynt, reyn, coach:haiku, "
                                 "llm_live:<model>, shine, idle")
         else:
             p.add_argument(flag, type=type(f.default), default=f.default)

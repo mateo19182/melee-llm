@@ -13,3 +13,17 @@ dependencies = [
     "uvicorn>=0.54.0",
     "websockify>=0.13.0",
 ]
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.8"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 140
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+ignore = ["E501", "E702", "E731", "B023", "B905"]

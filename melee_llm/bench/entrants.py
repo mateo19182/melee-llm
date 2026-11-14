@@ -1,17 +1,13 @@
 """Who is on the bench: one registry of every kind of player, with its track, run spec and a one-line description.
 
-Ids are what the board shows and what results store. `spec` is what the game runner builds (match.py specs plus
-the bot-writer's `bot:PATH` / `baseline:NAME`). `aliases` are the spellings older result files used, for imports.
+Ids are what the board shows and what results store. `spec` is what the game runner builds (melee_llm/players.py specs). `aliases` are the spellings older result files used, for imports.
 """
 from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, field
-from pathlib import Path
 
-from melee_llm.runner import ROOT
-
-BOTWRITER = Path.home() / ".local/share/melee-llm/botwriter"
+from melee_llm.paths import BOTWRITER, ROOT
 
 CATEGORIES = {
     "cpu": "CPU", "learned": "Learned bot", "scripted": "Scripted bot", "written": "LLM-written bot",
@@ -200,7 +196,3 @@ def resolve(name: str, entrants: dict[str, Entrant] | None = None) -> str | None
         return name
     return None
 
-
-if __name__ == "__main__":
-    for x in registry():
-        print(f"{x.id:45s} {x.category:9s} {x.track:9s} {x.provider:7s} {'active' if x.active else '-':7s} {x.spec}")

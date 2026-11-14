@@ -27,8 +27,8 @@ from melee.controller import fix_analog_trigger
 
 from melee_llm.agents.base import Agent
 from melee_llm.botwriter.host import BUTTONS, write_frame
+from melee_llm.paths import ROOT
 
-ROOT = Path(__file__).resolve().parents[2]
 _NEUTRAL = melee.ControllerState()
 _BY_NAME = {b.name: b for b in BUTTONS}
 _FORBIDDEN_BUTTONS = {melee.Button.BUTTON_START}  # START pauses the match

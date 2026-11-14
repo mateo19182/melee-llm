@@ -6,8 +6,6 @@ llm_arena's ArenaLLM for its transport retries, with no frame cap.
 """
 from __future__ import annotations
 
-import signal
-import sys
 import time
 from dataclasses import asdict
 from pathlib import Path
@@ -19,19 +17,14 @@ MIN_FPS = 50.0  # a realtime game slower than this gives wall-clock players extr
 def make_agent(spec: str, out: Path):
     import melee
 
+    from melee_llm.players import make
+
     kind, _, arg = spec.partition(":")
-    if kind in ("bot", "baseline"):
-        from melee_llm.botwriter.specs import make_agent as bw_make
-        return bw_make(spec, melee.Character.FOX, budget_ms=16.0, log_dir=out)
-    if kind == "llm_paused":
-        from melee_llm.llm_arena.agent import ArenaLLM
-        a = ArenaLLM(arg, cap_frames=0, retries=4)
-    else:
-        from match import make
-        a = make(spec, "FOX")
-    a.character = melee.Character.FOX
-    if hasattr(a, "log_dir"):
-        a.log_dir = out
+    if kind != "llm_paused":
+        return make(spec, melee.Character.FOX, out)
+    from melee_llm.llm_arena.agent import ArenaLLM
+    a = ArenaLLM(arg, cap_frames=0, retries=4)
+    a.character, a.log_dir = melee.Character.FOX, out
     return a
 
 
@@ -91,8 +84,9 @@ def play_one(job: dict, iso: str, port: int, out: Path) -> dict:
     import melee
 
     from melee_llm.runner import play
+    from melee_llm.util import exit_on_term
 
-    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))  # play()'s cleanup stops Dolphin and the bots
+    exit_on_term()  # play()'s cleanup stops Dolphin and the bots
     out.mkdir(parents=True, exist_ok=True)
     agents = {1: make_agent(job["spec1"], out), 2: make_agent(job["spec2"], out)}
     meta = {"source": "bench", "label": f"Bench {job['p1']} vs {job['p2']}", "specs": {1: job["spec1"], 2: job["spec2"]},

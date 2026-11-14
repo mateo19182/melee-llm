@@ -2,29 +2,20 @@
 
 libmelee gives every Console a temporary home (tmp_home_directory=True), so controller pipes and
 configs never clash; the only shared resource is the Slippi UDP port. Callers pass the claimed
-port to runner.play(slippi_port=...). The range defaults to 51500-51599 (51441 is the arena's,
-51480-51499 belong to other experiments); override with MELEE_SLIPPI_PORTS=START-END.
+port to runner.play(slippi_port=...). The range defaults to 51500-51599 (the other blocks are
+listed in melee_llm/paths.py); override with MELEE_SLIPPI_PORTS=START-END.
 """
 from __future__ import annotations
 
 import fcntl
 import os
 import signal
-import socket
-import sys
 from pathlib import Path
+
+from melee_llm import util
 
 LOCK_DIR = Path("/tmp/melee-llm-slippi-ports")
 _held: dict[int, object] = {}
-
-
-def _udp_free(port: int) -> bool:
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-        try:
-            s.bind(("127.0.0.1", port))
-            return True
-        except OSError:
-            return False
 
 
 def port_range() -> range:
@@ -44,7 +35,7 @@ def claim_slippi_port() -> int:
         except BlockingIOError:
             f.close()
             continue
-        if not _udp_free(port):
+        if not util.port_free(port):
             f.close()
             continue
         f.write(str(os.getpid()))
@@ -57,8 +48,7 @@ def claim_slippi_port() -> int:
 
 def exit_on_term() -> None:
     """Turn SIGTERM/SIGHUP (a tool timeout, a killed ladder) into SystemExit so play() stops its Dolphin."""
-    for sig in (signal.SIGTERM, signal.SIGHUP):
-        signal.signal(sig, lambda *_: sys.exit(143))
+    util.exit_on_term(signal.SIGHUP)
 
 
 def find_iso(cli_value: str | None) -> str:

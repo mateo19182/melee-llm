@@ -32,11 +32,14 @@ from melee_llm.bench import imports, ratings, recount
 from melee_llm.bench.entrants import Entrant, by_id, game_mode, game_track, tracks_of
 from melee_llm.bench.game import status_of
 from melee_llm.llm_arena.ratings import ELO
-from melee_llm.runner import ROOT
+from melee_llm.paths import BENCH_PORTS as PORTS
+from melee_llm.paths import DATA as _DATA
+from melee_llm.paths import REPLAYS
+from melee_llm.util import append_jsonl, port_free, run_game_process, write_atomic
+from melee_llm.util import read_jsonl as read_results
 
-DATA = ROOT / "data/bench"
-GAMES = ROOT / "replays/bench"
-PORTS = range(51920, 52000)
+DATA = _DATA / "bench"
+GAMES = REPLAYS / "bench"
 STAGES = ("BATTLEFIELD", "FINAL_DESTINATION")
 # Prior token cost per game for a side, until the entrant has its own average (full games, Fox ditto).
 TOKEN_PRIOR = {"llm_paused": 900_000, "llm_live": 350_000, "coach": 80_000, "coach_jev": 0, "jev_live": 0,
@@ -68,17 +71,6 @@ class Config:
     only: list = field(default_factory=list)  # restrict to these entrant ids (inactive ones allowed: ablations)
     ports: tuple = (PORTS.start, PORTS.stop)  # Slippi ports [start, stop)
     context: list = field(default_factory=list)  # other results.jsonl files whose ok games join the fit (not the spend)
-
-
-def read_results(path: Path) -> list[dict]:
-    out = []
-    if path.exists():
-        for ln in path.read_text().splitlines():
-            try:
-                out.append(json.loads(ln))
-            except ValueError:
-                pass
-    return out
 
 
 def provider_tokens(rec: dict, entrants: dict[str, Entrant]) -> dict[str, int]:
@@ -149,6 +141,9 @@ class Bench:
         self.dirty = True
         self.suspended: dict[str, float] = {}  # entrant → until (after repeated errors)
         self.stop_reason: str | None = None
+        self.unconverged: dict = {}
+        self._est: dict[str, int] = {}
+        self._est_at = -1
         self.t0 = time.time()
 
     # ------------------------------------------------------------------ bookkeeping
@@ -163,6 +158,15 @@ class Bench:
             return total_spend(self.results, self.entrants)
 
     def est_tokens(self, eid: str) -> int:
+        """Expected tokens one game costs this entrant. pick() asks several times per candidate pairing, so the
+        answers are kept until the next result arrives."""
+        if self._est_at != len(self.results):
+            self._est, self._est_at = {}, len(self.results)
+        if eid not in self._est:
+            self._est[eid] = self._est_tokens(eid)
+        return self._est[eid]
+
+    def _est_tokens(self, eid: str) -> int:
         e = self.entrants[eid]
         if e.provider not in ("claude", "gpt"):
             return 0
@@ -332,7 +336,7 @@ class Bench:
 
     def start(self, job: dict) -> None:
         with self.lock:
-            port = next((p for p in self.free_ports if _port_free(p)), None)
+            port = next((p for p in self.free_ports if port_free(p)), None)
             if port is None:
                 self.log("no free Slippi port")
                 return
@@ -359,25 +363,12 @@ class Bench:
         base.update(dir=str(gdir), ts=round(t0, 1))
         rec = None
         try:
-            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env, cwd=ROOT,
-                                 start_new_session=True)
-            try:
-                stdout, stderr = p.communicate(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                os.killpg(p.pid, signal.SIGTERM)
-                try:
-                    stdout, stderr = p.communicate(timeout=30)
-                except subprocess.TimeoutExpired:
-                    os.killpg(p.pid, signal.SIGKILL)
-                    stdout, stderr = p.communicate()
-                stdout = ""
+            res, stdout, stderr, timed_out = run_game_process(cmd, timeout, env, unthrottled=job["kind"] == "fast")
             (gdir / "stderr.log").write_text(stderr[-200_000:] + stdout[-20_000:])
-            line = next((ln for ln in reversed(stdout.splitlines()) if ln.startswith("{")), None)
-            if line:
-                rec = {**base, **json.loads(line)}
+            if res is not None:
+                rec = {**base, **res}
                 rec["status"] = status_of(rec)
             else:
-                timed_out = time.time() - t0 >= timeout
                 err = "timeout" if timed_out else (stderr.strip().splitlines() or ["no output"])[-1][:300]
                 rec = {**base, "status": "timeout" if timed_out else "error", "error": err, "wall_s": round(time.time() - t0, 1)}
         except Exception as e:  # never lose the slot
@@ -388,8 +379,7 @@ class Bench:
                 self.free_ports.append(job["port"])
                 if rec:
                     self.results.append(rec)
-                    with self.results_path.open("a") as f:
-                        f.write(json.dumps(rec, default=float) + "\n")
+                    append_jsonl(self.results_path, rec)
                 self.dirty = True
         self.on_result(rec)
 
@@ -430,7 +420,7 @@ class Bench:
               "stop_reason": self.stop_reason, "budget_tokens": self.cfg.budget_tokens, "spent": sp,
               "spent_recounted": corrected,
               "target": self.cfg.target, "load": round(os.getloadavg()[0], 1), "games_started": self.started,
-              "unconverged": getattr(self, "unconverged", {}), "suspended": {k: round(v) for k, v in self.suspended.items()
+              "unconverged": self.unconverged, "suspended": {k: round(v) for k, v in self.suspended.items()
                                                                               if v > time.time()},
               "running": [{k: r[k] for k in ("id", "p1", "p2", "stage", "mode", "track", "started", "est_tokens", "port")}
                           for r in list(self.running.values())],
@@ -480,17 +470,5 @@ class Bench:
         self.log(f"done: {self.stop_reason}")
 
 
-def _port_free(port: int) -> bool:
-    import socket
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-        try:
-            s.bind(("127.0.0.1", port))
-            return True
-        except OSError:
-            return False
-
-
 def _write_json(path: Path, data) -> None:
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, default=float, indent=1))
-    tmp.replace(path)
+    write_atomic(path, json.dumps(data, default=float, indent=1))

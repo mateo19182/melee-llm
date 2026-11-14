@@ -2,20 +2,17 @@
 from __future__ import annotations
 
 import json
-import sys
 import time
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from melee_llm.actions import RecordingController  # noqa: E402
-from melee_llm.agents import llm_common as C  # noqa: E402
-from melee_llm.agents.llm_paused import PausedLLM  # noqa: E402
-from melee_llm.llm import Reply  # noqa: E402
-from melee_llm.runner import replay_states  # noqa: E402
-from melee_llm.vision import Shot  # noqa: E402
+from melee_llm.actions import RecordingController
+from melee_llm.agents import llm_common as C
+from melee_llm.agents.llm_paused import PausedLLM
+from melee_llm.llm import Reply
+from melee_llm.runner import replay_states
+from melee_llm.vision import Shot
 
 SAMPLE = Path(__file__).resolve().parent.parent / "replays/sample-slippi-js-itemExport.slp"
 

@@ -4,30 +4,60 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import statistics
 import threading
 import time
 from collections import defaultdict
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 
+from melee_llm.paths import ARENA, BOTWRITER, ROOT
+from melee_llm.util import read_jsonl as _jsonl
 from melee_llm.web import jobs, logs
-from melee_llm.web.paths import ARENA, BOTWRITER, ROOT
 from melee_llm.web.slp import header
 from melee_llm.web.specs import char_name, label, stage_name
 
 REPLAY_ROOTS = [ROOT / "replays", BOTWRITER / "ladders"]
 
 
-def game_id(path: Path) -> str:
-    return hashlib.sha1(str(path.resolve()).encode()).hexdigest()[:12]
+def game_id(path: Path, resolved: bool = False) -> str:
+    return hashlib.sha1(str(path if resolved else path.resolve()).encode()).hexdigest()[:12]
 
 
-def _jsonl(path: Path) -> list[dict]:
-    try:
-        return [json.loads(ln) for ln in path.read_text().splitlines() if ln.strip()]
-    except (OSError, ValueError):
-        return []
+@lru_cache(maxsize=200_000)
+def _resolved(replay: str) -> Path:
+    """Result files name the same replays on every index build; resolving costs several lstat calls each."""
+    path = Path(replay)
+    return (path if path.is_absolute() else ROOT / path).resolve()
+
+
+def _replays(root: Path):
+    """(resolved .slp path, its stat, names of its decision logs) for every replay under root.
+
+    One scandir per directory: the logs (<stem>.p<port>.<llm|coach>.jsonl, see logs.logs_for) come from the same
+    listing, and only symlinks need resolving."""
+    stack = [os.path.realpath(root)]
+    while stack:
+        d = stack.pop()
+        try:
+            with os.scandir(d) as it:
+                entries = list(it)
+        except OSError:
+            continue
+        names = sorted(e.name for e in entries if e.name.endswith((".llm.jsonl", ".coach.jsonl")))
+        for e in entries:
+            if e.is_dir(follow_symlinks=False):
+                stack.append(e.path)
+            elif e.name.endswith(".slp"):
+                try:
+                    st = e.stat()
+                except OSError:
+                    continue
+                path = Path(os.path.realpath(e.path) if e.is_symlink() else e.path)
+                stem = e.name[:-4] + ".p"
+                yield path, st, [n for n in names if n.startswith(stem)]
 
 
 def _fmt_time(ts: float) -> str:
@@ -58,18 +88,12 @@ class Index:
         self.by_id: dict[str, dict] = {}
         self.headers: dict[Path, tuple[tuple, dict | None]] = {}
 
-    def _header(self, path: Path) -> dict | None:
-        try:
-            st = path.stat()
-        except OSError:
-            return None
+    def _header(self, path: Path, st: os.stat_result) -> dict | None:
         key = (st.st_mtime, st.st_size)
         hit = self.headers.get(path)
         if hit and hit[0] == key:
             return hit[1]
         h = header(path)
-        if h is not None:
-            h["mtime"] = st.st_mtime
         self.headers[path] = (key, h)
         return h
 
@@ -90,9 +114,7 @@ class Index:
         def add(replay, **rec):
             if not replay:
                 return
-            path = Path(replay)
-            path = (path if path.is_absolute() else ROOT / path).resolve()
-            known[path] = rec
+            known[_resolved(replay)] = rec
 
         for j in jobs.listing(limit=1000):
             for r in j["results"]:
@@ -134,9 +156,8 @@ class Index:
                     time=_fmt_time(r["ts"]) if r.get("ts") else None)
         games = []
         for root in REPLAY_ROOTS:
-            for path in root.rglob("*.slp"):
-                path = path.resolve()
-                h = self._header(path) or {}
+            for path, st, lg in _replays(root):
+                h = self._header(path, st) or {}
                 rec = dict(known.get(path) or {})
                 hp = h.get("players", {})
                 if not rec:
@@ -150,7 +171,7 @@ class Index:
                                    else {"cpu": "CPU", "?": "Player"}.get(rec.get(f"p{p}"), "?"))
                     rec[f"char{p}_name"] = char_name(rec[f"char{p}"]) if rec.get(f"char{p}") else "?"
                 if not rec.get("time"):
-                    ts = h.get("mtime") or path.stat().st_mtime
+                    ts = st.st_mtime
                     if h.get("start_at"):
                         try:
                             ts = datetime.fromisoformat(h["start_at"].replace("Z", "+00:00")).timestamp()
@@ -160,9 +181,8 @@ class Index:
                 rec["stage"] = rec.get("stage") or h.get("stage")
                 rec["stage_name"] = stage_name(rec["stage"]) if rec.get("stage") else "?"
                 rec.setdefault("frames", h.get("last_frame"))
-                lg = logs.logs_for(path)
-                rec.update(id=game_id(path), path=str(path), name=path.name,
-                           logs=[{"name": p.name, "kind": logs.log_kind(p)} for p in lg])
+                rec.update(id=game_id(path, resolved=True), path=str(path), name=path.name,
+                           logs=[{"name": n, "kind": logs.log_kind(n)} for n in lg])
                 games.append(rec)
         games.sort(key=lambda g: g["time"] or "", reverse=True)
         self.games, self.by_id = games, {g["id"]: g for g in games}
@@ -218,8 +238,8 @@ def arena() -> dict:
     except (OSError, ValueError):
         standings = {"table": [], "games": 0, "updated": "never"}
     by_path = {Path(g["path"]): g["id"] for g in INDEX.get() if g["source"] == "arena"}
-    recent = []
-    for r in reversed(_jsonl(ARENA / "results.jsonl")[-40:]):
+    results, recent = _jsonl(ARENA / "results.jsonl"), []
+    for r in reversed(results[-40:]):
         r = dict(r)
         r["id"] = by_path.get(Path(r["replay"]).resolve()) if r.get("replay") else None
         r["label1"], r["label2"] = label(r["p1"]), label(r["p2"])
@@ -227,7 +247,7 @@ def arena() -> dict:
         recent.append(r)
     # head-to-head win rates
     h2h = defaultdict(lambda: [0, 0])
-    for r in _jsonl(ARENA / "results.jsonl"):
+    for r in results:
         for me, opp, port in ((r["p1"], r["p2"], 1), (r["p2"], r["p1"], 2)):
             cell = h2h[f"{me}|{opp}"]
             cell[0] += 1 if r["winner"] == port else 0.5 if r["winner"] is None else 0

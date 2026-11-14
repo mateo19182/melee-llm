@@ -25,8 +25,8 @@ from pathlib import Path
 
 from melee_llm.botwriter import toolloop
 from melee_llm.botwriter.similarity import similarity
+from melee_llm.paths import ROOT
 
-ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
 HOME = Path(os.environ.get("BOTWRITER_HOME", Path.home() / ".local/share/melee-llm/botwriter"))
 SAMPLE_REPLAYS = ["sample-slippi-js-itemExport.slp", "sample-slippi-js-actionEdgeCases.slp"]

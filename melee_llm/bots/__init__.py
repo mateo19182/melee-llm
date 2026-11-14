@@ -1,6 +1,6 @@
 """Learned Melee bots as Agents. Each runs in a subprocess under its own venv in vendor/; see docs/bots.md.
 
-The match.py spec argument (`hal:MASTER`, `phillip:gm`, `mimic:fox-master`, `faynt:10M-Arena`, `reyn:<phrase>`) picks
+The spec argument (`hal:MASTER`, `phillip:gm`, `mimic:fox-master`, `faynt:10M-Arena`, `reyn:<phrase>`) picks
 the bot's style/model. After setup, `agent.steer` holds every knob with its effective value; a coach
 can change it mid-game (see docs/bots.md for when each knob takes effect).
 """
