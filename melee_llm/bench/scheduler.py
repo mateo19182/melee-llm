@@ -44,6 +44,7 @@ TOKEN_PRIOR = {"llm_paused": 900_000, "llm_live": 350_000, "coach": 80_000, "coa
 OVERHEAD = 60_000  # token-equivalent of one game's machine time: keeps free games from looking infinitely cheap
 TIMEOUT = {"fast": 25 * 60, "realtime": 25 * 60, "untimed_llm": 3 * 3600}
 LOAD_COST = {"fast": 2.0, "realtime": 1.5, "untimed_llm": 0.3}  # rough load each kind adds
+LOAD_SLACK_IDLE = 4.0  # untimed LLM games (Dolphin blocked on the API) may start up to load_cap + this
 
 
 @dataclass
@@ -113,6 +114,7 @@ class Bench:
         self.imported, self.excluded = imports.load()
         self.imported_at = time.time()
         self.lock = threading.Lock()
+        self.load = 0.0
         self.running: dict[str, dict] = {}
         self.free_ports = [p for p in PORTS]
         self.events: deque = deque(maxlen=40)
@@ -182,6 +184,10 @@ class Bench:
         kind = self.kind_of_game(a, b)
         if sum(r["kind"] == kind for r in run) >= cfg.slots[kind]:
             return False
+        # CPU-heavy games respect the load cap; untimed LLM games mostly wait on the API, so they get some slack
+        cap = cfg.load_cap + (LOAD_SLACK_IDLE if kind == "untimed_llm" else 0)
+        if self.load + LOAD_COST[kind] > cap and len(run) >= cfg.min_running:
+            return False
         for prov in {a.provider, b.provider} - {"none"}:
             n = sum(r["providers"].count(prov) for r in run) + [a.provider, b.provider].count(prov)
             if n > cfg.provider_slots.get(prov, 99):
@@ -236,6 +242,7 @@ class Bench:
         spent = self.spent()["tokens"]
         gpu_free = _gpu_free_mb()
         deferred = _unit_active(cfg.defer_unit)
+        self.load = os.getloadavg()[0]
         act = self.active()
         values: dict[tuple[str, str], float] = {}
         unconverged = {}
@@ -302,7 +309,7 @@ class Bench:
         if time.time() - self.last_start < cfg.stagger_s:
             return False, "staggering starts"
         load = os.getloadavg()[0]
-        if load > cfg.load_cap and len(self.running) >= cfg.min_running:
+        if load > cfg.load_cap + LOAD_SLACK_IDLE and len(self.running) >= cfg.min_running:
             return False, f"load {load:.1f} > {cfg.load_cap:.0f}"
         return True, ""
 
