@@ -25,3 +25,15 @@ def test_ko_names_the_killer_first():
     t.update(gs(2, 80.0, 4))
     [ev] = t.update(gs(3, 0.0, 3))
     assert ev.big and ev.text == "Phillip (Fox) KOs MIMIC (Marth) at 80%"
+
+
+def test_head_to_head_from_arena_results(tmp_path, monkeypatch):
+    from melee_llm import paths
+    monkeypatch.setattr(paths, "ARENA", tmp_path)
+    rows = [{"p1": "hal:MASTER", "p2": "mimic", "winner": 1}, {"p1": "mimic", "p2": "hal:MASTER", "winner": 1},
+            {"p1": "mimic", "p2": "hal:MASTER", "winner": 2}, {"p1": "mimic", "p2": "cpu:9", "winner": 1},
+            {"p1": "mimic", "p2": "hal:MASTER", "winner": None}]
+    (tmp_path / "results.jsonl").write_text("".join(__import__("json").dumps(r) + "\n" for r in rows))
+    assert C.head_to_head("hal:MASTER", "mimic") == "; in earlier arena games the first player won 2 and the second 1"
+    assert C.head_to_head("hal:MASTER", "faynt") == "" and C.head_to_head(None, "mimic") == ""
+    assert C._clock(3725) == "1:02"

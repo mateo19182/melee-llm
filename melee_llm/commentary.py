@@ -176,6 +176,25 @@ def speak(text: str, key: str, voice: str, timeout: float = 8.0) -> bytes:
     return r.content
 
 
+def _clock(frame: int) -> str:
+    secs = max(0, frame) // FPS
+    return f"{secs // 60}:{secs % 60:02d}"
+
+
+def head_to_head(spec1: str | None, spec2: str | None) -> str:
+    """Their record in earlier learned-bot arena games, for the booth's storylines ("" if they never met there)."""
+    from melee_llm.paths import ARENA
+    from melee_llm.util import read_jsonl
+    if not spec1 or not spec2:
+        return ""
+    w1 = w2 = 0
+    for r in read_jsonl(ARENA / "results.jsonl"):
+        if {r.get("p1"), r.get("p2")} == {spec1, spec2} and r.get("winner") in (1, 2):
+            won = r["p1"] if r["winner"] == 1 else r["p2"]
+            w1, w2 = w1 + (won == spec1), w2 + (won == spec2)
+    return f"; in earlier arena games the first player won {w1} and the second {w2}" if w1 + w2 else ""
+
+
 SYSTEM = """You write the commentary booth for a live exhibition of Super Smash Bros. Melee where AI bots play \
 each other. Two casters share the desk:
 {casters}
@@ -241,7 +260,8 @@ def for_match(status: dict, replay) -> "Commentary":
     stage = stage_name(s.get("stage") or "")
     path = (Path(replay).with_suffix(".p0.commentary.jsonl") if replay
             else DATA / "commentary" / f"{time.strftime('%Y%m%dT%H%M%S')}.jsonl")
-    c = Commentary(path, names, f"{vs} on {stage}, {s.get('label') or s.get('source')}{games}")
+    specs = [s["players"][p].get("spec") for p in sorted(s["players"])]
+    c = Commentary(path, names, f"{vs} on {stage}, {s.get('label') or s.get('source')}{games}{head_to_head(*specs[:2])}")
     c.start(stage)
     return c
 
@@ -324,7 +344,7 @@ class Commentary:
                 self.f.close()
 
     def _loop(self) -> None:
-        llm, model, said, pending = None, "", [], []
+        llm, model, said, pending, earlier = None, "", [], [], []
         last_line, last_check, enabled, voice_key = 0.0, 0.0, False, None
         speaking_until = 0.0
         system = SYSTEM.format(casters="\n".join(f"- {name}, {role}" for name, (_, role) in CASTERS.items()))
@@ -360,8 +380,11 @@ class Commentary:
             events, pending = pending, []
             user = (f"Match: {self.context}\n"
                     f"On-screen counters, for your orientation only: {self.score or 'game starting'}\n"
-                    f"What just happened (oldest first):\n" + "\n".join(f"- {e.text}" for e in events[-20:]) +
-                    ("\nWhat the booth said last:\n" + "\n".join(f"- {s}" for s in said[-6:]) if said else ""))
+                    + ("Earlier this game (already called, for storylines only):\n" + "\n".join(f"- {t}" for t in earlier[-25:]) + "\n"
+                       if earlier else "")
+                    + "What just happened (oldest first):\n" + "\n".join(f"- {e.text}" for e in events[-20:])
+                    + ("\nWhat the booth has said so far:\n" + "\n".join(f"- {s}" for s in said[-16:]) if said else ""))
+            earlier += [f"{_clock(e.frame)} {e.text}" for e in events if e.big and e.frame > 0]
             rep = llm.choose(system + (SPOKEN if voice_key else ""), user, TOOL)
             turns = turns_of(rep.args)
             last_line = time.time()
