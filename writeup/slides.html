@@ -1,20 +1,16 @@
 <!doctype html>
 <!--
-  Source of writeup/slides.html. Edit this file, never slides.html, then rebuild:
-      uv run python writeup/make_figures.py --from-snapshot
-  The live site serves writeup/ straight from the repo, so a rebuilt and merged file is live at once.
+  This file is the deck: edit it directly. Nothing regenerates it, so numbers here are typed in by hand
+  (they match writeup/snapshot.json as of 2026-11-14). The site serves writeup/ from the repo, so a merged change is live.
 
-  Editing:
-  - One <section class="slide ..."> per slide, in order. data-title is the name shown as "Next:" in the notes panel;
+  - One <section class="slide ..."> per slide, in order. data-title is the name shown as "Next:" in the presenter window;
     the frame-title div is the small label in the top-left tab (keep it short or it hits the stripes).
-  - Speaker notes are the <aside class="notes"> at the end of each slide. Start them with <b>m:ss.</b>, the slide's
-    target time; the times currently add up to about 4:45.
-  - Numbers in double curly braces come from writeup/snapshot.json, filled in by make_figures.py, so they match the
-    write-up. Any brace pair the script doesn't know stops the build, even inside a comment like this one.
+  - Speaker notes: the <aside class="notes"> at the end of each slide, shown as faint small text along the bottom
+    of the slide. Start them with <b>m:ss.</b>, the slide's target time; they add up to about 4:45.
   - Images are relative: figures/*.svg (from make_figures.py) and media/*.
 
-  Presenting: arrows, Space or a clicker move; n shows notes and a timer under the slide; p opens a presenter
-  window kept in sync (use it with an extended display); f is fullscreen; k plays or pauses the slide's video.
+  Presenting: arrows, Space or a clicker move; n hides or shows the notes; p opens a presenter window (big notes,
+  next slide, timer) kept in sync; f is fullscreen; k plays or pauses the slide's video.
 -->
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Melee bots are getting really good · slides</title>
@@ -27,7 +23,7 @@ html,body{height:100%;overflow:hidden}
 .deck{position:fixed;inset:0;display:grid;place-items:center}
 .stage{position:relative;flex:none;width:1280px;height:720px;transform:scale(var(--s,1))}
 .slide{position:absolute;inset:22px 22px 18px;margin:0;width:auto;max-width:none;display:none;flex-direction:column;
-  padding:calc(var(--low) + 30px) 44px 34px;font-size:23px;line-height:1.38}
+  padding:calc(var(--low) + 30px) 44px 84px;font-size:23px;line-height:1.38}
 .slide.on{display:flex;animation:enter .35s var(--ease) both}
 .slide h2{font-size:44px;margin:0 0 .45em;color:#eef0f8}
 .slide p{margin:0 0 .55em}
@@ -52,17 +48,18 @@ html,body{height:100%;overflow:hidden}
 .title-slide h1{font-size:66px;margin:0 0 .2em}
 .title-slide .sub{font:italic 800 32px/1.2 var(--menu);font-variation-settings:"wdth" 108;color:var(--title);margin-bottom:1.2em}
 .timeline{display:grid;grid-template-columns:repeat(5,1fr);gap:16px;margin:6px 0 22px}
-.timeline .card{font-size:21px;padding:16px 18px;min-height:196px}
+.timeline .card{font-size:21px;padding:16px 18px;min-height:176px}
 .timeline .card .yr{font:italic 900 24px var(--menu);color:var(--hi)}
 .timeline .card.now{border-color:var(--gold-rim)}.timeline .card.now .yr{color:var(--gold)}
 .quote{font-size:19px;color:var(--text);border-left:3px solid var(--gold);padding-left:12px;margin-top:12px}
-.notes{display:none}
+.slide .notes{position:absolute;left:44px;right:44px;bottom:16px;font:13px/1.4 var(--sans);color:rgba(145,152,192,.5)}
+.slide .notes p{margin:0}.slide .notes b{color:inherit}
+body.hidenotes .slide .notes{display:none}
 #sp-panel{display:none}
-body.shownotes #sp-panel,body.presenter #sp-panel{display:block;position:fixed;z-index:5;background:rgba(3,4,20,.94);border-top:2px solid var(--f-mid);
+body.presenter #sp-panel{display:block;position:fixed;z-index:5;background:rgba(3,4,20,.94);border-top:2px solid var(--f-mid);
   color:var(--text);font:17px/1.5 var(--sans);overflow:auto;padding:12px 22px}
-body.shownotes .deck{bottom:32vh}
-body.shownotes #sp-panel{left:0;right:0;bottom:0;height:32vh}
 body.presenter .deck{right:38vw;bottom:0}
+body.presenter .slide .notes{display:none}
 body.presenter #sp-panel{top:0;right:0;bottom:0;width:38vw;height:auto;border-top:0;border-left:2px solid var(--f-mid);font-size:20px}
 #sp-head{display:flex;gap:16px;align-items:baseline;color:var(--dim);font:600 14px var(--menu);margin-bottom:8px}
 #sp-timer{font:italic 900 30px/1.1 var(--menu);color:var(--gold);cursor:pointer}
@@ -125,7 +122,7 @@ body.presenter #sp-panel{top:0;right:0;bottom:0;width:38vw;height:auto;border-to
 <section class="slide frame" data-title="The board">
   <span class="frame-stripes" aria-hidden="true"></span><div class="frame-title" aria-hidden="true">The bench</div>
   <div class="cols fig" style="gap:30px">
-    <img src="figures/leaderboard-realtime.svg" alt="Real-time board with 95% intervals" style="height:584px">
+    <img src="figures/leaderboard-realtime.svg" alt="Real-time board with 95% intervals" style="height:540px">
     <div>
       <h2 style="font-size:38px">One scale for everyone</h2>
       <p class="small dimt">CPUs 1–9, three scripted bots, five learned bots and LLMs in five roles. Fox vs Fox on my home server, one Elo fit, <b>CPU 9 = 1500</b>. A scheduler picked the games: 1,573 overnight.</p>
@@ -277,7 +274,7 @@ addEventListener("keydown", e => {
   else if (k === "Home") show(0);
   else if (k === "End") show(slides.length - 1);
   else if (k === "k") { const v = slides[i].querySelector("video"); if (v) v.paused ? v.play() : v.pause(); }
-  else if (k === "n") { document.body.classList.toggle("shownotes"); fit(); }
+  else if (k === "n") document.body.classList.toggle("hidenotes");
   else if (k === "p") open(location.pathname + "?presenter#" + (i + 1), "melee-presenter", "width=1200,height=700");
   else if (k === "f") document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
   else return;

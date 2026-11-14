@@ -6,8 +6,8 @@
 Stage 1 (extract) reads data/bench/, the bench decision logs, the perception pilot and the
 bot-writer ladder, and writes writeup/snapshot.json (committed, so the figures are reproducible
 without the gitignored data). Stage 2 (render) writes writeup/figures/*.svg and fills
-writeup/melee-bench.template.md into writeup/melee-bench.md and writeup/slides.template.html into
-writeup/slides.html. Edit prose in the templates.
+writeup/melee-bench.template.md into writeup/melee-bench.md. Edit prose in the template. The slides
+(writeup/slides.html) are edited by hand; their numbers don't update from here.
 
 Template placeholders, {{...}}:
     elo TRACK ID / ci TRACK ID / rec TRACK ID / n_games TRACK ID   (TRACK is rt or ut)
@@ -422,11 +422,10 @@ def render(s: dict) -> None:
     n = numbers(s)
     for f in (fig_leaderboard, fig_coach, fig_latency, fig_botwriter):
         f(s, n)
-    for src, dst in (("melee-bench.template.md", "melee-bench.md"), ("slides.template.html", "slides.html")):
-        tpl = (HERE / src).read_text()
-        out = re.sub(r"\{\{([^}]+)\}\}", lambda m: n.get(m.group(1).strip()) or resolve(m.group(1).strip(), s, n), tpl)
-        (HERE / dst).write_text(out)
-    print(f"rendered {len(list(FIGS.glob('*.svg')))} figures, melee-bench.md and slides.html, snapshot {n['as_of']}")
+    tpl = (HERE / "melee-bench.template.md").read_text()
+    out = re.sub(r"\{\{([^}]+)\}\}", lambda m: n.get(m.group(1).strip()) or resolve(m.group(1).strip(), s, n), tpl)
+    (HERE / "melee-bench.md").write_text(out)
+    print(f"rendered {len(list(FIGS.glob('*.svg')))} figures and melee-bench.md, snapshot {n['as_of']}")
 
 
 def main() -> None:
