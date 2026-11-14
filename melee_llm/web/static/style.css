@@ -78,7 +78,7 @@ pre { white-space: pre-wrap; word-break: break-word; margin: 0; }
 /* a Melee menu item: pointed left end, the P knob on the right (9-slice SVG plate) */
 #nav a { position: relative; flex: none; display: inline-flex; align-items: center; justify-content: center; height: 1.75em; padding: 0 .3em 0 .45em;
   border-style: solid; border-width: 0 1.75em 0 1.05em; border-image: var(--svg-item) 0 40 0 24 fill / 0 1.75em 0 1.05em stretch;
-  color: var(--gold); text-shadow: var(--outline); white-space: nowrap; font: 850 14.5px/1 var(--menu); font-variation-settings: "wdth" 96;
+  color: var(--gold); text-shadow: var(--outline); white-space: nowrap; font: 850 clamp(12.5px, .98vw, 14.5px)/1 var(--menu); font-variation-settings: "wdth" 96;
   filter: drop-shadow(0 0 2px rgba(255, 185, 30, .4)); transition: transform .12s var(--ease); }
 #nav a:hover { color: #ffe27a; transform: translateX(3px); }
 #nav a.active { color: #111; text-shadow: 0 1px 0 rgba(255, 255, 255, .35); border-image-source: var(--svg-item-on); transform: translateX(4px);
@@ -611,6 +611,8 @@ mark { background: rgba(243, 189, 79, .28); color: inherit; border-radius: 2px; 
 
 /* ------------------------------------------------------------------ responsive */
 @media (max-width: 1180px) {
+  .topbar { flex-wrap: wrap; height: auto; padding-top: 6px; padding-bottom: 4px; }
+  #nav { order: 3; flex-basis: 100%; flex-wrap: wrap; gap: 6px 1px; overflow: visible; }
   .live-layout, .game-layout { grid-template-columns: 1fr; }
   .panel { height: 70vh; position: static; }
   .replay-frame { height: 70vh; }
