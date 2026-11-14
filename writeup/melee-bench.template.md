@@ -1,5 +1,5 @@
 ---
-title: LLMs vs Melee
+title: "Melee Bot Elo"
 date: 2026-11-14
 draft: true
 tags:
