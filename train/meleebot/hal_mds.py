@@ -1,9 +1,12 @@
 """HAL's public dataset (huggingface ericyuegu/hal-mds-dataset) -> frames.bin + games.npz (see schema.py).
 
-    uv run python -m meleebot.hal_mds OUT_DIR SOURCE_DIR... --character YOSHI
+    uv run python -m meleebot.hal_mds OUT_DIR SOURCE_DIR[:MFRAMES]... [--character YOSHI|ALL] [--min-rank MASTER]
 
 A SOURCE_DIR is one downloaded source folder, e.g. /mnt/data/melee/hal-mds/pro/amsa or
 .../ranked-anonymized-1. Its train/ split goes to training and val/ to validation; test/ is left out.
+:MFRAMES caps a source at that many million frames, read from its shards in a fixed random order (so
+one prolific player or dump does not swamp a mix). --min-rank keeps only perspectives of players at
+least that rank (pro/ folders: the pro's side; ranked dumps: e.g. Master players).
 
 HAL stores less per frame than our .slp builder: no velocities, state age or hitstun. Those fields
 stay 0 here, so models trained on this data must use feature set "v2" (features.py), which ignores them.
@@ -11,11 +14,12 @@ stay 0 here, so models trained on this data must use feature set "v2" (features.
 import argparse, gzip, json, os, time
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
+from itertools import islice
 
 import numpy as np
 
 from .build_dataset import MIN_FRAMES
-from .schema import CHARACTERS, FRAME
+from .schema import CHARACTERS, FRAME, RANKS
 
 # libmelee internal character id -> our CHARACTERS index (external ids).
 _INTERNAL = ["MARIO", "FOX", "FALCON", "DK", "KIRBY", "BOWSER", "LINK", "SHEIK", "NESS", "PEACH", "ICS",
@@ -108,7 +112,7 @@ COLUMNS = {"replay_id", "num_frames", "stage", *(f"p{i}_{k}" for i in (1, 2) for
 
 def parse_shard(args):
     """One shard -> (list of (frames bytes, labels), Counter of rejections)."""
-    path, character, val, codes = args
+    path, character, val, codes, min_rank = args
     out, rejected = [], Counter()
     for row in read_shard(path, COLUMNS):
         stage = STAGE_EXTERNAL.get(row["stage"])
@@ -129,7 +133,7 @@ def parse_shard(args):
         ids = codes.get(row["replay_id"], (0, 0))
         kept = 0
         for me in (0, 1):
-            if character != "ALL" and CHARACTERS[chars[me]] != character:
+            if character != "ALL" and CHARACTERS[chars[me]] != character or row[f"p{me + 1}_rank"] < min_rank:
                 continue
             opp = 1 - me
             f = np.zeros(row["num_frames"], FRAME)
@@ -140,7 +144,7 @@ def parse_shard(args):
                 draw=int(score[me] == score[opp]), val=val)))
             kept += 1
         if not kept:
-            rejected["character not in game"] += 1
+            rejected["no perspective kept (character or rank)"] += 1
     return out, rejected
 
 
@@ -159,33 +163,45 @@ def main():
     ap.add_argument("out_dir"); ap.add_argument("sources", nargs="+")
     ap.add_argument("--character", default="YOSHI", choices=CHARACTERS + ["ALL"])
     ap.add_argument("--codes", default="/mnt/data/melee/hal-mds", help="folder with player_codes.jsonl.gz")
+    ap.add_argument("--min-rank", default="UNKNOWN", choices=RANKS)
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--limit", type=int, help="shards per split, for quick tests")
     a = ap.parse_args()
 
     codes, vocab = load_codes(a.codes)
-    jobs = []
-    for src in a.sources:
-        for split, val in (("train", 0), ("val", 1)):
-            d = os.path.join(src, split)
-            shards = sorted(f for f in os.listdir(d) if f.endswith(".mds.zstd"))[:a.limit]
-            jobs += [(os.path.join(d, f), a.character, val, codes) for f in shards]
+    min_rank = RANKS.index(a.min_rank)
     os.makedirs(a.out_dir, exist_ok=True)
-    rows, rejected, offset, t0 = [], Counter(), 0, time.time()
+    rows, rejected, offset, t0, sources = [], Counter(), 0, time.time(), {}
     with ProcessPoolExecutor(a.workers) as ex, open(os.path.join(a.out_dir, "frames.bin"), "wb") as fh:
-        for i, (res, rej) in enumerate(ex.map(parse_shard, jobs)):
-            rejected.update(rej)
-            for blob, row in res:
-                fh.write(blob)
-                n = len(blob) // FRAME.itemsize
-                rows.append(dict(row, offset=offset, length=n))
-                offset += n
-            print(f"{i + 1}/{len(jobs)} shards, {len(rows)} perspectives, {offset / 1e6:.0f}M frames, "
-                  f"{time.time() - t0:.0f}s", flush=True)
+        for spec in a.sources:
+            src, _, cap = spec.partition(":")
+            cap = float(cap) * 1e6 if cap else float("inf")
+            jobs = []
+            for split, val in (("train", 0), ("val", 1)):
+                d = os.path.join(src, split)
+                shards = sorted(f for f in os.listdir(d) if f.endswith(".mds.zstd"))[:a.limit]
+                jobs += [(os.path.join(d, f), a.character, val, codes, min_rank) for f in shards]
+            np.random.default_rng(0).shuffle(jobs)  # mixed, so a capped source keeps its share of val games
+            start, todo = offset, iter(jobs)
+            pending = [ex.submit(parse_shard, j) for j in islice(todo, 2 * a.workers)]
+            while pending and offset - start < cap:
+                res, rej = pending.pop(0).result()
+                pending += [ex.submit(parse_shard, j) for j in islice(todo, 1)]
+                rejected.update(rej)
+                for blob, row in res:
+                    fh.write(blob)
+                    n = len(blob) // FRAME.itemsize
+                    rows.append(dict(row, offset=offset, length=n))
+                    offset += n
+            for f in pending:
+                f.cancel()
+            sources[os.path.abspath(src)] = int(offset - start)
+            print(f"{src}: {(offset - start) / 1e6:.0f}M frames; total {len(rows)} perspectives, "
+                  f"{offset / 1e6:.0f}M frames, {time.time() - t0:.0f}s", flush=True)
 
     cols = {k: np.array([r[k] for r in rows]) for k in rows[0]}
     np.savez(os.path.join(a.out_dir, "games.npz"), **cols)
-    meta = dict(character=a.character, source="hal-mds", sources=[os.path.abspath(s) for s in a.sources],
+    meta = dict(character=a.character, source="hal-mds", sources=sources, min_rank=a.min_rank,
                 features="v2", perspectives=len(rows), frames=offset, frame_bytes=FRAME.itemsize,
                 rejected=dict(rejected), min_frames=MIN_FRAMES,
                 player_codes={i + 4: c for i, c in enumerate(vocab) if i + 4 in set(cols["player"].tolist())})
