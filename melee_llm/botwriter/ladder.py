@@ -32,6 +32,8 @@ from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
+from melee_llm.ratings import elo_ratings
+
 DEFAULTS = {"stages": ["FINAL_DESTINATION", "BATTLEFIELD"], "character": "FOX", "allowed_characters": ["FOX"],
             "games_per_side": 2, "workers": 4, "budget_ms": 16.0, "entrants_play_each_other": False,
             "calibrate_roster": False, "hard_games_per_side": None, "anchor": "cpu:1", "job_timeout_s": 1800,
@@ -82,6 +84,7 @@ def _alarm(*_):
 def run_job(job: dict, cfg: dict) -> list[dict]:
     global _PORT
     import melee
+
     from melee_llm.botwriter.dolphin import claim_slippi_port, exit_on_term
     from melee_llm.botwriter.specs import make_agent
     from melee_llm.runner import play
@@ -141,26 +144,6 @@ def read_games(out: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()] if path.exists() else []
 
 
-def bradley_terry(games: list[tuple[str, str, float]], iters: int = 2000) -> dict[str, float]:
-    """MM fit (Hunter 2004) of strengths from (a, b, score_a) with draws as half wins. Each player
-    also gets one virtual draw against a fixed strength-1 player, which keeps unbeaten or winless
-    players finite. Returns Elo-scale ratings (400 * log10 strength)."""
-    wins, n = defaultdict(float), defaultdict(lambda: defaultdict(float))
-    for a, b, s in games:
-        wins[a] += s
-        wins[b] += 1 - s
-        n[a][b] += 1
-        n[b][a] += 1
-    p = {k: 1.0 for k in n}
-    for _ in range(iters):
-        new = {i: (wins[i] + 0.5) / (sum(c / (p[i] + p[j]) for j, c in n[i].items()) + 1 / (p[i] + 1)) for i in p}
-        delta = max(abs(math.log(new[i] / p[i])) for i in p) if p else 0
-        p = new
-        if delta < 1e-9:
-            break
-    return {k: 400 * math.log10(v) for k, v in p.items()}
-
-
 def wilson(score: float, n: int, z: float = 1.96) -> tuple[float, float]:
     if n == 0:
         return (0.0, 1.0)
@@ -172,9 +155,7 @@ def wilson(score: float, n: int, z: float = 1.96) -> tuple[float, float]:
 def leaderboard(cfg: dict, games: list[dict]) -> dict:
     played = [g for g in games if "error" not in g]
     pairs = [(g["a"], g["b"], 1.0 if g["winner"] == "a" else 0.0 if g["winner"] == "b" else 0.5) for g in played]
-    elo = bradley_terry(pairs)
-    shift = -elo.get(cfg["anchor"], 0.0)
-    elo = {k: round(v + shift, 1) for k, v in elo.items()}
+    elo = {k: round(v, 1) for k, v in elo_ratings(pairs, cfg["anchor"]).items()}
     roster = list(cfg["roster"])
     rows = {}
     for e in cfg["entrants"]:

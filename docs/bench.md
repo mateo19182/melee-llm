@@ -45,7 +45,7 @@ The shared games tie the two scales together: `cpu:9` is 1500 on both boards, an
 
 ## Rating method
 
-`melee_llm/bench/ratings.py`. Per track, a Bradley-Terry fit by MAP (llm_arena's `fit`: Newton's method, Gaussian prior with sd 2 per log-strength so undefeated records stay finite, a draw is half a win), on the Elo scale (400 points ≈ 10:1 odds), **`cpu:9` pinned at 1500**. A track's games are all `ok` games whose two players both play that track.
+`melee_llm/bench/ratings.py`. Per track, a Bradley-Terry fit by MAP (the shared `fit` in `melee_llm/ratings.py`: Newton's method, Gaussian prior with sd 2 per log-strength so undefeated records stay finite, a draw is half a win), on the Elo scale (400 points ≈ 10:1 odds), **`cpu:9` pinned at 1500**. A track's games are all `ok` games whose two players both play that track.
 
 The 95% interval shown is the wider of two estimates: the 2.5/97.5 percentiles of bootstrap resamples of games (refit and re-anchored each time), and the Laplace estimate (±1.96 sd from the inverse Hessian). The bootstrap alone is too narrow for a perfect record: every resample is also perfect. An entrant is "converged" when that half-width is at most the target (default ±125).
 

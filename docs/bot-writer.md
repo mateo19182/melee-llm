@@ -94,8 +94,8 @@ times. `tools/inspect-replay` and `tools/time-left` round out the set.
   StarSkirmish v0.2, which dropped Elo for plain win rates against a fixed roster. Because the
   score doesn't depend on the other entrants, a new bot can be scored without replaying the field,
   and the bar stays comparable across model generations. A Wilson 95 % interval is reported.
-- **Secondary:** a Bradley-Terry fit (MM algorithm, with one virtual draw so undefeated bots stay
-  finite) over all games, on an Elo scale anchored at `cpu:1` = 0. Turn on
+- **Secondary:** the project's one Bradley-Terry fit (`melee_llm/ratings.py`: MAP with a Gaussian prior, so
+  undefeated bots stay finite) over all games, on an Elo scale anchored at `cpu:1` = 0. Turn on
   `entrants_play_each_other` and `calibrate_roster` to add entrant-vs-entrant and roster-vs-roster
   games. `cpu_ladder_level` is the highest CPU level beaten at least half the time, with every
   lower roster CPU beaten too.
@@ -204,10 +204,10 @@ violations. Draws (8-minute timeouts, mostly against `laser` and `shine`) count 
 
 | model | harness | runs | main score (95 % CI) | hard tier | CPU level | Elo | cost | wall | LoC | practice games | SmashBot overlap |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Sonnet 5.5 (run1) | Claude Code | 1 | **83.0** (76.0-88.2) | 0 / 16 | 9 | 470 | $0.45 | 28.5 min | 135 | 38 | 0.084 |
-| Haiku 4.5 (run1) | Claude Code | 1 | **83.0** (76.0-88.2) | 6.2 (1 win vs MIMIC) | 7 | 479 | $0.44 | 30.0 min | 108 | 18 | 0.071 |
-| Opus 5.5 (run1) | Claude Code | 1 | 76.4 (68.8-82.6) | 0 / 16 | 8 | 391 | $1.82 | 29.1 min | 303 | 32 | 0.035 |
-| Sonnet 5.5 (pilot1) | Claude Code | 1 | 17.7 (12.3-24.8) | 0 / 16 | 0 | -171 | $0.32 | 29.5 min | 148 | n/a | 0.115 |
+| Sonnet 5.5 (run1) | Claude Code | 1 | **83.0** (76.0-88.2) | 0 / 16 | 9 | 461 | $0.45 | 28.5 min | 135 | 38 | 0.084 |
+| Haiku 4.5 (run1) | Claude Code | 1 | **83.0** (76.0-88.2) | 6.2 (1 win vs MIMIC) | 7 | 469 | $0.44 | 30.0 min | 108 | 18 | 0.071 |
+| Opus 5.5 (run1) | Claude Code | 1 | 76.4 (68.8-82.6) | 0 / 16 | 8 | 384 | $1.82 | 29.1 min | 303 | 32 | 0.035 |
+| Sonnet 5.5 (pilot1) | Claude Code | 1 | 17.7 (12.3-24.8) | 0 / 16 | 0 | -170 | $0.32 | 29.5 min | 148 | n/a | 0.115 |
 | gpt-6-astra, gpt-6.1-sol | tool loop | 0 | paused | | | | | | | | |
 
 Notes on the table:
@@ -220,8 +220,10 @@ Notes on the table:
   kept as `cost_usd_summed_bug` in those `meta.json` files.
 - Overlap is `similarity.py`'s renamed 12-token-shingle overlap. The baselines and the starter
   template score 0.08-0.11, and the flag threshold is 0.25. No bot is flagged.
-- Reference Elo (CPU 1 = 0): CPU 9 449, `rusher` 431, `laser` 265, `shine` 243, MIMIC 757, HAL and
-  Phillip 968, Faynt 1003. Hard-tier Elos rest on very few non-wins.
+- Reference Elo (CPU 1 = 0): CPU 9 441, `rusher` 423, `laser` 258, `shine` 236, MIMIC 763, HAL,
+  Phillip and Faynt 894. Hard-tier Elos rest on very few non-wins. The Elo column and these values were
+  recomputed on 2026-11-14 with the shared fit; the ladder's own fit gave 470, 479, 391 and -171 for the
+  four bots, and the order is unchanged.
 
 **What each model built**
 

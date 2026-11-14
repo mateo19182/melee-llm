@@ -1,6 +1,6 @@
 """Bench ratings: one Bradley-Terry fit per track on the Elo scale, cpu:9 pinned at 1500.
 
-The fit is llm_arena's (MAP with a Gaussian prior, sd 2 per log-strength, draws = half wins). A track's games are
+The fit is the shared one in melee_llm/ratings.py (MAP with a Gaussian prior, sd 2 per log-strength, draws = half wins). A track's games are
 those whose two players both play that track; games between two token-free players (CPUs and bots) count on both
 boards, which puts the two scales on the same anchors. CIs: 2.5/97.5 percentiles of bootstrap resamples of games,
 refit and re-anchored; the scheduler uses the faster Laplace (inverse Hessian) half-width.
@@ -14,7 +14,7 @@ from collections import defaultdict
 import numpy as np
 
 from melee_llm.bench.entrants import Entrant, by_id, game_track
-from melee_llm.llm_arena.ratings import ELO, PRIOR_SD, fit
+from melee_llm.ratings import ELO, PRIOR_SD, fit
 
 ANCHOR, ANCHOR_ELO = "cpu:9", 1500.0
 TRACK_NAMES = ("realtime", "untimed")
