@@ -48,7 +48,9 @@ Open http://m19182:8767/list. Port 8766 is taken by another service on this host
 - LLM plays: see [docs/llm-player.md](docs/llm-player.md).
 - LLM vs LLM arena: rated round robins of `llm_paused` models: see [docs/llm-arena.md](docs/llm-arena.md).
 - LLM writes bots: see [docs/bot-writer.md](docs/bot-writer.md).
+- Jev (TypeSafe System One) picks macros or coaches Reyn: see [docs/jev.md](docs/jev.md).
 - Play our bots yourself over Slippi Direct Connect from another machine: see [docs/netplay.md](docs/netplay.md).
+- Background on Melee, the history of its bots, tooling, community and people: see [docs/research.md](docs/research.md).
 - Learned bots (HAL, Faynt, MIMIC, Phillip), which serve as ladder opponents and as the body an LLM coach steers: see `docs/bots.md`.
 
 ## Web UI
