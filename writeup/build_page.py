@@ -21,6 +21,7 @@ STATIC = HERE.parent / "melee_llm" / "web" / "static"
 CSS = """
 .frame{max-width:920px}
 .post{max-width:44rem;margin:0 auto;font-size:17px;line-height:1.62}
+.post .sub{font:italic 800 21px/1.25 var(--menu);font-variation-settings:"wdth" 108;color:var(--title);margin:-.2em 0 .7em}
 .post .meta{color:var(--dim);font-size:14px;margin:-4px 0 26px}
 .post h1{font-size:38px;margin-bottom:.35em}
 .post h2{font-size:25px;margin:2.1em 0 .6em}
@@ -62,11 +63,12 @@ def main() -> None:
     src = re.sub(r"<!--.*?-->\n?", "", src, flags=re.S)
     body = MarkdownIt("commonmark", {"html": False}).enable("table").render(src)
     body = re.sub(r'<a href="(https?://[^"]+)"', r'<a href="\1" target="_blank" rel="noopener"', body)
-    title = meta.get("title", "Melee Bot Elo")
+    title = meta.get("title", "Melee bots are getting really good")
+    sub = f'<div class="sub">{html.escape(meta["subtitle"])}</div>' if meta.get("subtitle") else ""
     page = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{html.escape(title)}</title>
-<meta name="description" content="Ten years of Melee bots, why now, and one Elo scale for CPUs, learned bots and LLMs.">
+<meta name="description" content="Melee bots are getting really good: ten years of them, how the best ones work, and one Elo scale for CPUs, learned bots and LLMs.">
 <meta name="theme-color" content="#070926">
 <link rel="icon" href="/static/img/smash-emblem.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/static/style.css">
@@ -77,7 +79,7 @@ def main() -> None:
 <div class="frame">
 <span class="frame-stripes" aria-hidden="true"></span>
 <div class="frame-title" aria-hidden="true">Write-up</div>
-<main><article class="post"><h1>{html.escape(title)}</h1><div class="meta">Mateo Amado · {html.escape(meta.get("date", ""))}</div>
+<main><article class="post"><h1>{html.escape(title)}</h1>{sub}<div class="meta">Mateo Amado · {html.escape(meta.get("date", ""))}</div>
 {body}</article></main>
 </div>
 </body></html>

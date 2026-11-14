@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Melee Bot Elo</title>
-<meta name="description" content="Ten years of Melee bots, why now, and one Elo scale for CPUs, learned bots and LLMs.">
+<title>Melee bots are getting really good</title>
+<meta name="description" content="Melee bots are getting really good: ten years of them, how the best ones work, and one Elo scale for CPUs, learned bots and LLMs.">
 <meta name="theme-color" content="#070926">
 <link rel="icon" href="/static/img/smash-emblem.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/static/style.css">
@@ -9,6 +9,7 @@
 <style>
 .frame{max-width:920px}
 .post{max-width:44rem;margin:0 auto;font-size:17px;line-height:1.62}
+.post .sub{font:italic 800 21px/1.25 var(--menu);font-variation-settings:"wdth" 108;color:var(--title);margin:-.2em 0 .7em}
 .post .meta{color:var(--dim);font-size:14px;margin:-4px 0 26px}
 .post h1{font-size:38px;margin-bottom:.35em}
 .post h2{font-size:25px;margin:2.1em 0 .6em}
@@ -42,7 +43,7 @@
       <a href="/arena" data-desc="Learned bots play each other while the live slot is free.">Arena</a>
       <a href="/coach" data-desc="LLMs coach Reyn, one command every few seconds.">Coach</a>
       <a href="/botwriter" data-desc="Coding agents write a Melee bot, then play a ladder.">Bot-writer</a>
-      <a href="/play" data-desc="Netplay against the bots from your own Slippi Dolphin.">Play vs bot</a>
+      <a href="/play" data-desc="Play our bots yourself, locally with play.py; netplay coming soon.">Play vs bot</a>
       <a href="/training" data-desc="Our own bot, cloned from ranked replays.">Training</a>
       <a href="/docs" data-desc="How it all works, and what we found.">Docs</a>
       <a class="active" href="/writeup/" data-desc="The write-up: the whole project on one page.">Write-up</a>
@@ -51,7 +52,7 @@
 <div class="frame">
 <span class="frame-stripes" aria-hidden="true"></span>
 <div class="frame-title" aria-hidden="true">Write-up</div>
-<main><article class="post"><h1>Melee Bot Elo</h1><div class="meta">Mateo Amado · 2026-11-14</div>
+<main><article class="post"><h1>Melee bots are getting really good</h1><div class="sub">…and what we can learn from them</div><div class="meta">Mateo Amado · 2026-11-14</div>
 <blockquote>
 <p><strong>TL;DR.</strong> People have been building bots for Super Smash Bros. Melee for ten years, and the last two months were the busiest of all: the strongest bot yet, a bot you steer in plain English, top players beating an AI crew on stream, a ranked ladder for bots only, and a simulator that runs the game 100 times faster. Over two days I put all of it on one Elo scale: Melee's own CPUs, the published learned bots, and frontier LLMs in five different roles. The learned bots are far ahead. LLMs pressing the buttons in real time play like a level 4 CPU; given unlimited time to think, the best one beats the hardest CPU, and so do bots that LLMs wrote in 30 minutes. The surprise came from coaching: a small bot coached by four frontier LLMs did best with no coach at all, just the words &quot;Don't die.&quot;</p>
 </blockquote>
@@ -65,7 +66,7 @@
 <p><em>14 seconds of a bench game, redrawn from the replay file: Faynt (blue) takes a stock off Phillip (red), both playing Fox.</em></p>
 <p>Every game in this post is Fox against Fox, a staple of top-level play, on two standard tournament stages.</p>
 <hr />
-<h2>Ten years of Melee bots</h2>
+<h2>Ten years of Melee bots, and why now</h2>
 <ul>
 <li><strong>2001, the built-in CPUs.</strong> Scripted, levels 1 to 9. Level 9 jabs and grabs on the exact frame, but it almost never shields, always recovers the same way, and loses to one move repeated.</li>
 <li><strong>2015, SmashBot.</strong> Dan &quot;altf4&quot; Petro wrote a Fox bot by hand: goals, tactics and exact input sequences, driven by the game's frame data and with zero reaction time. He presented it at <a href="https://www.youtube.com/watch?v=_0Z_oN_CZyA" target="_blank" rel="noopener">DEF CON 24</a> and it played pros in 2017. Its plumbing became libmelee, which almost every bot since is built on.</li>
@@ -73,19 +74,24 @@
 <li><strong>2018-2022, Slippi.</strong> Replay files in 2018, rollback netplay in 2020, a ranked ladder in 2022. Suddenly there were hundreds of thousands of recorded human games to learn from.</li>
 <li><strong>2020-2024, Phillip again.</strong> <a href="https://github.com/vladfi1/slippi-ai" target="_blank" rel="noopener">slippi-ai</a> set the recipe everyone uses now: first copy humans from replays (behaviour cloning), then improve by self-play while staying close to human play, with a human-like reaction delay of 18 to 24 frames built in. In late 2024 it played top players in public: Zain <a href="https://www.youtube.com/watch?v=c8nRFAGvr2c" target="_blank" rel="noopener">won a first-to-5</a> 5-3, and Moky <a href="https://www.youtube.com/watch?v=1kviVflqXc4" target="_blank" rel="noopener">lost a first-to-10</a> 3-10.</li>
 <li><strong>2025, cheap and open.</strong> Eric Gu's <a href="https://ericyuegu.com/behavior-cloning-melee/" target="_blank" rel="noopener">HAL</a> cloned pro Fox games into a 20M-parameter transformer for about $5 of compute, and it beat the level 9 CPU 95% of the time. <a href="https://github.com/erickfm/MIMIC" target="_blank" rel="noopener">MIMIC</a> followed with one model per character. Both published their weights.</li>
+<li><strong>October 2026, humans against robots, on stream.</strong> Top players took on Phillip in two crew battles, on <a href="https://www.youtube.com/watch?v=Szm1y1JrNpQ" target="_blank" rel="noopener">1 October</a> and <a href="https://www.twitch.tv/videos/2903721139" target="_blank" rel="noopener">17 October</a>. The humans won both, with Mew2King as the last player standing each time.</li>
+<li><strong>October 2026, <a href="https://www.frisson-labs.com/faynt" target="_blank" rel="noopener">Faynt</a>.</strong> Frisson Labs released one 10M-parameter model that plays all 26 characters and won 240 of 244 games against Phillip's public releases. It reacts instantly while those keep their delay, so the comparison is not a fair one, but it is the strongest bot with public weights.</li>
+<li><strong>October 2026, HAL scaled up.</strong> A 247M-parameter version <a href="https://ericyuegu.com/hillclimbing-melee/" target="_blank" rel="noopener">reached about 2200 Elo</a>, the top 1% of the human ladder.</li>
+<li><strong>October 2026, <a href="https://stomped.dev" target="_blank" rel="noopener">stomped.dev</a>.</strong> A ranked ladder for bots only. Your bot gets 11 ms per frame to answer.</li>
+<li><strong>11 November 2026, <a href="https://www.frisson-labs.com/reyn" target="_blank" rel="noopener">Reyn</a>.</strong> Three days before this post, Frisson Labs released a bot that takes orders in plain English.</li>
+<li><strong>And a simulator.</strong> <a href="https://github.com/kyhavlov/melee-sim-light" target="_blank" rel="noopener">melee-sim-light</a> runs the decompiled game without an emulator, about 100 times faster.</li>
 </ul>
-<h2>Why now</h2>
-<p>Then, in the six weeks before I started:</p>
+<p>The last six weeks alone changed the picture. The strongest bots can be downloaded and run on one home GPU. One of them has a language interface that an LLM can talk to. The game can be simulated far faster than real time. Cloning a decent bot costs a few dollars, and there is a public ladder to test it on. Nobody had put these bots on one scale, or asked where an LLM fits among them. So that is what I built, along with a website to watch it, an AI commentary booth, and a bot of my own.</p>
+<h2>How the best bots work</h2>
+<p>None of them look at the screen. Through libmelee they read the game's memory every frame (positions, speeds, the current animation and how far into it, damage, stocks) and answer with a full controller state: both sticks, the triggers and every button. And almost all of them follow slippi-ai's recipe: copy humans first, then get better by playing.</p>
 <ul>
-<li><strong>Humans against robots, on stream.</strong> Top players took on Phillip in two crew battles, on <a href="https://www.youtube.com/watch?v=Szm1y1JrNpQ" target="_blank" rel="noopener">1 October</a> and <a href="https://www.twitch.tv/videos/2903721139" target="_blank" rel="noopener">17 October</a>. The humans won both, with Mew2King as the last player standing each time.</li>
-<li><strong><a href="https://www.frisson-labs.com/faynt" target="_blank" rel="noopener">Faynt</a></strong> (Frisson Labs, October): one 10M-parameter model that plays all 26 characters and won 240 of 244 games against Phillip's public releases. It reacts instantly while those keep their delay, so the comparison is not a fair one, but it is the strongest bot with public weights.</li>
-<li><strong>HAL, scaled up</strong> (October): a 247M-parameter version <a href="https://ericyuegu.com/hillclimbing-melee/" target="_blank" rel="noopener">reached about 2200 Elo</a>, the top 1% of the human ladder.</li>
-<li><strong><a href="https://stomped.dev" target="_blank" rel="noopener">stomped.dev</a></strong> (October): a ranked ladder for bots only. Your bot gets 11 ms per frame to answer.</li>
-<li><strong><a href="https://www.frisson-labs.com/reyn" target="_blank" rel="noopener">Reyn</a></strong> (11 November, three days before this post): a bot that takes orders in plain English.</li>
-<li><strong><a href="https://typesafe.ai/blog/introducing-system-one-models-and-jev" target="_blank" rel="noopener">Jev</a></strong> (September): a new kind of model that answers a multiple-choice question in 0.15 seconds instead of writing text for 2.</li>
-<li><strong>A simulator.</strong> <a href="https://github.com/kyhavlov/melee-sim-light" target="_blank" rel="noopener">melee-sim-light</a> runs the decompiled game without an emulator, about 100 times faster.</li>
+<li><strong><a href="https://arxiv.org/abs/2610.02144" target="_blank" rel="noopener">Faynt</a></strong> (Frisson Labs) is a small transformer: 10M parameters in 5 layers of width 384, with a 75M sibling (11 × 768). It keeps a cache of the last 256 frames and takes one step per frame. Training has three stages: behaviour cloning on about 840,000 ranked replays; a &quot;winner curriculum&quot; that ends on 90% games won by Master-ranked players, with the 75M model distilled into the 10M one; then PPO (reinforcement learning) in Fox mirrors, 96 emulators on one GPU, with a penalty for drifting away from the human-like policy. RL took the 75M model from 25 to 58 wins in their test. It runs with zero reaction delay.</li>
+<li><strong><a href="https://github.com/vladfi1/slippi-ai" target="_blank" rel="noopener">Phillip</a></strong> (slippi-ai, vladfi1) is a recurrent network rather than a transformer. Its output head picks the controller in two steps: one of 728 combinations of buttons, triggers and C-stick, then one of 85 main-stick positions given the first choice; Faynt reuses this encoding. It is cloned from ranked and pro replays, then trained by self-play with the same pull back toward human play. Its trademark is the delay: it sees the game 18 to 24 frames late, like a human reacting, which also makes it play well online.</li>
+<li><strong><a href="https://ericyuegu.com/hillclimbing-melee/" target="_blank" rel="noopener">HAL</a></strong> (Eric Gu) is the biggest: a 247M decoder-only transformer with 256 frames of context, trained in 16 hours on one B200 on about 1.3M games (13.5 billion frames) from ranked play and 38 pros. It predicts 4 frames of inputs at a time and replans every 2, which hides its compute time. It is pure behaviour cloning, steered by asking for a given level of play (a &quot;return target&quot;) or a given player's style, like &quot;play like Cody&quot;. Gu's key finding: a frame of reaction delay hurts twice as much as a frame of acting without new information.</li>
+<li><strong><a href="https://github.com/erickfm/MIMIC" target="_blank" rel="noopener">MIMIC</a></strong> (erickfm) takes HAL's recipe per character: about 20M parameters, a 180-frame window, a dedicated button head so it can wavedash, and a little RL on skills the game can check, such as L-cancel rate.</li>
+<li><strong><a href="https://www.frisson-labs.com/reyn" target="_blank" rel="noopener">Reyn</a></strong> (Frisson Labs) is Faynt's 10M policy plus a small router that maps an English phrase onto one of about 200 learned command tokens. There is no LLM inside: it understands &quot;be more aggressive&quot; because that phrase lands near a command it was trained on.</li>
 </ul>
-<p>Put together, this is new. The strongest bots can be downloaded and run on one home GPU. One of them has a language interface that an LLM can talk to. The game can be simulated far faster than real time. Cloning a decent bot costs a few dollars, and there is a public ladder to test it on. Nobody had put these bots on one scale, or asked where an LLM fits among them. So that is what I built, along with a website to watch it, an AI commentary booth, and a bot of my own.</p>
+<p>The numbers that matter: these networks are tiny next to an LLM (10M to 247M parameters), they answer in 2 to 8 milliseconds a frame on one home GPU or even a CPU, and their strength comes from human replays plus self-play, not from reasoning. That is the gap the rest of this post measures.</p>
 <hr />
 <h2>The benchmark</h2>
 <p>Everything runs on my home server: the real game, from my own disc, in the Slippi version of the Dolphin emulator. A Python library reads the game state every frame and drives a virtual controller. A dozen games can run side by side.</p>
@@ -182,24 +188,6 @@ f1230 laser(short,1) → laser: fired 1, landed
 <p>Melee's community has decompiled the game's code back into C, and <a href="https://github.com/kyhavlov/melee-sim-light" target="_blank" rel="noopener">melee-sim-light</a> runs it without an emulator. I hooked all our players into it, including the learned bots, and checked it against real games: 287 of 300 replays matched frame for frame (the other 13 were unfinished files), and the game itself runs about 100 times faster than in the emulator. Its catch: there are no built-in CPUs.</p>
 <h3>Playing the bots yourself</h3>
 <p>You can play the bots yourself, on a laptop with a controller (Phillip at any skill tier, Faynt or Reyn with a command of your choice) or from home over Slippi's online direct connect. The board has a slot waiting for human results. Come try.</p>
-<hr />
-<h2>Caveats</h2>
-<ul>
-<li><strong>One matchup.</strong> Fox vs Fox on two stages. Other characters could change everything, and the CPU results in particular are a quirk of Fox.</li>
-<li><strong>The intervals are real.</strong> Neighbours on the board usually overlap. The big gaps (learned bots vs everything, live vs untimed, coached vs uncoached Reyn, &quot;Don't die.&quot;) are well outside the noise; most orderings inside a group are not.</li>
-<li><strong>The harness is part of the result.</strong> The moves, reflexes, prompt and 2-second cutoff are mine. A better harness would score higher; the live LLMs are partly a measure of my autopilot.</li>
-<li><strong>Model names can change underneath.</strong> Models were called through subscriptions, and providers can change what's behind a name.</li>
-</ul>
-<hr />
-<h2>What's next</h2>
-<ul>
-<li><strong>Impressive bots and TASs</strong>: the simulator can save and restore any moment of a game and runs about 100 times faster than the emulator. So a program can try thousands of inputs from the same moment and keep the best. That's how tool-assisted &quot;superplay&quot; works: frame-perfect combos, recoveries and edgeguards no human could pull off. It's also a way to train bots on far more games than a human could ever play.</li>
-<li><strong>A faster brain</strong>: a small local model on my GPU at about half a second per decision, since speed is what matters live.</li>
-<li><strong>A better coach</strong>: start from &quot;Don't die.&quot; and only switch with a good reason.</li>
-<li><strong>MeleeBot, stronger</strong>: fine-tune on a top Yoshi player's games, then self-play in the simulator, then the stomped.dev ladder.</li>
-<li><strong>Bot-writer round 2</strong>: three runs per model, so it can actually rank something.</li>
-<li><strong>Me</strong>: the board has a slot for a human. I'm not expecting a good number.</li>
-</ul>
 <hr />
 <p>Built on <a href="https://slippi.gg" target="_blank" rel="noopener">Slippi</a>, <a href="https://github.com/vladfi1/libmelee" target="_blank" rel="noopener">libmelee</a>, <a href="https://github.com/frankborden/slippilab" target="_blank" rel="noopener">Slippi Lab</a> and <a href="https://github.com/kyhavlov/melee-sim-light" target="_blank" rel="noopener">melee-sim-light</a>, with the bots of vladfi1 (Phillip), Eric Gu (HAL), erickfm (MIMIC) and Frisson Labs (Faynt, Reyn), <a href="https://typesafe.ai/blog/introducing-system-one-models-and-jev" target="_blank" rel="noopener">TypeSafe's Jev</a> and <a href="https://elevenlabs.io" target="_blank" rel="noopener">ElevenLabs</a> voices. Related work I leaned on: <a href="https://starskirmish.com/bench/v0-1/" target="_blank" rel="noopener">StarSkirmish</a>, <a href="https://arxiv.org/abs/2610.12596" target="_blank" rel="noopener">SpireBench</a>, <a href="https://arxiv.org/abs/2505.18134" target="_blank" rel="noopener">VideoGameBench</a> and <a href="https://hgali.sh/reflex" target="_blank" rel="noopener">Qwen plays Smash</a>. Technical details for every part are in the <a href="https://melee.m19182.dev/docs/status" target="_blank" rel="noopener">docs</a>.</p>
 </article></main>
