@@ -41,16 +41,16 @@ export default async function games(root, { query }) {
       for (const s of r.sources) sourceSel.append(h("option", { value: s, selected: f.source === s }, s));
     }
     mount(list, table([
-      { label: "When", render: (g) => h("span.dim", {}, g.time) },
+      { label: "When", cls: "when", render: (g) => g.time.slice(5, 16) },
       { label: "Source", render: (g) => g.job_id ? link(`/job/${g.job_id}`, g.source_label) : g.source_label },
       { label: "Players", render: (g) => h("span", {}, playerLine(g, 1), h("span.dim", {}, "  vs  "), playerLine(g, 2)) },
       { label: "Stage", render: (g) => g.stage_name },
       { label: "Mode", render: (g) => g.mode || "–" },
       { label: "Result", render: (g) => resultText(g) },
       { label: "Length", cls: "num", render: (g) => fmt.frames(g.frames) },
-      { label: "Logs", render: (g) => g.logs.length ? g.logs.map((l) => h("span.badge.ok", {}, l.kind)) : "" },
-    ], r.games, { onRow: (g) => navigate(`/game/${g.id}`), rowClass: () => "clickable", empty: "No games match." }),
-    r.total > r.games.length ? h("div", { style: { textAlign: "center", marginTop: "12px" } },
+      { label: "Logs", render: (g) => g.logs.length ? g.logs.map((l) => h("span.badge.hi", {}, l.kind)) : "" },
+    ], r.games, { onRow: (g) => navigate(`/game/${g.id}`), rowClass: () => "clickable", empty: "No games match these filters." }),
+    r.total > r.games.length ? h("div", { style: { textAlign: "center", marginTop: "16px" } },
       h("button", { onclick: () => { limit += 200; load(); } }, `Show more (${r.total - r.games.length} left)`)) : null);
   }
   load();

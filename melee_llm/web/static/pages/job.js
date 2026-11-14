@@ -1,5 +1,5 @@
 // One job: spec, per-game results with links to the game pages, token spend, process output.
-import { api, every, fmt, h, link, mount, resultText, statusBadge, table, toast } from "../lib.js";
+import { api, emptyState, every, fmt, h, link, mount, resultText, statusBadge, table, toast } from "../lib.js";
 
 export default async function job(root, { id }, signal) {
   const box = h("div.stack");
@@ -13,10 +13,12 @@ export default async function job(root, { id }, signal) {
         h("span.spacer"), active ? h("button.danger", { disabled: !!j.cancel, onclick: async () => {
           await api(`/api/jobs/${j.id}/cancel`, { method: "POST" }); toast("Cancelling"); } }, j.cancel ? "Cancelling…" : "Cancel") : null,
         j.lane === "live" && j.status === "running" ? link("/live", h("button.primary", {}, "Watch live")) : null),
+      h("div.matchup", {}, h("span.port.p1", { style: { fontSize: "16px" } }, "P1"), h("span.side.p1", {}, j.label1, h("span.char", {}, j.char1_name)),
+        h("span.vs", {}, "vs"), h("span.port.p2", { style: { fontSize: "16px" } }, "P2"), h("span.side.p2", {}, j.label2, h("span.char", {}, j.char2_name))),
       h("div.grid2", {},
         h("div.card", {}, h("h2", {}, "Match"), h("dl.kv", {},
-          h("dt", {}, "P1"), h("dd", {}, h("span.port.p1", {}, "P1"), ` ${j.label1} (${j.char1_name})`, h("div.dim.mono", {}, j.p1)),
-          h("dt", {}, "P2"), h("dd", {}, h("span.port.p2", {}, "P2"), ` ${j.label2} (${j.char2_name})`, h("div.dim.mono", {}, j.p2)),
+          h("dt", {}, "P1"), h("dd", {}, h("span.mono", {}, j.p1)),
+          h("dt", {}, "P2"), h("dd", {}, h("span.mono", {}, j.p2)),
           h("dt", {}, "Games"), h("dd", {}, `${j.results.length} of ${j.games}`),
           h("dt", {}, "Queued"), h("dd", {}, fmt.time(j.created)),
           h("dt", {}, "Ran"), h("dd", {}, j.started ? `${fmt.time(j.started)} · ${fmt.secs((j.finished || Date.now() / 1000) - j.started)}` : "–"),
@@ -29,7 +31,7 @@ export default async function job(root, { id }, signal) {
           table([{ label: "Model", key: "m" }, { label: "Calls", key: "calls", cls: "num" },
             { label: "Prompt", cls: "num", render: (r) => fmt.num(r.prompt) }, { label: "Completion", cls: "num", render: (r) => fmt.num(r.completion) }],
           Object.entries(t.by_model).map(([m, v]) => ({ m, ...v }))))
-          : h("div.dim", {}, "No LLM calls logged (yet)."))),
+          : emptyState("No LLM calls", "Nothing logged for this job (yet)."))),
       h("div.card", {}, h("h2", {}, "Games"), table([
         { label: "Game", render: (r) => `#${r.game + 1}` },
         { label: "Result", render: (r) => resultText(r) },
@@ -37,7 +39,7 @@ export default async function job(root, { id }, signal) {
         { label: "Length", render: (r) => fmt.frames(r.frames) },
         { label: "", render: (r) => r.gid ? link(`/game/${r.gid}`, "Replay & decisions →") : "–" },
       ], j.results.map((r, i) => ({ ...r, game: r.game ?? i, gid: j.game_ids[i] })), { empty: active ? "No finished game yet." : "No games." })),
-      h("div.card", {}, h("h2", {}, "Output ", h("span.dim", { style: { fontWeight: 400, fontSize: "12px" } }, j.dir)),
+      h("div.card", {}, h("h2", {}, "Output ", h("span.dim.mono", {}, j.dir)),
         h("pre.code", { style: { maxHeight: "40vh" } }, j.output_tail || "(empty)")));
   }, signal);
 }

@@ -35,10 +35,10 @@ export default async function launch(root, _params, signal) {
   const charName = Object.fromEntries(cat.characters.map((c) => [c.id, c.name]));
 
   const msgs = h("div.msgs");
-  const submit = h("button.primary", { onclick: send }, "Queue match");
+  const submit = h("button.primary.big", { onclick: send }, "Queue match");
   const p1 = h("div.card.pcard.p1");
   const p2 = h("div.card.pcard.p2");
-  const matchBox = h("div.card");
+  const matchBox = h("div.card.match-card");
   const jobsBox = h("div");
 
   function playerCard(p) {
@@ -58,41 +58,48 @@ export default async function launch(root, _params, signal) {
           k.arg.options.map((o) => h("option", { value: o, selected: o === s.arg }, o || `(${k.arg.blank || "default"})`)));
       } else {
         const listId = `opts-${p}-${s.kind}`;
-        argEl = h("span", {}, h("input", { value: s.arg ?? "", placeholder: k.arg.placeholder || "", list: listId, style: { width: "100%" },
+        argEl = h("span", { style: { display: "flex" } }, h("input", { value: s.arg ?? "", placeholder: k.arg.placeholder || "", list: listId, style: { width: "100%" },
           oninput: (e) => { s.arg = e.target.value; changed(); } }),
           k.arg.options ? h("datalist", { id: listId }, k.arg.options.map((o) => h("option", { value: o }))) : null);
       }
     }
     const allowed = allowedChars(p);
     if (!allowed.includes(s.char)) s.char = allowed[0] || "FOX";
-    const charSel = h("select", { onchange: (e) => { s.char = e.target.value; changed(); } },
-      allowed.map((c) => h("option", { value: c, selected: c === s.char }, charName[c] || c)));
+    const charTiles = h("div.tiles", { role: "radiogroup", "aria-label": `P${p} character` }, cat.characters.map((c) => {
+      const ok = allowed.includes(c.id);
+      return h(`button.tile${c.id === s.char ? ".on" : ""}${ok ? "" : ".off"}`, { type: "button", disabled: !ok, title: ok ? c.name : `${c.name}: not available for this player`,
+        onclick: () => { s.char = c.id; renderAll(); } }, c.name);
+    }));
     const argLabel = { cpu: "Level", llm_paused: "Model", llm_live: "Model", coach: "Coach model", hal: "Identity",
       phillip: "Model", mimic: "Checkpoint", faynt: "Variant", reyn: "Command" }[s.kind] || "Argument";
-    mount(el, h("h2", {}, h(`span.port.p${p}`, {}, `P${p}`), "Player"),
-      h("div.fields", {},
-        h("label.field.wide", {}, "Player type", kindSel),
-        argEl ? h("label.field", { class: k.arg.type === "text" ? "wide" : "" }, argLabel, argEl) : null,
-        h("label.field", {}, "Character", charSel),
-        k.options !== undefined ? h("label.field.wide", {}, "Options (key=value, comma separated)",
-          h("input", { value: s.options ?? "", placeholder: k.options, oninput: (e) => { s.options = e.target.value; changed(); } })) : null),
-      h("div.spec-preview", { id: `spec-${p}` }, spec(p)));
+    const who = [k.label.replace(/ \(.*\)$/, ""), s.arg ? (s.kind === "cpu" ? `level ${s.arg}` : s.arg) : null].filter(Boolean).join(" · ");
+    mount(el,
+      h("div.pc-head", {}, h("div.pc-port", {}, `P${p}`),
+        h("div.pc-title", {}, h("div.pc-char", {}, charName[s.char] || s.char), h("div.pc-kind", { title: k.label }, who))),
+      h("div.pc-body", {},
+        h("div.fields", {},
+          h("label.field.wide", {}, "Player", kindSel),
+          argEl ? h("label.field", { class: k.arg.type === "text" || !k.options ? "wide" : "" }, argLabel, argEl) : null,
+          k.options !== undefined ? h("label.field", { class: k.arg?.type === "text" ? "wide" : "" }, "Options",
+            h("input", { value: s.options ?? "", placeholder: k.options, title: "key=value, comma separated", oninput: (e) => { s.options = e.target.value; changed(); } })) : null),
+        h("div", {}, h("h3", { style: { marginBottom: "8px" } }, "Character"), charTiles),
+        h("div.spec-preview", { id: `spec-${p}` }, spec(p))));
   }
 
   function matchCard() {
     const live = state.mode !== "fast";
-    mount(matchBox, h("h2", {}, "Match"),
-      h("div.modes", {}, cat.modes.map((m) => h(`div.mode${state.mode === m.id ? ".on" : ""}`, {
-        onclick: () => { state.mode = m.id; renderAll(); } }, h("b", {}, m.id), h("span", {}, m.desc)))),
-      h("div.match-fields", { style: { marginTop: "12px" } },
-        h("label.field", {}, "Stage", h("select", { onchange: (e) => { state.stage = e.target.value; changed(); } },
-          cat.stages.map((s) => h("option", { value: s.id, selected: s.id === state.stage }, s.name)))),
-        h("label.field", {}, "Games", h("input", { type: "number", min: 1, max: 50, value: state.games,
-          oninput: (e) => { state.games = +e.target.value || 1; changed(); } })),
-        live ? h("label.check", {}, h("input", { type: "checkbox", checked: state.preempt,
-          onchange: (e) => { state.preempt = e.target.checked; changed(); } }), "Start now (abort the running arena game)") : h("span"),
-        h("div", { style: { textAlign: "right" } }, submit)),
-      msgs);
+    mount(matchBox,
+      h("div.match-grid", {},
+        h("div", {}, h("h3", {}, "Stage"), h("div.tiles.stage-tiles", {}, cat.stages.map((st) =>
+          h(`button.tile${st.id === state.stage ? ".on" : ""}`, { type: "button", onclick: () => { state.stage = st.id; renderAll(); } }, st.name))),
+          h("div.launch-foot", {},
+            h("label.field", {}, "Games", h("input", { type: "number", min: 1, max: 50, value: state.games,
+              oninput: (e) => { state.games = +e.target.value || 1; changed(); } })),
+            live ? h("label.check", { style: { paddingBottom: "9px" } }, h("input", { type: "checkbox", checked: state.preempt,
+              onchange: (e) => { state.preempt = e.target.checked; changed(); } }), "Start now (abort the running arena game)") : null,
+            h("span.spacer"), submit, msgs)),
+        h("div", {}, h("h3", {}, "Mode"), h("div.modes", {}, cat.modes.map((m) => h(`div.mode${state.mode === m.id ? ".on" : ""}`, {
+          onclick: () => { state.mode = m.id; renderAll(); } }, h("b", {}, m.id), h("span", {}, m.desc)))))));
   }
 
   function renderAll() {
@@ -156,13 +163,13 @@ export default async function launch(root, _params, signal) {
       { label: "", render: (j) => (j.status === "queued" || j.status === "running")
         ? h("button.small.danger", { onclick: (e) => { e.stopPropagation(); cancel(j); }, disabled: !!j.cancel }, j.cancel ? "cancelling…" : "Cancel")
         : j.error ? h("span.dim", { title: j.error }, "error ⓘ") : "" },
-    ], jobs, { empty: "No jobs yet." }));
+    ], jobs, { empty: "No jobs yet. Queue one above." }));
   }
 
   mount(root, h("div.pagehead", {}, h("h1", {}, "Launch a match"),
-    h("span.dim", {}, "Live jobs take display :99 in order; the arena fills the slot when the queue is empty. Fast jobs run headless, up to 4 at once.")),
-  h("div.launch-grid", {}, p1, p2), h("div", { style: { marginTop: "16px" } }, matchBox),
-  h("div.card", { style: { marginTop: "16px" } }, h("h2", {}, "Jobs"), jobsBox));
+    h("div.lede", {}, "Live jobs take display :99 in order; the arena fills the slot when the queue is empty. Fast jobs run headless, up to 4 at once.")),
+  h("div.launch-grid", {}, p1, h("div.vs-mark", {}, "VS"), p2), matchBox,
+  h("div.section-title", {}, h("h2", {}, "Queue & history")), h("div.card", {}, jobsBox));
   renderAll();
   every(3000, refreshJobs, signal);
 }

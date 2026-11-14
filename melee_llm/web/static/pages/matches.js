@@ -4,12 +4,12 @@
 // ms behind with Slippi Lab's character renderer (/slippilab-live.js, built from patches/slippilab.patch).
 // The live slot's card shows the HLS video instead (toggle to 2D). /matches/<id> is the focus view.
 import Hls from "../vendor/hls.min.mjs";
-import { fmt, h, link, mount, stocks } from "../lib.js";
+import { emptyState, fmt, h, link, mount, stocks } from "../lib.js";
 
 const ENDED = ["finished", "failed", "crashed"];
 const PHASE = { starting: "loading Dolphin…", in_game: "in game", between: "between games", finished: "finished",
   failed: "failed", crashed: "crashed" };
-const COLORS = ["#f0605d", "#4fa3ff"];
+const COLORS = ["var(--p1)", "var(--p2)"];
 const LAG_S = 0.35; // playback delay behind the newest frame: covers the 15 Hz registry writes and SSE jitter
 
 let rendererMod = null;
@@ -175,14 +175,15 @@ export default async function matches(root, params, signal) {
   const all = new Map();
   const grid = h("div.mc-grid");
   const done = h("div.mc-done-strip");
-  const empty = h("div.card.dim", { style: { textAlign: "center", padding: "30px" } }, "Nothing running right now.");
+  const empty = h("div.card", { style: { gridColumn: "1 / -1" } }, emptyState("Nothing running", "Matches appear here as soon as any runner starts one."));
   const count = h("span.dim");
-  const missing = h("div.card.dim", {}, "This match is not in the registry (it ended a while ago?). ", link("/matches", "All matches →"));
-  const doneBox = h("div", {}, h("h2", { style: { marginTop: "22px" } }, "Recently finished"), done);
+  const missing = h("div.card", {}, emptyState("Match not found", "It is not in the registry (it ended a while ago?)."),
+    h("div", { style: { textAlign: "center" } }, link("/matches", "All matches →")));
+  const doneBox = h("div", {}, h("div.section-title", {}, h("h2", {}, "Recently finished")), done);
   root.className = "";
   if (focus) mount(root, grid);
-  else mount(root, h("div.pagehead", {}, h("h1", {}, "All matches"), count, h("span.spacer"),
-    h("span.dim", { style: { fontSize: "12.5px" } }, "every runner.play() on this host: jobs, arena, bot-writer ladders, scripts")), grid, doneBox);
+  else mount(root, h("div.pagehead", {}, h("h1", {}, "All matches"), count,
+    h("div.lede", {}, "Every runner.play() on this host: jobs, arena, bot-writer ladders, scripts.")), grid, doneBox);
   if (focus) grid.className = "mc-focus";
 
   function render() {
