@@ -34,6 +34,7 @@ def main() -> None:
     p.add_argument("--bot-char", default="FOX")
     p.add_argument("--stage", default="BATTLEFIELD")
     p.add_argument("--games", type=int, default=0, help="0 = until Ctrl-C")
+    p.add_argument("--bot-threads", type=int, default=8, help="Phillip's onnxruntime threads (0 = its default)")
     p.add_argument("--dolphin", default=str(DOLPHIN))
     p.add_argument("--slippi-home", default=str(SLIPPI_HOME), help="Dolphin user folder whose Port 1 controls you use")
     a = p.parse_args()
@@ -44,6 +45,8 @@ def main() -> None:
     os.environ.setdefault("QT_QPA_PLATFORM", "xcb")  # Dolphin only reads the keyboard through X11 (XInput2)
 
     bot, stage = make(a.bot, a.bot_char), melee.Stage[a.stage]
+    if a.bot.startswith("phillip") and a.bot_threads:
+        bot.config["threads"] = a.bot_threads  # the default pool runs below 60 fps on the laptop
     replay_dir = ROOT / "replays/local"
     replay_dir.mkdir(parents=True, exist_ok=True)
     port = next(p for p in range(51460, 51480) if port_free(p))
@@ -84,7 +87,8 @@ def main() -> None:
                 r = {"game": len(results) + 1, "winner": "you" if a_ > b_ else "bot" if b_ > a_ else "tie",
                      "you": {"char": me.character.name, "stocks": me.stock, "percent": round(me.percent)},
                      "bot": {"spec": a.bot, "char": it.character.name, "stocks": it.stock, "percent": round(it.percent)},
-                     "stage": last.stage.name, "seconds": round(time.time() - t0), "replay": str(replay) if replay else None}
+                     "stage": last.stage.name, "seconds": round(time.time() - t0),
+                     "fps": round(frames / max(time.time() - t0, 1e-9), 1), "replay": str(replay) if replay else None}
                 if replay:
                     seen.add(replay)
                 bot.on_game_end(last)

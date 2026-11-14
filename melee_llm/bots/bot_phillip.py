@@ -9,6 +9,21 @@ from slippi_ai import eval_lib, saving
 MODELS = Path("models")
 
 
+def _pin_onnx_threads(n: int) -> None:
+    # onnxruntime's default thread pool spikes to 25+ ms a step on some CPUs (e.g. the 12-core Ryzen AI laptop);
+    # a fixed count is steady. slippi_ai builds its SessionOptions itself, so set it on every one.
+    import onnxruntime as ort
+
+    base = ort.SessionOptions
+
+    def options():
+        o = base()
+        o.intra_op_num_threads = n
+        return o
+
+    ort.SessionOptions = options
+
+
 class Bot:
     def __init__(self, init: dict):
         cfg = init["config"]
@@ -16,6 +31,8 @@ class Bot:
         if not path.exists():
             raise ValueError(f"no Phillip model {path}; have {self.available()}")
         self.model = cfg["model"]
+        if cfg.get("threads"):
+            _pin_onnx_threads(int(cfg["threads"]))
         self.state = saving.load_state_from_disk(str(path))
         self.agent = eval_lib.build_agent(
             port=init["port"], opponent_port=init["opponent_port"], state=self.state, name=None,
