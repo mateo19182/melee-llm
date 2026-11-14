@@ -4,7 +4,7 @@ As of 2026-11-14. This page is the map; each track's details are in its own doc.
 
 ## The question
 
-Where do LLMs land on one Elo scale for real Super Smash Bros. Melee? The scale covers every way an LLM can be in the loop, next to built-in CPUs, learned bots and (later) a human. The working title is **Melee Bot Elo**.
+Where do LLMs land on one Elo scale for real Super Smash Bros. Melee? The scale covers every way an LLM can be in the loop, next to built-in CPUs, learned bots and (later) a human. The write-up is titled **Melee bots are getting really good**.
 
 ## What exists
 
@@ -25,7 +25,7 @@ Where do LLMs land on one Elo scale for real Super Smash Bros. Melee? The scale 
 | Simulator | `--mode sim`: games in melee-sim-light (Melee's decompiled gameplay code), no Dolphin. Checked frame for frame against Dolphin replays. Learned bots run in it through Slippi events; no CPUs. | [simulator](simulator.md) |
 | MeleeBot | Our own behaviour-cloned Yoshi (`train/`). `bc-6m-v1` lost 12 of 12 to CPU 9; `bc-20m-v2` won 1 of 12. | `train/` |
 | Local play | `play.py`: play any bot on the laptop with a controller. | [local-play](local-play.md) |
-| Write-up | "Melee Bot Elo": history, why now, findings, on one page at `/writeup/`. | `writeup/` |
+| Write-up | "Melee bots are getting really good": history and why now, how the best bots work, findings, on one page at `/writeup/`. | `writeup/` |
 
 ## What we learned (final bench: 2,325 real-time games, 1,993 untimed)
 
