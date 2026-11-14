@@ -147,7 +147,7 @@ The Live page has two AI casters: Charlie on play-by-play ("loud, fast, loses hi
 
 ### Our own bot: MeleeBot
 
-On the last day I trained a bot of my own: a 5.4M-parameter transformer that copies human play, trained on 23,000 ranked online Yoshi games. It reads the last 4 seconds of the game and predicts the next controller input, in 2 ms per frame. Its first game, against the level 9 CPU, ended 0-3: it took one stock and lost all four of its own by falling below the stage. A bigger version is training now.
+On the second day I trained a bot of my own: a 5.4M-parameter transformer that copies human play, trained on 23,000 ranked online Yoshi games. It reads the last 4 seconds of the game and predicts the next controller input, in 2 ms per frame. Its first game, against the level 9 CPU, ended 0-3: it took one stock and lost all four of its own by falling below the stage. A bigger version is training now.
 
 ### A simulator
 

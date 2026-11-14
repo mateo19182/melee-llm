@@ -123,7 +123,7 @@ f1230 laser(short,1) → laser: fired 1, landed
 <strong>Laura:</strong> Waiting is the right word. Faynt doesn't chase, Charlie, he collects.</p>
 </blockquote>
 <h3>Our own bot: MeleeBot</h3>
-<p>On the last day I trained a bot of my own: a 5.4M-parameter transformer that copies human play, trained on 23,000 ranked online Yoshi games. It reads the last 4 seconds of the game and predicts the next controller input, in 2 ms per frame. Its first game, against the level 9 CPU, ended 0-3: it took one stock and lost all four of its own by falling below the stage. A bigger version is training now.</p>
+<p>On the second day I trained a bot of my own: a 5.4M-parameter transformer that copies human play, trained on 23,000 ranked online Yoshi games. It reads the last 4 seconds of the game and predicts the next controller input, in 2 ms per frame. Its first game, against the level 9 CPU, ended 0-3: it took one stock and lost all four of its own by falling below the stage. A bigger version is training now.</p>
 <h3>A simulator</h3>
 <p>Melee's community has decompiled the game's code back into C, and <a href="https://github.com/kyhavlov/melee-sim-light" target="_blank" rel="noopener">melee-sim-light</a> runs it without an emulator. I hooked all our players into it, including the learned bots, and checked it against real games: 287 of 300 replays matched frame for frame (the other 13 were unfinished files), and the game itself runs about 100 times faster than in the emulator. Its catch: there are no built-in CPUs.</p>
 <h3>Playing the bots yourself</h3>
