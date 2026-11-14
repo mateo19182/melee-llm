@@ -19,8 +19,8 @@ COND_DROP = 0.1   # share of windows trained without rank / result, so both can 
 
 
 class Windows(torch.utils.data.IterableDataset):
-    def __init__(self, data_dir, games, stick_centers, batch, context, seed):
-        self.data_dir, self.g, self.centers = data_dir, games, stick_centers
+    def __init__(self, data_dir, games, stick_centers, batch, context, seed, features="v1"):
+        self.data_dir, self.g, self.centers, self.features = data_dir, games, stick_centers, features
         self.batch, self.context, self.seed = batch, context, seed
         # A window needs MAX_DELAY frames before it and one after; starts are drawn uniformly over frames.
         self.starts = np.maximum(games["length"] - context - fe.MAX_DELAY - 1, 0)
@@ -45,7 +45,7 @@ class Windows(torch.utils.data.IterableDataset):
         for i in range(B):
             off = int(self.g["offset"][gi[i]])
             game = np.asarray(frames[off + within[i]: off + within[i] + fe.MAX_DELAY + T + 1])
-            num[i], actions[i], target[i] = fe.window(game, fe.MAX_DELAY, T, delay[i])
+            num[i], actions[i], target[i] = fe.window(game, fe.MAX_DELAY, T, delay[i], self.features)
         b = dict(num=num, actions=actions, delay=delay)
         for k in ("me_char", "opp_char", "rank"):
             b[k] = self.g[k][gi]
@@ -67,10 +67,10 @@ def loss_fn(logits, b):
     return sum(parts.values()), parts, acc
 
 
-def norm_stats(frames, rng, n=200_000):
+def norm_stats(frames, rng, features, n=200_000):
     idx = np.sort(rng.choice(len(frames) - 1, n, replace=False))
     f = np.asarray(frames[idx])
-    num, _ = fe.assemble(fe.frame_parts(f), np.arange(len(f)), 0)
+    num, _ = fe.assemble(fe.frame_parts(f, features), np.arange(len(f)), 0)
     return num.mean(0), np.maximum(num.std(0), 1e-3), f["me_pad"]
 
 
@@ -94,14 +94,17 @@ def main():
     rng = np.random.default_rng(0)
     games = dict(np.load(os.path.join(a.data_dir, "games.npz")))
     frames = np.memmap(os.path.join(a.data_dir, "frames.bin"), FRAME, "r")
-    mean, std, pads = norm_stats(frames, rng)
+    meta_path = os.path.join(a.data_dir, "meta.json")
+    features = json.load(open(meta_path)).get("features", "v1") if os.path.exists(meta_path) else "v1"
+    mean, std, pads = norm_stats(frames, rng, features)
     if a.overfit_game is not None:
         train_g = val_g = subset(games, np.arange(len(games["length"])) == a.overfit_game)
         dropout = 0.0
     else:
         train_g, val_g, dropout = subset(games, games["val"] == 0), subset(games, games["val"] == 1), 0.1
 
-    c = Config(layers=a.layers, width=a.width, heads=a.width // 32, context=a.context, dropout=dropout, pos=a.pos)
+    c = Config(layers=a.layers, width=a.width, heads=a.width // 32, context=a.context, dropout=dropout, pos=a.pos,
+               features=features)
     model = Policy(c)
     model.num_mean.copy_(torch.from_numpy(mean)); model.num_std.copy_(torch.from_numpy(std))
     centers = fe.kmeans_stick(pads, c.n_stick)
@@ -121,10 +124,10 @@ def main():
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda s: min(1, (s + 1) / warmup) * (
         0.1 + 0.9 * 0.5 * (1 + math.cos(math.pi * min(1, s / a.steps)))))
 
-    loader = torch.utils.data.DataLoader(Windows(a.data_dir, train_g, centers, a.batch, c.context, 1),
+    loader = torch.utils.data.DataLoader(Windows(a.data_dir, train_g, centers, a.batch, c.context, 1, features),
                                          batch_size=None, num_workers=a.workers, pin_memory=True,
                                          persistent_workers=True, prefetch_factor=4)
-    val_maker = Windows(a.data_dir, val_g, centers, a.batch, c.context, 2)
+    val_maker = Windows(a.data_dir, val_g, centers, a.batch, c.context, 2, features)
     val_batches = [val_maker.make(frames, np.random.default_rng(i)) for i in range(20)]
 
     def evaluate():

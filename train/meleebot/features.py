@@ -23,11 +23,15 @@ N_CSTICK = 9                   # neutral + 8 directions
 CSTICK_DIRS = np.array([[np.cos(a), np.sin(a)] for a in np.arange(8) * np.pi / 4])
 
 PLAYER_NUM = 19
+# "v1": every field the .slp builder stores. "v2": HAL's dataset (hal_mds.py) has no velocities, state
+# age or hitstun, so v2 leaves those inputs at 0 everywhere (same layout, so the model is unchanged).
+FEATURES = ("v1", "v2")
+_V2_ZERO = [2, 3, 4, 5, 6, 9, 10]
 PAD_NUM = 6 + len(PAD_BITS)
 NUM = 2 * PLAYER_NUM + 2 * PAD_NUM
 
 
-def player_num(p):
+def player_num(p, features="v1"):
     """(..., 19) float32 raw numbers; normalised later with dataset mean/std."""
     out = np.empty(p.shape + (PLAYER_NUM,), np.float32)
     out[..., 0:2] = p["pos"]
@@ -42,6 +46,8 @@ def player_num(p):
     out[..., 14] = p["facing"]
     out[..., 15] = p["airborne"]
     out[..., 16:19] = p["invuln"][..., None] == np.arange(3)
+    if features == "v2":
+        out[..., _V2_ZERO] = 0
     return np.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0)
 
 
@@ -89,22 +95,22 @@ def targets(c, stick_centers):
     return shoulder, cstick, stick, buttons
 
 
-def window(frames, start, length, delay):
+def window(frames, start, length, delay, features="v1"):
     """Inputs for tokens deciding frames start+1 .. start+length, from a slice of one game.
 
     frames: FRAME records of one game. Needs start - delay >= 0 and start + length < len(frames).
     """
     lo = start - delay  # only the frames this window reads
     t = start + np.arange(length)
-    return (*assemble(frame_parts(frames[lo:start + length]), t - lo, delay), frames[t + 1]["me_pad"])
+    return (*assemble(frame_parts(frames[lo:start + length], features), t - lo, delay), frames[t + 1]["me_pad"])
 
 
-def frame_parts(frames):
+def frame_parts(frames, features="v1"):
     """Per-frame pieces of the model input; play computes them once per frame as it arrives.
 
     Returns state (N, 2*PLAYER_NUM), own pad (N, PAD_NUM), opponent pad (N, PAD_NUM), actions (N, 2).
     """
-    state = np.concatenate([player_num(frames["me"]), player_num(frames["opp"])], -1)
+    state = np.concatenate([player_num(frames["me"], features), player_num(frames["opp"], features)], -1)
     actions = np.stack([frames["me"]["action"], frames["opp"]["action"]], -1).astype(np.int64)
     return state, pad_num(frames["me_pad"]), pad_num(frames["opp_pad"]), np.minimum(actions, N_ACTIONS - 1)
 

@@ -83,7 +83,7 @@ def _player(row, p):
         out[ours] = np.nan_to_num(row[f"{p}_{theirs}"])
     out["action"], out["stocks"], out["facing"] = s["action"], s["stocks"], s["facing"]
     out["airborne"], out["invuln"] = s["airborne"], s["invuln"]
-    out["jumps"] = s["jumps_used"]  # used, where the .slp builder stores remaining; v2 features read this
+    out["jumps"] = s["jumps_used"]  # despite HAL's name, jumps remaining, as in the .slp builder (checked: 2 when standing)
     out["pos"] = np.nan_to_num(out["pos"])
     return out
 
