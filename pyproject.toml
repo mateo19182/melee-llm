@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "LLMs playing, coaching and writing bots for Super Smash Bros. Melee via libmelee"
 requires-python = ">=3.12"
 dependencies = [
+    "cryptography>=50.0.2",
     "httpx>=0.28.1",
     "markdown-it-py>=4.3.0",
     "melee>=0.47.6",
