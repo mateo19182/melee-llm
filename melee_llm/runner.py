@@ -6,6 +6,7 @@ import os
 import signal
 import socket
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -114,8 +115,13 @@ def _cpus_ready(gs: melee.GameState, agents: dict[int, Agent]) -> bool:
 
 def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BATTLEFIELD,
          mode: str = "watch", games: int = 1, replay_dir: Path | None = None,
-         slippi_port: int = 51441) -> list[GameResult]:
-    """Run `games` games. Parallel calls need distinct `slippi_port`s (and distinct X displays if rendered)."""
+         slippi_port: int = 51441, observer: Callable[[str, dict], None] | None = None) -> list[GameResult]:
+    """Run `games` games. Parallel calls need distinct `slippi_port`s (and distinct X displays if rendered).
+
+    `observer(event, info)`, if given, is called with "game_start" {game, replay, gs}, "frame" {gs} on every
+    in-game frame (after the agents stepped) and "game_end" {game, result}. It must be fast.
+    """
+    notify = observer or (lambda event, info: None)
     assert len(agents) == 2, "two ports for now"
     if not _port_free(slippi_port):
         raise RuntimeError(f"Slippi port {slippi_port} is busy: a stale Dolphin is probably still running")
@@ -167,10 +173,12 @@ def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BA
                     replay = _new_replay(replay_dir, seen)
                     for a in agents.values():
                         a.on_game_start(gs, replay)
+                    notify("game_start", {"game": len(results), "replay": replay, "gs": gs})
                 last, frames = gs, frames + 1
                 for p, a in agents.items():
                     if not a.cpu_level:
                         a.step(gs)
+                notify("frame", {"gs": gs})
                 continue
             if last is not None:
                 results.append(_result(last, frames, t0, agents))
@@ -179,6 +187,7 @@ def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BA
                 results[-1].replay = str(found) if found else None
                 for a in agents.values():
                     a.on_game_end(last)
+                notify("game_end", {"game": len(results) - 1, "result": results[-1]})
                 last = None
             start = gs.menu_state != melee.Menu.CHARACTER_SELECT or _cpus_ready(gs, agents)
             for p, a in agents.items():

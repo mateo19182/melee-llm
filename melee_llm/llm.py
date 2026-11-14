@@ -29,6 +29,13 @@ def api_key() -> str:
     return "none"  # local servers usually ignore the key
 
 
+def list_models(base_url: str | None = None, timeout: float = 5.0) -> list[str]:
+    """Model ids the server offers (CLIProxy /v1/models)."""
+    client = openai.OpenAI(base_url=base_url or os.environ.get("MELEE_LLM_BASE_URL", DEFAULT_BASE_URL),
+                           api_key=api_key(), timeout=timeout, max_retries=0)
+    return sorted(m.id for m in client.models.list().data)
+
+
 @dataclass
 class Reply:
     args: dict | None  # parsed tool arguments / JSON object, None if unparseable

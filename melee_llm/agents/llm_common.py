@@ -66,6 +66,7 @@ class DecisionLog:
         self.f = self.path.open("a")
 
     def write(self, rec: dict) -> None:
+        rec = {**rec, "ts": round(time.time(), 3)}  # wall clock: lets the web UI line decisions up with the video
         self.f.write(json.dumps(rec, default=lambda o: o.item() if hasattr(o, "item") else str(o)) + "\n")
         self.f.flush()
 
