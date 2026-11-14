@@ -140,7 +140,15 @@ def main():
         return tot
 
     log = open(os.path.join(a.run_dir, "log.jsonl"), "a")
+    curve = open(os.path.join(a.run_dir, "train.jsonl"), "a")
     meta = dict(data_dir=os.path.abspath(a.data_dir), args=vars(a), params=n_params)
+    run_info = dict(meta, steps=a.steps, started_at=time.time(), train_frames=int(train_g["length"].sum()),
+                    train_games=len(train_g["length"]), val_games=len(val_g["length"]))
+
+    def write_run_info(**extra):
+        with open(os.path.join(a.run_dir, "run.json"), "w") as fh:
+            json.dump(dict(run_info, **extra), fh, indent=1)
+    write_run_info()
     model.train()
     t0, seen, running = time.time(), 0, None
     for step, b in enumerate(loader, 1):
@@ -157,6 +165,9 @@ def main():
             el = time.time() - t0
             print(f"step {step} loss {running:.3f} lr {sched.get_last_lr()[0]:.2e} "
                   f"{seen / el / 1e3:.0f}k frames/s, {el / 60:.1f} min", flush=True)
+            curve.write(json.dumps(dict(step=step, loss=round(running, 4), lr=sched.get_last_lr()[0],
+                                        frames_per_s=round(seen / el), minutes=round(el / 60, 2))) + "\n")
+            curve.flush()
         if step % a.eval_every == 0 or step == a.steps:
             v = evaluate()
             rec = dict(step=step, frames=seen, minutes=round((time.time() - t0) / 60, 2), train=round(running, 4),
@@ -165,6 +176,7 @@ def main():
             log.write(json.dumps(rec) + "\n"); log.flush()
             save(os.path.join(a.run_dir, "last.pt"), model, dict(meta, step=step, val=v))
         if step >= a.steps:
+            write_run_info(finished_at=time.time())
             break
 
 
