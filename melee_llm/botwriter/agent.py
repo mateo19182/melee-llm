@@ -26,7 +26,7 @@ import melee
 from melee.controller import fix_analog_trigger
 
 from melee_llm.agents.base import Agent
-from melee_llm.botwriter.host import BUTTONS, write_frame
+from melee_llm.botwriter.host import BUTTONS, dumps, write_frame
 from melee_llm.paths import ROOT
 
 _NEUTRAL = melee.ControllerState()
@@ -92,6 +92,7 @@ class BotAgent(Agent):
                                      env=env, cwd=self.scratch, preexec_fn=_limits)
         self._buf = b""
         self.seq, self.pending, self.dead = 0, None, False
+        self.asked, self.begun = None, False  # send time of this frame's question; begin() ran
         self.stats, self.game_stats = FrameStats(), []
         self.applied = None  # None: real controller state unknown, next apply writes everything
         msg = self._recv(startup_s)
@@ -109,7 +110,7 @@ class BotAgent(Agent):
     # --- protocol -------------------------------------------------------------------------
     def _send(self, obj) -> bool:
         try:
-            write_frame(self.proc.stdin, pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL))
+            write_frame(self.proc.stdin, dumps(obj))
             return True
         except (BrokenPipeError, OSError):
             self._die("pipe closed")
@@ -157,7 +158,10 @@ class BotAgent(Agent):
         super().setup(controller, port, opponent_port)
         self._send(("setup", port, opponent_port))
 
-    def step(self, gs):
+    def begin(self, gs):
+        """Send the frame. The runner does this for both players before either `step`, so both bots think at
+        the same time. The budget still runs from this bot's own send."""
+        self.begun, self.asked = True, None
         self.stats.frames += 1
         if self.dead:
             return
@@ -170,7 +174,14 @@ class BotAgent(Agent):
             self._account(msg)  # stale answer: counted, not applied
             self.pending = None
         self.seq += 1
-        if not self._send(("step", self.seq, sanitize(gs, self.opponent_port))):
+        if self._send(("step", self.seq, sanitize(gs, self.opponent_port))):
+            self.asked = t0
+
+    def step(self, gs):
+        if not self.begun:  # called without begin(): netplay, tests
+            self.begin(gs)
+        t0, self.asked, self.begun = self.asked, None, False
+        if t0 is None:
             return
         budget = None if self.budget_ms is None else self.budget_ms / 1000
         msg = self._recv(3600 if budget is None else max(0.0, budget - (time.perf_counter() - t0)))

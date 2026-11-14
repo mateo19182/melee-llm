@@ -41,7 +41,7 @@ def summarize(slp: str | Path, timeline: bool = False) -> dict:
     n = 0
     for gs in replay_states(slp):
         if ports is None:
-            ports, stage, first = sorted(int(p) for p in gs.players), gs.stage, gs
+            ports, stage = sorted(int(p) for p in gs.players), gs.stage
             for p in ports:
                 per[p] = {"character": gs.players[p].character.name, "stocks_lost": 0, "damage_taken": 0.0,
                           "hits_taken": 0, "deaths": [], "offstage_frames": 0, "alive_frames": 0,
