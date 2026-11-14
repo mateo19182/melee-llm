@@ -4,11 +4,13 @@ import pickle
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from melee_llm.botwriter.agent import BotAgent, sanitize
 from melee_llm.botwriter.host import _SLOTTED, FakeController, dumps
 from melee_llm.runner import replay_states
 
+pytestmark = pytest.mark.replays
 ROOT = Path(__file__).resolve().parent.parent
 SAMPLE = ROOT / "replays/sample-slippi-js-itemExport.slp"  # Falco vs Samus: projectiles, stock loss
 RUSHER = ROOT / "melee_llm/botwriter/baselines/rusher.py"
