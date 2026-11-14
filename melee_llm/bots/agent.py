@@ -104,7 +104,8 @@ class BotAgent(Agent):
 
     def setup(self, controller, port: int, opponent_port: int) -> None:
         super().setup(controller, port, opponent_port)
-        self._events = ConsoleTap.of(controller._console).subscribe()
+        tap = getattr(controller, "slippi_tap", None) or ConsoleTap.of(controller._console)  # sim: World's tap
+        self._events = tap.subscribe()
         self._start()
 
     def _start(self) -> None:

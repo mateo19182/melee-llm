@@ -56,18 +56,19 @@ def _action(value: int) -> Action | UnknownAnimation:
 
 
 def controller_state_from_raw(row) -> melee.ControllerState:
-    """A player's ControllerState from the raw input the game read this frame. libmelee fills `main_stick`
-    from Slippi's *processed* stick (after the game's deadzone); here it is the raw stick scaled the same
-    way, which only differs inside the deadzone. `button` holds the physical buttons, as in libmelee."""
+    """A player's ControllerState from the raw input the game read this frame, as libmelee fills it from Slippi's
+    pre-frame event: processed sticks and trigger (melee_llm.sim.slippi), physical buttons in `button`."""
+    from melee_llm.sim.slippi import _pre_inputs
+    pre = _pre_inputs(row)
     cs = melee.ControllerState()
-    bits = int(row["buttons"])
     for b, bit in _BUTTON_BITS.items():
-        cs.button[b] = cs.processed_button[b] = bool(bits & bit)
-    mx, my, cx, cy = (int(row[k]) for k in ("main_x", "main_y", "c_x", "c_y"))
-    cs.main_stick = (mx / 160 + 0.5, my / 160 + 0.5)
-    cs.c_stick = (cx / 160 + 0.5, cy / 160 + 0.5)
-    cs.raw_main_stick = (mx, my)
-    cs.l_shoulder = cs.r_shoulder = max(int(row["l"]), int(row["r"])) / 140  # the game reads the larger one
+        cs.button[b] = bool(pre["buttons"] & bit)
+        cs.processed_button[b] = bool(pre["processed_buttons"] & bit)
+    f32 = np.float32  # the same float32 arithmetic as libmelee's parse
+    cs.main_stick = (f32(pre["main_x"]) / 2 + 0.5, f32(pre["main_y"]) / 2 + 0.5)
+    cs.c_stick = (f32(pre["c_x"]) / 2 + 0.5, f32(pre["c_y"]) / 2 + 0.5)
+    cs.raw_main_stick = (pre["raw_x"], pre["raw_y"])
+    cs.l_shoulder = cs.r_shoulder = f32(pre["trigger"])
     return cs
 
 
