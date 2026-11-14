@@ -37,8 +37,10 @@ function entry(rec, port, attrs, head, reason, more) {
 function commentaryCard(rec) {
   if (rec.type === "event") return h("div.ev.cm-event", {}, rec.text);
   if (rec.type === "line") {
-    return h("div.ev.cm-line", { title: [callsign(rec.model), lat(rec.latency_s)].filter(Boolean).join(" · ") },
-      h("span.cm-tag", {}, "Cast"), h("span", {}, rec.text));
+    // two casters share the booth: the first one named in a game keeps the main colour
+    const second = rec.speaker && (commentaryCard.first ??= rec.speaker) !== rec.speaker;
+    return h(`div.ev.cm-line${second ? ".cm-b" : ""}`, { title: [callsign(rec.model), lat(rec.latency_s)].filter(Boolean).join(" · ") },
+      h("span.cm-tag", {}, rec.speaker || "Cast"), h("span", {}, rec.text));
   }
   return null; // commentator errors stay in the log
 }
