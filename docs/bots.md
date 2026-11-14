@@ -1,6 +1,6 @@
 # Learned bots (HAL, Phillip, MIMIC, Faynt, Reyn)
 
-`melee_llm/bots/` wraps five published Melee policies, and our own MeleeBot, as `Agent`s, so they can play on the ladder and be steered by a coach.
+`melee_llm/bots/` wraps five published Melee policies, and our own m19182-yoshi, as `Agent`s, so they can play on the ladder and be steered by a coach.
 
 ```sh
 uv run -m melee_llm.match --iso ~/melee.iso --p1 hal:MASTER --char1 FOX --p2 phillip:gm --char2 MARTH --mode fast
@@ -116,7 +116,7 @@ git clone https://github.com/frisson-labs/Reyn && (cd Reyn && uv venv --python 3
 
 Init options go through `**config` on the agent class, e.g. `Faynt(character=..., device="cuda", compile=True)`, `HAL(compile=False, seed=0)`, `MIMIC(compile=False)` or `Phillip(seed=1)`.
 
-## MeleeBot (our own, lane B)
+## m19182-yoshi (our own, lane B)
 
 `meleebot[:run]` plays the checkpoint `data/train/runs/<run>/last.pt` (default `bc-6m-v1`), trained by `train/meleebot` on 23k ranked Yoshi replays. It runs under `train/.venv` with cwd `train/`.
 

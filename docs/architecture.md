@@ -27,8 +27,8 @@ Everything is built on `runner.play()`: it boots a Slippi Dolphin, connects two 
 | `melee_llm/llm_arena/` | LLM vs LLM round robins: `tournament.py`, `agent.py` (retries and frame cap), `ratings.py` (standings and per-model stats) |
 | `melee_llm/botwriter/` | LLM writes a bot: sandboxed sessions, practice tools, time-budgeted bot host, ladder ([bot-writer.md](bot-writer.md)) |
 | `melee_llm/netplay/` | Play our bots from another machine over Slippi Direct Connect |
-| `melee_llm/web/` | Web UI: `server.py` (Starlette), `auth.py` (operator sign-in), `worker.py` (owns the live slot and the headless pool), `runjob.py` (one job), `jobs.py` (SQLite queue), `games.py` (game index), `registry.py` (reads the match registry; `live_status` is what the Live page shows), `specs.py` (launcher catalog and labels), `training.py` (MeleeBot training runs), `logs.py`, `slp.py`, `docs.py`, `static/` |
-| `train/` | MeleeBot, our own behaviour-cloned bot: dataset, model, training and evaluation, with its own venv |
+| `melee_llm/web/` | Web UI: `server.py` (Starlette), `auth.py` (operator sign-in), `worker.py` (owns the live slot and the headless pool), `runjob.py` (one job), `jobs.py` (SQLite queue), `games.py` (game index), `registry.py` (reads the match registry; `live_status` is what the Live page shows), `specs.py` (launcher catalog and labels), `training.py` (m19182-yoshi training runs), `logs.py`, `slp.py`, `docs.py`, `static/` |
+| `train/` | m19182-yoshi, our own behaviour-cloned bot: dataset, model, training and evaluation, with its own venv |
 | `scripts/` | `setup.sh` (fetch Dolphin builds and vendored tools), `live.sh` (start the Xvfb displays), `dolphin-gpu.sh`, `stream.sh` and `mediamtx.yml` (live video), `viewer.py` (old replay list and MJPEG fallback on port 8767), `coach_pilot.py`, `coach_deepdive.py`, `perception_pilot.py`, `llm_dryrun.py`, `reyn_agreement.py`, `sim_phillip_eval.py` |
 | `tests/` | Offline tests (`uv run pytest -q`): no ISO and no network. `test_jev_bench.py` makes real Jev calls only with `JEV_BENCH=1` |
 | `docs/` | These pages; the web UI's Docs tab renders every `docs/*.md` |
@@ -101,7 +101,7 @@ Every track rates with one fit, `melee_llm/ratings.py`: Bradley-Terry by MAP wit
 | 51860-51879 | `scripts/perception_pilot.py` |
 | 51880-51919 | LLM arena |
 | 51920-51999 | Melee Bench |
-| 52200-52239 | MeleeBot evaluation (`train/meleebot/evaluate.py`) |
+| 52200-52239 | m19182-yoshi evaluation (`train/meleebot/evaluate.py`) |
 | 127.0.0.1:8770 | Web UI (behind Cloudflare Tunnel; public, the operator signs in through Cloudflare Access) |
 | 127.0.0.1:8554, 8888; Tailscale IP:8889 | mediamtx: RTSP in, LL-HLS out (proxied by the web UI at `/hls/`), WebRTC |
 | Tailscale IP:8767 | `scripts/viewer.py` |

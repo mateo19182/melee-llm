@@ -7,9 +7,13 @@
     the frame-title div is the small label in the top-left tab (keep it short or it hits the stripes).
   - Speaker notes: the <aside class="notes"> at the end of each slide, shown as faint small text along the bottom
     of the slide. Start them with <b>m:ss.</b>, the slide's target time; they add up to about 4:45.
+    They can also be edited on the page: click a note to type, drag its grip (left, on hover) to move it, drag its
+    right edge to resize, double-click the grip to put it back. Those edits stay in that browser (localStorage) and
+    win over this file; Shift+S downloads the page with them baked in (replace this file with it and commit),
+    Shift+R forgets them.
   - Images are relative: figures/*.svg (from make_figures.py) and media/*.
 
-  Presenting: arrows, Space or a clicker move; n hides or shows the notes; p opens a presenter window (big notes,
+  Presenting: arrows, Space or a clicker move (not while typing in a note; Esc leaves it); n hides or shows the notes; p opens a presenter window (big notes,
   next slide, timer) kept in sync; f is fullscreen; k plays or pauses the slide's video.
 -->
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -55,6 +59,12 @@ html,body{height:100%;overflow:hidden}
 .slide .notes{position:absolute;left:44px;right:44px;bottom:16px;font:13px/1.4 var(--sans);color:rgba(145,152,192,.5)}
 .slide .notes p{margin:0}.slide .notes b{color:inherit}
 body.hidenotes .slide .notes{display:none}
+.note-body{outline:none;cursor:text;min-height:1.4em}
+.note-body:focus{color:rgba(205,210,235,.9);outline:1px dashed rgba(145,152,192,.45);outline-offset:4px}
+.note-grip{position:absolute;left:-20px;top:-2px;width:14px;height:18px;cursor:move;opacity:0;user-select:none;
+  background:radial-gradient(circle,rgba(145,152,192,.8) 1.2px,transparent 1.6px) 0 0/7px 6px}
+.note-width{position:absolute;right:-8px;top:0;bottom:0;width:8px;cursor:ew-resize}
+.slide .notes:hover .note-grip,.slide .notes:focus-within .note-grip{opacity:1}
 #sp-panel{display:none}
 body.presenter #sp-panel{display:block;position:fixed;z-index:5;background:rgba(3,4,20,.94);border-top:2px solid var(--f-mid);
   color:var(--text);font:17px/1.5 var(--sans);overflow:auto;padding:12px 22px}
@@ -187,9 +197,9 @@ body.presenter #sp-panel{top:0;right:0;bottom:0;width:38vw;height:auto;border-to
   <aside class="notes"><p><b>0:30.</b> Every live game gets two AI casters. Charlie does play-by-play, Laura does colour. A fast LLM watches the game events and writes their lines, and ElevenLabs voices them. (Play 10–15 s of the clip.)</p></aside>
 </section>
 
-<section class="slide frame" data-title="MeleeBot">
+<section class="slide frame" data-title="m19182-yoshi">
   <span class="frame-stripes" aria-hidden="true"></span><div class="frame-title" aria-hidden="true">Also built</div>
-  <h2>Our own bot: MeleeBot</h2>
+  <h2>Our own bot: m19182-yoshi</h2>
   <div class="cols fig">
     <img src="media/site-training.webp" alt="Training page: loss and validation accuracy of the 20M model" style="width:660px">
     <div>
@@ -226,7 +236,7 @@ body.presenter #sp-panel{top:0;right:0;bottom:0;width:38vw;height:auto;border-to
   <span class="frame-stripes" aria-hidden="true"></span><div class="frame-title" aria-hidden="true">Your turn</div>
   <h2>Play the bots yourself</h2>
   <ul style="font-size:30px;margin-top:24px">
-    <li>On my laptop with a controller, after this: Phillip at any tier, Faynt, Reyn, or our MeleeBot</li>
+    <li>On my laptop with a controller, after this: Phillip at any tier, Faynt, Reyn, or our m19182-yoshi</li>
     <li>From home, over Slippi direct connect</li>
     <li>The board has a slot waiting for humans</li>
   </ul>
@@ -257,7 +267,8 @@ function show(n, echo = true) {
   history.replaceState(null, "", location.search + "#" + (i + 1));
   $("sp-count").textContent = `${i + 1} / ${slides.length}`;
   $("sp-next").textContent = slides[i + 1] ? "Next: " + slides[i + 1].dataset.title : "Last slide";
-  $("sp-notes").innerHTML = slides[i].querySelector(".notes")?.innerHTML || "";
+  const nb = slides[i].querySelector(".note-body") || slides[i].querySelector(".notes");
+  $("sp-notes").innerHTML = nb ? nb.innerHTML : "";
   if (echo && bc) bc.postMessage(i);
 }
 if (bc) bc.onmessage = e => show(e.data, false);
@@ -267,8 +278,11 @@ if (presenter) {
 }
 addEventListener("resize", fit);
 addEventListener("keydown", e => {
+  if (e.target.isContentEditable) { if (e.key === "Escape") e.target.blur(); return; }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const k = e.key;
+  if (k === "S") { exportHTML(); e.preventDefault(); return; }
+  if (k === "R") { if (confirm("Reset every note to the version in the file?")) { localStorage.removeItem(KEY); location.reload(); } return; }
   if (["ArrowRight", "ArrowDown", "PageDown", " ", "Enter"].includes(k)) show(i + 1);
   else if (["ArrowLeft", "ArrowUp", "PageUp", "Backspace"].includes(k)) show(i - 1);
   else if (k === "Home") show(0);
@@ -281,10 +295,80 @@ addEventListener("keydown", e => {
   e.preventDefault();
 });
 document.querySelector(".deck").addEventListener("click", e => {
-  if (e.target.closest("a, video")) return;
+  if (e.target.closest("a, video, .notes")) return;
   show(i + (e.clientX > innerWidth / 2 ? 1 : -1));
 });
 $("sp-timer").onclick = () => t0 = Date.now();
+
+// Notes are editable in place and draggable; edits live in this browser's localStorage, keyed by slide number.
+// Shift+S downloads this page with the edits baked in (commit that file to share them); Shift+R drops the edits.
+const KEY = "melee-slides-notes-v1";
+let saved = JSON.parse(localStorage.getItem(KEY) || "{}");
+const persist = () => localStorage.setItem(KEY, JSON.stringify(saved));
+const fileStyle = new Map();  // a note's position as saved in the file, restored on reset
+function place(n, v) {
+  const st = n.style;
+  if (v?.x == null) { n.setAttribute("style", fileStyle.get(n) || ""); return; }
+  Object.assign(st, { left: v.x + "px", top: v.y + "px", width: v.w + "px", right: "auto", bottom: "auto" });
+}
+function applyNotes() {
+  slides.forEach((s, k) => {
+    const n = s.querySelector(".notes"), v = saved[k];
+    if (!n) return;
+    const body = n.querySelector(".note-body");
+    if (v?.html != null && document.activeElement !== body) body.innerHTML = v.html;
+    place(n, v);
+  });
+}
+slides.forEach((s, k) => {
+  const n = s.querySelector(".notes");
+  if (!n) return;
+  fileStyle.set(n, n.getAttribute("style") || "");
+  const body = document.createElement("div");
+  body.className = "note-body";
+  body.contentEditable = "true";
+  body.spellcheck = false;
+  body.append(...n.childNodes);
+  const grip = Object.assign(document.createElement("span"), { className: "note-grip", title: "Drag to move, double-click to reset" });
+  const width = Object.assign(document.createElement("span"), { className: "note-width", title: "Drag to change the width" });
+  n.append(grip, body, width);
+  body.addEventListener("input", () => { (saved[k] ??= {}).html = body.innerHTML; persist(); });
+  grip.addEventListener("dblclick", () => { if (saved[k]) { delete saved[k].x; persist(); } place(n, saved[k]); });
+  for (const [h, mode] of [[grip, "move"], [width, "width"]]) h.addEventListener("pointerdown", e => {
+    e.preventDefault();
+    h.setPointerCapture(e.pointerId);
+    const scale = parseFloat(document.querySelector(".stage").style.getPropertyValue("--s")) || 1;
+    const v = (saved[k] ??= {});
+    if (v.x == null) Object.assign(v, { x: n.offsetLeft, y: n.offsetTop, w: n.offsetWidth });
+    const start = { px: e.clientX, py: e.clientY, x: v.x, y: v.y, w: v.w };
+    const onMove = m => {
+      const dx = (m.clientX - start.px) / scale, dy = (m.clientY - start.py) / scale;
+      if (mode === "move") Object.assign(v, { x: Math.round(start.x + dx), y: Math.round(start.y + dy) });
+      else v.w = Math.max(120, Math.round(start.w + dx));
+      place(n, v);
+    };
+    h.addEventListener("pointermove", onMove);
+    h.addEventListener("pointerup", () => { h.removeEventListener("pointermove", onMove); persist(); }, { once: true });
+  });
+});
+applyNotes();
+addEventListener("storage", e => { if (e.key === KEY) { saved = JSON.parse(e.newValue || "{}"); applyNotes(); show(i, false); } });
+function exportHTML() {
+  const doc = document.documentElement.cloneNode(true);
+  doc.querySelector("body").className = "";
+  doc.querySelector(".stage").removeAttribute("style");
+  doc.querySelectorAll(".slide").forEach(s => s.classList.remove("on"));
+  doc.querySelector("#sp-notes").innerHTML = "";
+  doc.querySelectorAll(".notes").forEach(n => {
+    const body = n.querySelector(".note-body");
+    n.innerHTML = body ? body.innerHTML : n.innerHTML;
+    if (!n.getAttribute("style")) n.removeAttribute("style");
+  });
+  const blob = new Blob(["<!doctype html>\n" + doc.outerHTML], { type: "text/html" });
+  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: "slides.html" });
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
 setInterval(() => { const s = Math.floor((Date.now() - t0) / 1000); $("sp-timer").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; }, 500);
 fit();
 show((parseInt(location.hash.slice(1)) || 1) - 1, false);

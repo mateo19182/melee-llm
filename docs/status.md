@@ -23,7 +23,7 @@ Where do LLMs land on one Elo scale for real Super Smash Bros. Melee? The scale 
 | Netplay | You vs any bot over Slippi Direct Connect. Built, not yet played. | [netplay](netplay.md) |
 | Live commentary | Play-by-play ticker on the Live page, plus an optional two-caster LLM booth with ElevenLabs voices (only while someone listens). | [web-ui](web-ui.md) |
 | Simulator | `--mode sim`: games in melee-sim-light (Melee's decompiled gameplay code), no Dolphin. Checked frame for frame against Dolphin replays. Learned bots run in it through Slippi events; no CPUs. | [simulator](simulator.md) |
-| MeleeBot | Our own behaviour-cloned Yoshi (`train/`). `bc-6m-v1` lost 12 of 12 to CPU 9; `bc-20m-v2` won 1 of 12. | `train/` |
+| m19182-yoshi | Our own behaviour-cloned Yoshi (`train/`). `bc-6m-v1` lost 12 of 12 to CPU 9; `bc-20m-v2` won 1 of 12. | `train/` |
 | Local play | `play.py`: play any bot on the laptop with a controller. | [local-play](local-play.md) |
 | Write-up | "Melee bots are getting really good": history and why now, how the best bots work, findings, on one page at `/writeup/`. | `writeup/` |
 
@@ -55,9 +55,9 @@ Mateo gives the project one or two more weeks (decided 2026-11-14). LLMs are no 
 
 | Thread | Covers | Now / next |
 |---|---|---|
-| **Melee hub** (server) | The map, bench, deploys, coordination, write-up, docs | Write-up restyled and reframed; docs tightened. Later: rate MeleeBot and Mateo (`human:mateo`) on the bench, cheap entrants (Jev with named features, MIMIC on Mateo's replays) |
+| **Melee hub** (server) | The map, bench, deploys, coordination, write-up, docs | Write-up restyled and reframed; docs tightened. Later: rate m19182-yoshi and Mateo (`human:mateo`) on the bench, cheap entrants (Jev with named features, MIMIC on Mateo's replays) |
 | **Melee B · Own bot** (server) | `train/`, `meleebot`, `data/train/` | `bc-20m-v2` beat CPU 9 once in 12. Next: a stomped.dev deployment (small US-East server), inference fast enough for a bigger model, fine-tuning on aMSa's replays, self-play in the simulator |
-| **Melee D · Play** (laptop) | Local play (`play.py`), [netplay](netplay.md), MeleeBot speed on the laptop | Both demo bots hold 60 fps. Open: a full game with the GameCube controller against each |
+| **Melee D · Play** (laptop) | Local play (`play.py`), [netplay](netplay.md), m19182-yoshi speed on the laptop | Both demo bots hold 60 fps. Open: a full game with the GameCube controller against each |
 | **Melee F · Web** (server) | `melee_llm/web/static`, the public site | Melee menu look and the public site are live (PR #30) |
 | **Melee I · Bot-writer** (server) | `melee_llm/botwriter/` | Round 2 proposal: more runs per model, iteration, practice in the simulator |
 
