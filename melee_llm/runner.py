@@ -171,12 +171,17 @@ def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BA
          meta: dict | None = None) -> list[GameResult]:
     """Run `games` games. Parallel calls need distinct `slippi_port`s (and distinct X displays if rendered).
 
+    `mode="sim"` plays in melee-sim-light instead of Dolphin (melee_llm.sim.runner).
+
     `observer(event, info)`, if given, is called with "game_start" {game, replay, gs}, "frame" {gs} on every
     in-game frame (after the agents stepped) and "game_end" {game, result}. It must be fast.
 
     Every call publishes itself to the match registry (melee_llm.matches, shown on the web UI's All matches
     page). `meta` overrides what it guesses: {"source", "label", "job_id", "specs": {port: spec}, ...}.
     """
+    if mode == "sim":  # no Dolphin: melee-sim-light (docs/simulator.md); iso, replay_dir and slippi_port unused
+        from melee_llm.sim.runner import play as play_sim
+        return play_sim(agents, stage, games, observer=observer, meta=meta)
     notify = observer or (lambda event, info: None)
     stepping = [a for a in agents.values() if not a.cpu_level]
     assert len(agents) == 2, "two ports for now"

@@ -29,7 +29,37 @@ We tested it on 2026-11-14 with upstream commit `eea7b5fb`. It has **no license 
 - **slippi-ai bug.** slippi-ai @ `5ada33e` looks players up by `present`, which melee_sim clears for an eliminated player. Every game that ends on stocks crashes. `scripts/sim_phillip_eval.py` patches the two lookups at runtime, so the vendored repo stays untouched.
 - **No CPU opponents.** The public API exposes no CPU players. CPU-level baselines stay on Dolphin.
 - **Rules.** Supported matches are UCF, no items, and frozen Pokémon Stadium, which is what Slippi plays anyway.
-- **Not wired to our agents yet.** Our agents consume libmelee `GameState` from the Slippi stream. The simulator returns its own observation structs, and slippi-ai's `sim_env/observations.py` converts them to slippi-ai's `Game`. Bot-writer bots, LLM players and our bot wrappers would need an adapter from observation to libmelee `GameState`.
+- **Learned bots don't run in it through our adapter.** They read the raw Slippi event stream (`ConsoleTap`), which the simulator does not produce. Phillip can still play in it through slippi-ai's own `sim_env` (above).
+
+## Playing our agents in it: `--mode sim`
+
+`melee_llm/sim` runs any of our agents in the simulator, with the same contract as `runner.play`. `runner.play(mode="sim")` dispatches to it, so match.py, the bench, the ladders and the arena take it by mode name:
+
+```sh
+uv pip install -e vendor/melee-sim-light   # once, into the main venv (setup below)
+uv run python -m melee_llm.match --mode sim --p1 baseline:rusher --p2 baseline:laser --char1 FOX --char2 FOX --games 3
+```
+
+- **`sim/state.py`** builds the libmelee `GameState` from each observation, field for field as libmelee's Console builds it from Slippi. That includes the action frames re-indexed to start at 1, the moonwalk warning, `off_stage`, `distance`, projectiles and each player's controller state.
+- **`sim/controller.py`** is a `melee.Controller` with no pipe. Agents press buttons on it as live. Each frame it converts `current` to the integers the game reads, the way Dolphin converts libmelee's pipe values.
+- **`sim/parity.py`** checks both against libmelee. It replays a Dolphin `.slp`'s raw inputs through the simulator and compares every field with libmelee's own parse of the same replay.
+
+**Exactness against libmelee.** 40 random replays of ours between controller-driven players gave 152,375 compared frames. Every field matched except `hitstun_frames_left`:
+- Inside hitstun, every value agreed.
+- Outside it, libmelee reports whatever Melee keeps in that shared slot (e.g. 32 while shielding or spot-dodging); the simulator reports 0.
+- A game stays in sync until the first random choice that comes out differently: 15 of the 40 games never diverged.
+
+**Closed loop.** Bot-writer baselines rusher vs laser (Fox ditto, Battlefield), with the seed of a headless Dolphin game, replayed that Dolphin game input for input and frame for frame for all 28,923 frames. The final state was the same 4–4, 5.7% vs 0%.
+
+**Speed.** That game took 32 s in the simulator and 143 s in headless Dolphin. Most of the 32 s is the bot-writer sandbox: pickling the `GameState` to each bot process each frame (9 s) and waiting for the bots (10 s). Building the state takes 0.23 ms/frame and the simulator 0.12 ms. Two in-process agents (idle vs multishine) run about 4,700 frames/s, an 8-minute game in 6 s.
+
+**Differences from Dolphin.**
+- No in-game CPU and no learned bots: `play` refuses both.
+- No `.slp` replays (`GameResult.replay` is None).
+- No ECB and no powershield flag in the `GameState`: they keep libmelee's defaults.
+- `hitstun_frames_left` is 0 outside hitstun.
+- The game's RNG is not Dolphin's, so the same seed and inputs repeat exactly here but play out differently on Dolphin.
+- Timeouts are scored on the state at the timer, by stocks then percent. There is no Sudden Death.
 
 ## Where it would help here
 
@@ -54,6 +84,10 @@ git clone https://github.com/kyhavlov/melee-sim-light
 # serves live bots and stays untouched.
 uv venv sim-venv --python 3.12
 VIRTUAL_ENV=$PWD/sim-venv uv pip install -e "./slippi-ai[onnx-cuda,jax]" -e ./melee-sim-light
+
+# For --mode sim: the main venv (uv run keeps it; `uv sync` removes it, so reinstall after a sync).
+# The replay parity check also needs peppi-py.
+cd .. && uv pip install -e vendor/melee-sim-light peppi-py
 
 # Check our replays against the simulator (strict, frame by frame)
 cd melee-sim-light && uv run python -m tools.validation.validate_replay --backend native --workers 12 \
