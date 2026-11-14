@@ -168,11 +168,8 @@ class Worker:
                 self.live = self.start_job(waiting[0], LIVE_PORT, is_live=True)
             elif not waiting and port_ok and jobs.setting("arena", "on") == "on" and time.time() > self.arena_backoff:
                 self.live = self.start_arena()
-        elif self.live.kind == "arena" and waiting and self.live.term_at is None:
-            if waiting[0]["preempt"] or jobs.setting("arena", "on") != "on":
-                print(f"aborting the arena game for job {waiting[0]['id']}", flush=True)
-                self.live.terminate()
-        elif self.live.kind == "arena" and jobs.setting("arena", "on") != "on" and self.live.term_at is None:
+        elif self.live.kind == "arena" and waiting and waiting[0]["preempt"] and self.live.term_at is None:
+            print(f"aborting the arena game for job {waiting[0]['id']}", flush=True)
             self.live.terminate()
 
     def _procs(self) -> list[Proc]:
