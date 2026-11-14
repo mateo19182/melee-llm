@@ -29,6 +29,22 @@ def available() -> bool:
     return (DATA_DIR / "raw").is_dir() or DATA_DIR.name == "raw" and DATA_DIR.is_dir()
 
 
+class SlippiTap:
+    """Hands each subscriber (a learned bot) every frame as raw Slippi events, like bots.agent.ConsoleTap does for
+    Dolphin. Frames are encoded only while someone subscribes."""
+
+    def __init__(self):
+        self.subscribers: list[list] = []
+
+    def subscribe(self) -> list:
+        self.subscribers.append([])
+        return self.subscribers[-1]
+
+    def publish(self, events: bytes) -> None:
+        for sub in self.subscribers:
+            sub.append(("game_event", events))
+
+
 @dataclass(frozen=True)
 class Snapshot:
     """A moment of a match: the simulator's complete state and the GameState built for it."""
@@ -46,6 +62,9 @@ class World:
         self.stage, self.ports, self.max_frame = stage, sorted(characters), max_frame
         self.costumes = {p: (costumes or {}).get(p, 0) for p in self.ports}
         self.controllers = {p: SimController(p) for p in self.ports}
+        self.tap, self.encoder = SlippiTap(), None
+        for c in self.controllers.values():
+            c.slippi_tap = self.tap
         self._players = tuple(msl.PlayerConfig(characters[p].value, controller_port=p - 1, costume=self.costumes[p])
                               for p in self.ports)
         self.env = msl.EnvBatch(batch_size=1, length=_RING, action_format="raw", data_dir=str(DATA_DIR))
@@ -61,6 +80,8 @@ class World:
         for c in self.controllers.values():
             c.release_all()
             c.flush()
+        self.encoder = None
+        self._publish(self.env.current_frame[0], None)
         return self.gs
 
     def step(self) -> melee.GameState:
@@ -76,7 +97,16 @@ class World:
         env.step()
         self.gs = self.builder.build(env.current_frame[0], row)
         self.done = bool(env.terminal_view[t, 0]["done"])
+        self._publish(env.current_frame[0], row)
         return self.gs
+
+    def _publish(self, obs, row) -> None:
+        if not self.tap.subscribers:
+            return
+        if self.encoder is None:
+            from melee_llm.sim.slippi import Encoder
+            self.encoder = Encoder(self.stage, self.ports, self.costumes, timer_s=self.max_frame // 60)
+        self.tap.publish(self.encoder.frame(obs, row))
 
     def save(self) -> Snapshot:
         return Snapshot(self.env.save(0), copy.deepcopy(self.gs))

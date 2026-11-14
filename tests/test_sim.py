@@ -88,3 +88,62 @@ def test_gamestates_match_libmelee_on_a_dolphin_replay():
     assert r["compared"] > 1000
     # hitstun_frames_left is the one known difference: libmelee reports Melee's shared slot outside hitstun
     assert set(r["mismatches"]) <= {"hitstun_frames_left"}, r["examples"]
+
+
+@needs_sim
+def test_learned_bots_parse_the_same_gamestate_from_the_simulators_slippi_events():
+    import random
+
+    from melee_llm.bots.server import Replayer
+
+    w = world.World({1: melee.Character.FOX, 2: melee.Character.FALCO}, melee.Stage.BATTLEFIELD)
+    events = w.tap.subscribe()
+    rng, replayer, checked = random.Random(0), Replayer(), 0
+    try:
+        gs = w.reset(3)
+        for _ in range(1500):
+            got = replayer.feed(events)
+            events.clear()
+            assert got.frame == gs.frame and got.stage == gs.stage
+            for p in (1, 2):
+                a, b = gs.players[p], got.players[p]
+                for f in ("character", "action", "action_frame", "facing", "stock", "on_ground", "jumps_left",
+                          "invulnerable", "hitlag_left", "hitstun_frames_left", "off_stage", "moonwalkwarning"):
+                    assert getattr(a, f) == getattr(b, f), (gs.frame, p, f)
+                for f in ("percent", "shield_strength", "speed_air_x_self", "speed_y_self", "speed_x_attack",
+                          "speed_y_attack", "speed_ground_x_self"):
+                    assert float(getattr(a, f)) == float(getattr(b, f)), (gs.frame, p, f)
+                assert (a.position.x, a.position.y) == (b.position.x, b.position.y)
+                for f in ("button", "processed_button", "main_stick", "c_stick", "raw_main_stick", "l_shoulder"):
+                    assert getattr(a.controller_state, f) == getattr(b.controller_state, f), (gs.frame, p, f)
+            assert sorted((q.spawn_id, q.type, q.owner, q.position.x) for q in gs.projectiles) == \
+                sorted((q.spawn_id, q.type, q.owner, q.position.x) for q in got.projectiles)
+            checked += 1
+            for c in w.controllers.values():  # random play: mashing, sticks in and out of the deadzone, lasers
+                c.tilt_analog(melee.Button.BUTTON_MAIN, rng.random(), rng.random())
+                c.tilt_analog(melee.Button.BUTTON_C, *((0.5, 0.5) if rng.random() < 0.8 else (rng.random(), rng.random())))
+                c.press_shoulder(melee.Button.BUTTON_L, rng.choice((0.0, 0.0, 0.4, 1.0)))
+                for b in (melee.Button.BUTTON_A, melee.Button.BUTTON_B, melee.Button.BUTTON_Y, melee.Button.BUTTON_Z):
+                    (c.press_button if rng.random() < 0.08 else c.release_button)(b)
+            gs = w.step()
+    finally:
+        w.close()
+    assert checked == 1500
+
+
+@needs_sim
+@pytest.mark.skipif(not _REPLAYS or __import__("importlib").util.find_spec("peppi_py") is None,
+                    reason="needs a Dolphin bench replay and peppi-py")
+def test_slippi_events_match_a_dolphin_replay_in_every_field_bots_read():
+    import peppi_py
+
+    from melee_llm.sim.slippi import round_trip
+    slp = next(f for f in _REPLAYS if all(p.type.name == "HUMAN" for p in peppi_py.read_slippi(f, skip_frames=True).start.players))
+    r = round_trip(Path(slp))
+    assert r["compared"] > 1000
+    read = {"0x37." + f for f in ("frame", "port", "follower", "main_x", "main_y", "c_x", "c_y", "trigger", "buttons", "l", "r", "raw_x", "raw_y")}
+    read |= {"0x37.processed_buttons"}
+    read |= {"0x38." + f for f in ("character", "action", "x", "y", "facing", "percent", "shield", "stocks", "airborne", "jumps", "hurtbox",
+                                   "speed_air_x", "speed_y", "speed_attack_x", "speed_attack_y", "speed_ground_x", "hitlag")}
+    read |= {"0x3b." + f for f in ("type", "state", "x", "y", "vel_x", "vel_y", "timer", "spawn_id", "owner")}
+    assert not read & set(r["mismatches"]), {k: r["examples"][k] for k in read & set(r["mismatches"])}

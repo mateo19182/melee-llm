@@ -2,8 +2,9 @@
 Dolphin, no menus and no rendering, as fast as the agents answer. Same contract as runner.play: agents
 get setup/ready/on_game_start/begin/step/on_game_end, and the result is a list of GameResults.
 
-Differences from Dolphin (docs/simulator.md): no in-game CPU, no learned bots (they read the raw Slippi
-stream), no replays, no ECB or powershield flag in the GameState, and `hitstun_frames_left` is 0 outside
+Learned bots read the simulator as Slippi events (World's tap, melee_llm/sim/slippi.py), as they read Dolphin.
+
+Differences from Dolphin (docs/simulator.md): no in-game CPU, no replays, no ECB or powershield flag in the GameState, and `hitstun_frames_left` is 0 outside
 hitstun (libmelee shows whatever Melee keeps in that slot). The game's RNG is not Dolphin's, so a given
 seed and inputs replay identically here but not on Dolphin.
 """
@@ -22,12 +23,9 @@ from melee_llm.sim.world import TIMER_FRAMES, World
 
 
 def _check_agents(agents: dict[int, Agent]) -> None:
-    from melee_llm.bots.agent import BotAgent as LearnedBot
     for p, a in agents.items():
         if a.cpu_level:
             raise ValueError(f"port {p}: the simulator has no in-game CPU")
-        if isinstance(a, LearnedBot):
-            raise ValueError(f"port {p}: learned bots read the Slippi event stream, which the simulator does not produce")
 
 
 def play(agents: dict[int, Agent], stage: melee.Stage = melee.Stage.BATTLEFIELD, games: int = 1,
