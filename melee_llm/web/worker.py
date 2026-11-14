@@ -109,7 +109,7 @@ class Worker:
             results = [json.loads(ln) for ln in (d / "results.jsonl").read_text().splitlines() if ln.strip()]
         except (OSError, ValueError):
             pass
-        found = sorted(d.rglob("*.llm.jsonl")) + sorted(d.rglob("*.coach.jsonl"))
+        found = sorted(p for p in d.rglob("*.jsonl") if p.name != "results.jsonl")  # incl. logs not yet renamed
         fields = {"results": results, "tokens": logs.tokens(found)}
         if final:
             rc = proc.popen.returncode
