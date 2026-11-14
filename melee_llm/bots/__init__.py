@@ -1,12 +1,13 @@
 """Learned Melee bots as Agents. Each runs in a subprocess under its own venv in vendor/; see docs/bots.md.
 
-The spec argument (`hal:MASTER`, `phillip:gm`, `mimic:fox-master`, `faynt:10M-Arena`, `reyn:<phrase>`) picks
+The spec argument (`hal:MASTER`, `phillip:gm`, `mimic:fox-master`, `faynt:10M-Arena`, `reyn:<phrase>`, `meleebot:bc-6m-v1`) picks
 the bot's style/model. After setup, `agent.steer` holds every knob with its effective value; a coach
 can change it mid-game (see docs/bots.md for when each knob takes effect).
 """
 from __future__ import annotations
 
 from melee_llm.bots.agent import VENDOR, BotAgent
+from melee_llm.paths import DATA, ROOT
 
 
 class HAL(BotAgent):
@@ -69,4 +70,16 @@ class ReynBot(BotAgent):
             self.steer["command"] = arg
 
 
-BOTS = {"hal": HAL, "phillip": Phillip, "mimic": MIMIC, "faynt": Faynt, "reyn": ReynBot}
+class MeleeBot(BotAgent):
+    """Our own behaviour-cloned bot (train/meleebot). arg: run name in data/train/runs (default: bc-6m-v1).
+
+    steer: delay (0-12 frames of reaction delay), rank (UNKNOWN/PLATINUM/DIAMOND/MASTER/PRO), win (1, 0 or None),
+    temperature.
+    """
+    bot, python, cwd = "meleebot", ROOT / "train/.venv/bin/python", ROOT / "train"
+
+    def init_config(self):
+        return {"checkpoint": str(DATA / "train/runs" / (self.arg or "bc-6m-v1") / "last.pt"), **self.config}
+
+
+BOTS = {"hal": HAL, "phillip": Phillip, "mimic": MIMIC, "faynt": Faynt, "reyn": ReynBot, "meleebot": MeleeBot}

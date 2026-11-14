@@ -5,7 +5,7 @@ import json
 import time
 from functools import lru_cache
 
-from melee_llm.paths import VENDOR
+from melee_llm.paths import DATA, VENDOR
 
 CHARACTERS = ["FOX", "FALCO", "MARTH", "SHEIK", "CPTFALCON", "JIGGLYPUFF", "PEACH", "POPO", "SAMUS", "GANONDORF",
               "LUIGI", "MARIO", "DOC", "YOSHI", "DK", "LINK", "YLINK", "NESS", "PIKACHU", "PICHU", "ROY", "MEWTWO",
@@ -16,7 +16,7 @@ MODES = {"lockstep": "rendered, live; game waits for each input (real time with 
          "fast": "headless and unthrottled, not shown live; up to 4 run in parallel"}
 CHAR_NAMES = {"CPTFALCON": "Falcon", "JIGGLYPUFF": "Puff", "POPO": "Ice Climbers", "DK": "DK", "YLINK": "Young Link",
               "GAMEANDWATCH": "G&W", "DOC": "Dr. Mario"}
-LEARNED = {"hal", "phillip", "mimic", "faynt", "reyn"}
+LEARNED = {"hal", "phillip", "mimic", "faynt", "reyn", "meleebot"}
 MIMIC_CHARS = {"fox": "FOX", "falco": "FALCO", "marth": "MARTH", "sheik": "SHEIK", "cptfalcon": "CPTFALCON",
                "puff": "JIGGLYPUFF", "luigi": "LUIGI", "peach": "PEACH"}
 COACH_ALIASES = ["haiku", "sonnet", "random"]
@@ -52,7 +52,7 @@ def label(spec: str) -> str:
     if kind == "coach":
         body = next((o.split("=", 1)[1] for o in opts if o.startswith("body=")), "reyn")
         return f"Coach {short_model(head) or 'haiku'} → {body.title() if body != 'hal' else 'HAL'}"
-    names = {"hal": "HAL", "phillip": "Phillip", "mimic": "MIMIC", "faynt": "Faynt", "reyn": "Reyn"}
+    names = {"hal": "HAL", "phillip": "Phillip", "mimic": "MIMIC", "faynt": "Faynt", "reyn": "Reyn", "meleebot": "MeleeBot"}
     if kind in names:
         if kind == "reyn" and arg:
             return f'Reyn "{arg[:30]}"'
@@ -94,6 +94,11 @@ def mimic_checkpoints() -> dict[str, str]:
         if char:
             out[d.name] = char
     return out
+
+
+def meleebot_runs() -> list[str]:
+    runs = DATA / "train/runs"
+    return sorted(p.parent.name for p in runs.glob("*/last.pt")) if runs.exists() else []
 
 
 def faynt_variants() -> list[str]:
@@ -150,6 +155,8 @@ def catalog() -> dict:
             {"kind": "faynt", "label": "Faynt", "arg": {"type": "select", "options": faynt_variants(), "default": "10M-Arena"}},
             {"kind": "reyn", "label": "Reyn (language-steerable)",
              "arg": {"type": "text", "default": "", "placeholder": "optional command, e.g. Be more aggressive."}},
+            {"kind": "meleebot", "label": "MeleeBot (our behaviour-cloned Yoshi)",
+             "arg": {"type": "select", "options": meleebot_runs(), "default": "bc-6m-v1"}},
             {"kind": "shine", "label": "Multishine demo"},
             {"kind": "idle", "label": "Idle (does nothing)"},
         ],
@@ -229,6 +236,11 @@ def validate(p1: str, p2: str, char1: str, char2: str, stage: str, mode: str, ga
                 errors.append(f"{who}: no Faynt variant {arg!r}")
             if arg.startswith("75M") and mode != "fast":
                 warnings.append(f"{who}: Faynt 75M is too slow for real time")
+        elif kind == "meleebot":
+            if arg and arg not in meleebot_runs():
+                errors.append(f"{who}: no MeleeBot run {arg!r} with a checkpoint")
+            if char != "YOSHI":
+                warnings.append(f"{who}: MeleeBot was trained on Yoshi only")
         elif kind not in ("reyn", "shine", "idle"):
             errors.append(f"{who}: unknown player kind {kind!r}")
         if kind in LEARNED and mode == "watch":

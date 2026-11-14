@@ -5,6 +5,7 @@
   llm_paused:<model>[,k=v...]   LLM player, the game waits for it          docs/llm-player.md
   llm_live:<model>[,k=v...]     LLM player thinking off-thread
   hal[:identity] phillip[:model] mimic[:checkpoint] faynt[:variant] reyn[:command]   docs/bots.md
+  meleebot[:run]                our own behaviour-cloned Yoshi (train/, data/train/runs/<run>)
   coach:<model|random>[,body=reyn|hal,interval=60]   LLM steering a learned bot      docs/coach.md
   jev_live | jev_paused | coach_jev [:<model>][,k=v...]   TypeSafe Jev               docs/jev.md
   bot:PATH | baseline:NAME      a bot-writer bot, sandboxed and time-budgeted        docs/bot-writer.md
@@ -25,7 +26,7 @@ KINDS = {
     "shine": "melee_llm.agents.base:Multishine", "idle": "melee_llm.agents.base:Idle",
     "llm_paused": "melee_llm.agents.llm_paused:PausedLLM", "llm_live": "melee_llm.agents.llm_live:LiveLLM",
     "hal": "melee_llm.bots:HAL", "phillip": "melee_llm.bots:Phillip", "mimic": "melee_llm.bots:MIMIC",
-    "faynt": "melee_llm.bots:Faynt", "reyn": "melee_llm.bots:ReynBot",
+    "faynt": "melee_llm.bots:Faynt", "reyn": "melee_llm.bots:ReynBot", "meleebot": "melee_llm.bots:MeleeBot",
     "coach": "melee_llm.agents.coach:CoachedBot", "coach_jev": "melee_llm.agents.jev_coach:JevCoach",
     "jev_live": "melee_llm.agents.jev_player:JevLive", "jev_paused": "melee_llm.agents.jev_player:JevPaused",
 }
