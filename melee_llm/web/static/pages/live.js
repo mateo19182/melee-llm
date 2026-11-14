@@ -129,9 +129,12 @@ export default async function live(root, _params, signal) {
     }
     for (const [port, st] of Object.entries(s.steer || {})) {
       const id = `steer-${port}`;
+      const sig = JSON.stringify(st);
+      const old = steerBox.querySelector(`#${id}`);
+      if (old?.dataset.sig === sig) continue; // unchanged: keep the card (and its animation) as is
       const card = steerCard(port, st, s.players?.[port]);
       card.id = id;
-      const old = steerBox.querySelector(`#${id}`);
+      card.dataset.sig = sig;
       old ? old.replaceWith(card) : steerBox.append(card);
     }
     if (s.source === "idle" || !s.players) {

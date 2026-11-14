@@ -98,7 +98,8 @@ class Index:
             for r in j["results"]:
                 add(r.get("replay"), source=f"job:{j['id']}", source_label=f"Job #{j['id']}", p1=j["p1"], p2=j["p2"],
                     char1=j["char1"], char2=j["char2"], stage=j["stage"], mode=j["mode"], winner=r.get("winner"),
-                    stocks=r.get("stocks"), percent=r.get("percent"), frames=r.get("frames"), time=r.get("time"),
+                    stocks=r.get("stocks"), percent=r.get("percent"), frames=r.get("frames"),
+                    time=(r.get("time") or "").replace("T", " ") or None,
                     job_id=j["id"])
         for r in _jsonl(ARENA / "results.jsonl"):
             add(r.get("replay"), source="arena", source_label="Arena", p1=r["p1"], p2=r["p2"], char1=r["char1"],
