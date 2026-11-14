@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 VENDOR = ROOT / "vendor"  # learned bots (each with its own venv), Slippi Lab, noVNC
 REPLAYS = ROOT / "replays"  # .slp files and the decision logs written next to them
 DATA = Path(os.environ.get("MELEE_WEB_DATA", ROOT / "data"))
+VOICE_HEARTBEAT = DATA / "voice-listeners"  # touched by Live pages with the commentator voice on
 DB = DATA / "web.sqlite"
 JOBS = REPLAYS / "jobs"  # one dir per web job: replays, decision logs, results.jsonl, output.log
 ARENA = DATA / "arena"  # learned-bot arena: results.jsonl, standings.json

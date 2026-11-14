@@ -27,9 +27,10 @@ export default async function live(root, _params, signal) {
   const playBtn = h("button.vp-btn", { title: "Play / pause (space)", onclick: () => (video.paused ? video.play().catch(() => {}) : video.pause()) });
   const liveBtn = h("button.vp-live", { title: "Jump to live", onclick: jumpLive }, h("span.vp-dot"), "Live");
   const fsBtn = h("button.vp-btn", { title: "Fullscreen (f)", onclick: () => toggleFullscreen() });
+  const voiceBtn = h("button.vp-btn", { title: "Commentator voice (v)", onclick: () => setVoice(!voiceOn) });
   const videoWrap = h("div.video-wrap", { tabIndex: 0 },
     video, videoMsg,
-    h("div.vp-bar", {}, playBtn, liveBtn, delayInfo, h("span.spacer"), fsBtn));
+    h("div.vp-bar", {}, playBtn, liveBtn, delayInfo, h("span.spacer"), voiceBtn, fsBtn));
   const syncToggle = h("div.toggle", {},
     h("button", { onclick: () => setInstant(false), title: "Hold each decision until the video shows that moment" }, "Synced"),
     h("button", { onclick: () => setInstant(true), title: "Show decisions as they arrive, ahead of the video" }, "Instant"));
@@ -67,8 +68,46 @@ export default async function live(root, _params, signal) {
   }
   setInstant(instant);
 
+  // ---------------------------------------------------------------- commentator voice
+  // Off by default (browsers only play sound after a click anyway). While on, a heartbeat tells the commentator
+  // someone is listening; it only synthesizes speech then. Clips play in order as their lines are released.
+  let voiceOn = false;
+  const clips = [];
+  const player = new Audio();
+  let beat = null;
+  function setVoice(on) {
+    voiceOn = on;
+    clips.length = 0;
+    if (!on) player.pause();
+    clearInterval(beat);
+    if (on) {
+      const ping = () => api("/api/live/listen", { method: "POST" }).catch(() => {});
+      ping();
+      beat = setInterval(ping, 5000);
+      if (!castToggle.checked) toast("Turn the commentator on to hear it");
+    }
+    syncControls();
+  }
+  signal.addEventListener("abort", () => { clearInterval(beat); player.pause(); });
+  function playNext() {
+    if (!player.paused && !player.ended) return;
+    let c;
+    while ((c = clips.shift()) && serverNow() - c.ts > 12) {} // skip clips that fell far behind
+    if (!c) return;
+    player.src = `/api/live/audio?p=${encodeURIComponent(c.audio)}`;
+    player.play().catch(() => {});
+  }
+  player.addEventListener("ended", playNext);
+  function speak(rec) {
+    if (!voiceOn || !rec.audio) return;
+    clips.push(rec);
+    playNext();
+  }
+
   // ---------------------------------------------------------------- video
   const ICON = {
+    voiceOn: '<svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4zM15.5 8.5a5 5 0 0 1 0 7l-1.4-1.4a3 3 0 0 0 0-4.2zM18.3 5.7a9 9 0 0 1 0 12.6l-1.4-1.4a7 7 0 0 0 0-9.8z"/></svg>',
+    voiceOff: '<svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4zM16 9.4l1.4-1.4 2.1 2.1 2.1-2.1 1.4 1.4-2.1 2.1 2.1 2.1-1.4 1.4-2.1-2.1-2.1 2.1-1.4-1.4 2.1-2.1z"/></svg>',
     play: '<svg viewBox="0 0 24 24"><path d="M7 4.5v15l13-7.5z"/></svg>',
     pause: '<svg viewBox="0 0 24 24"><path d="M6 4h4.5v16H6zM13.5 4H18v16h-4.5z"/></svg>',
     full: '<svg viewBox="0 0 24 24"><path d="M4 9V4h5v2H6v3zm11-5h5v5h-2V6h-3zM6 15v3h3v2H4v-5zm12 0h2v5h-5v-2h3z"/></svg>',
@@ -77,6 +116,8 @@ export default async function live(root, _params, signal) {
   const syncControls = () => {
     playBtn.innerHTML = video.paused ? ICON.play : ICON.pause;
     fsBtn.innerHTML = document.fullscreenElement === videoWrap ? ICON.exit : ICON.full;
+    voiceBtn.innerHTML = voiceOn ? ICON.voiceOn : ICON.voiceOff;
+    voiceBtn.classList.toggle("on", voiceOn);
     videoWrap.classList.toggle("paused", video.paused);
   };
   for (const ev of ["play", "pause", "playing"]) video.addEventListener(ev, syncControls);
@@ -88,6 +129,7 @@ export default async function live(root, _params, signal) {
   videoWrap.addEventListener("keydown", (e) => {
     if (e.key === " " || e.key === "k") { e.preventDefault(); playBtn.click(); }
     else if (e.key === "f") toggleFullscreen();
+    else if (e.key === "v") setVoice(!voiceOn);
   });
   // Controls fade out while the mouse rests on a playing video.
   let idleTimer = 0;
@@ -240,7 +282,10 @@ export default async function live(root, _params, signal) {
     });
     es.addEventListener("log", (e) => {
       const { port, kind, rec } = JSON.parse(e.data);
-      enqueue(rec.ts, () => addEvent(recordCard(rec, port, kind), rec.ts, port));
+      enqueue(rec.ts, () => {
+        addEvent(recordCard(rec, port, kind), rec.ts, port);
+        if (kind === "commentary" && rec.type === "line") speak(rec);
+      });
     });
     signal.addEventListener("abort", () => es.close());
   }

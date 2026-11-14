@@ -6,13 +6,18 @@ game of the live-slot match and lists it in the registry's logs), and, while the
 setting is on, a background thread turns recent events into one or two lines of LLM commentary. Nothing here
 blocks the game loop: update() is a few comparisons per frame and the LLM call runs on its own thread.
 
+While someone on the Live page has the voice on (it sends a heartbeat that touches paths.VOICE_HEARTBEAT), each line
+is also spoken with ElevenLabs and saved as <log>.audio/<n>.mp3; ELEVENLABS_API_KEY comes from the environment or
+~/.config/melee-llm/elevenlabs.env. Nobody listening, nothing is synthesized.
+
 Records: {"type": "event", "text", "frame", "big", "ts"} and {"type": "line", "text", "frame", "model",
-"latency_s", "ts"}. `ts` is when the moment happened (a line carries the ts of the newest event it covers),
+"latency_s", "audio", "audio_s", "ts"} (audio: path of the MP3, audio_s: its length). `ts` is when the moment happened (a line carries the ts of the newest event it covers),
 so the page shows both when the video reaches that moment.
 """
 from __future__ import annotations
 
 import json
+import os
 import queue
 import threading
 import time
@@ -28,6 +33,11 @@ FPS = 60
 STRING_END = 30  # frames the victim must be actionable (and not hit) before a combo string counts as over
 SELF_DESTRUCT = 240  # a stock lost this long after the last hit taken is a self-destruct
 DEFAULT_MODEL = "claude-haiku-5-5"
+DEFAULT_VOICE = "IKne3meq5aSn9XLyUdCD"  # ElevenLabs "Charlie": deep, confident, energetic
+TTS_MODEL = "eleven_flash_v2_5"  # the low-latency one (~1 s for a line)
+TTS_KBPS = 64  # mp3_44100_64: duration = bytes * 8 / 64000
+VOICE_FRESH_S = 15  # the Live page beats every 5 s while its voice is on
+ELEVENLABS_ENV = Path.home() / ".config/melee-llm/elevenlabs.env"
 
 
 @dataclass
@@ -128,11 +138,42 @@ def commentator_model() -> str:
         return DEFAULT_MODEL
 
 
+def someone_listening() -> bool:
+    from melee_llm.paths import VOICE_HEARTBEAT
+    try:
+        return time.time() - VOICE_HEARTBEAT.stat().st_mtime < VOICE_FRESH_S
+    except OSError:
+        return False
+
+
+def elevenlabs_key() -> str | None:
+    if os.environ.get("ELEVENLABS_API_KEY"):
+        return os.environ["ELEVENLABS_API_KEY"]
+    try:
+        for line in ELEVENLABS_ENV.read_text().splitlines():
+            k, _, v = line.partition("=")
+            if k.strip() == "ELEVENLABS_API_KEY":
+                return v.strip().strip("'\"")
+    except OSError:
+        pass
+    return None
+
+
+def speak(text: str, key: str, voice: str = DEFAULT_VOICE, timeout: float = 8.0) -> bytes:
+    """One line as MP3 (ElevenLabs text-to-speech). Raises on HTTP errors."""
+    import httpx
+    r = httpx.post(f"https://api.elevenlabs.io/v1/text-to-speech/{voice}", params={"output_format": "mp3_44100_64"},
+                   headers={"xi-api-key": key}, json={"text": text, "model_id": TTS_MODEL}, timeout=timeout)
+    r.raise_for_status()
+    return r.content
+
+
 SYSTEM = """You are the play-by-play commentator for a live exhibition of Super Smash Bros. Melee where AI bots \
 play each other. Write ONE short line (at most 25 words) for the viewers about what just happened, in the voice of \
 an energetic but knowledgeable Melee caster. Stay accurate: only describe what the events and score say, never \
 invent specific moves or techniques. Vary your phrasing, don't repeat earlier lines, and when nothing big \
 happened, talk about momentum, the score, or the matchup instead."""
+SPOKEN = "\n\nThis line is read aloud live, so keep it to at most 15 words."
 
 TOOL = {"type": "function", "function": {
     "name": "say", "description": "Say one commentary line on stream.",
@@ -169,6 +210,7 @@ class Commentary:
     def __init__(self, path: Path, names: dict[int, str], context: str, min_gap: float = 4.0, quiet_gap: float = 10.0):
         path.parent.mkdir(parents=True, exist_ok=True)
         self.path, self.context = path, context
+        self.audio_dir = path.with_suffix(".audio")
         self.f = path.open("a")
         self.lock = threading.Lock()
         self.tracker = PlayTracker(names)
@@ -222,7 +264,8 @@ class Commentary:
 
     def _loop(self) -> None:
         llm, model, said, pending = None, "", [], []
-        last_line, last_check, enabled = 0.0, 0.0, False
+        last_line, last_check, enabled, voice_key = 0.0, 0.0, False, None
+        speaking_until, clips = 0.0, 0
         while True:
             try:
                 pending.append(self.inbox.get(timeout=0.25))
@@ -236,6 +279,7 @@ class Commentary:
                     from melee_llm.llm import LLM
                     model = commentator_model()
                     llm = LLM(model, timeout=10, max_tokens=300)
+                voice_key = elevenlabs_key() if enabled and someone_listening() else None
             finishing = self.stop_ev.is_set()
             if not enabled:
                 pending.clear()
@@ -243,6 +287,8 @@ class Commentary:
                     return
                 continue
             due = pending and (any(e.big for e in pending) and now - last_line >= self.min_gap or now - last_line >= self.quiet_gap)
+            if voice_key and now < speaking_until:
+                due = False  # don't talk over the clip that is still playing
             if finishing and pending:
                 due = True
             if not due:
@@ -253,14 +299,28 @@ class Commentary:
             user = (f"Match: {self.context}\nScore now: {self.score or 'game starting'}\n"
                     f"What just happened (oldest first):\n" + "\n".join(f"- {e.text}" for e in events[-20:]) +
                     ("\nEarlier lines you said:\n" + "\n".join(f"- {s}" for s in said[-4:]) if said else ""))
-            rep = llm.choose(SYSTEM, user, TOOL)
+            rep = llm.choose(SYSTEM + (SPOKEN if voice_key else ""), user, TOOL)
             line = (rep.args or {}).get("line", "").strip()
             last_line = time.time()
             if line:
                 said.append(line)
-                self.write({"type": "line", "text": line, "frame": max(e.frame for e in events), "model": rep.model,
-                            "latency_s": round(rep.latency_s, 2), "prompt_tokens": rep.prompt_tokens,
-                            "completion_tokens": rep.completion_tokens, "ts": round(max(e.ts for e in events), 3)})
+                rec = {"type": "line", "text": line, "frame": max(e.frame for e in events), "model": rep.model,
+                       "latency_s": round(rep.latency_s, 2), "prompt_tokens": rep.prompt_tokens,
+                       "completion_tokens": rep.completion_tokens, "ts": round(max(e.ts for e in events), 3)}
+                if voice_key:
+                    t0 = time.perf_counter()
+                    try:
+                        mp3 = speak(line, voice_key)
+                        self.audio_dir.mkdir(exist_ok=True)
+                        clips += 1
+                        out = self.audio_dir / f"{clips:03d}.mp3"
+                        out.write_bytes(mp3)
+                        secs = len(mp3) * 8 / (TTS_KBPS * 1000)
+                        rec |= {"audio": str(out), "audio_s": round(secs, 2), "tts_s": round(time.perf_counter() - t0, 2)}
+                        speaking_until = time.time() + secs
+                    except Exception as e:  # noqa: BLE001 - the text line still goes out
+                        rec["tts_error"] = f"{type(e).__name__}: {e}"[:200]
+                self.write(rec)
             elif rep.error:
                 self.write({"type": "error", "text": rep.error[:200], "ts": round(time.time(), 3)})
             if finishing:

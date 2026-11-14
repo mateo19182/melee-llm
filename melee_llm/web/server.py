@@ -19,7 +19,7 @@ from starlette.responses import FileResponse, HTMLResponse, JSONResponse, PlainT
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from melee_llm.paths import ROOT
+from melee_llm.paths import DATA, REPLAYS, ROOT, VOICE_HEARTBEAT
 from melee_llm.web import docs, games, jobs, logs, registry, specs
 
 STATIC = Path(__file__).parent / "static"
@@ -151,6 +151,22 @@ async def api_settings(request: Request) -> Response:
 
 async def api_live(_: Request) -> Response:
     return ok({"status": registry.live_status(await blocking(registry.snapshot)), "server_time": time.time()})
+
+
+async def api_live_listen(_: Request) -> Response:
+    """Heartbeat from a Live page with the voice on: the commentator speaks only while one is fresh."""
+    VOICE_HEARTBEAT.parent.mkdir(parents=True, exist_ok=True)
+    VOICE_HEARTBEAT.touch()
+    return ok({"ok": True})
+
+
+async def api_live_audio(request: Request) -> Response:
+    """A commentary clip: only .mp3 files inside a <log>.audio folder under the replays or data dirs."""
+    p = Path(request.query_params.get("p", "")).resolve()
+    allowed = any(p.is_relative_to(root.resolve()) for root in (REPLAYS, DATA))
+    if not (allowed and p.suffix == ".mp3" and p.parent.name.endswith(".audio") and p.is_file()):
+        return ok({"error": "not found"}, 404)
+    return FileResponse(p, media_type="audio/mpeg", headers={"Cache-Control": "max-age=86400"})
 
 
 def _sse(event: str, data) -> bytes:
@@ -345,6 +361,8 @@ routes = [
     Route("/api/settings", api_settings, methods=["GET", "POST"]),
     Route("/api/live", api_live),
     Route("/api/live/events", api_live_events),
+    Route("/api/live/listen", api_live_listen, methods=["POST"]),
+    Route("/api/live/audio", api_live_audio),
     Route("/api/matches", api_matches),
     Route("/api/matches/events", api_matches_events),
     Route("/api/games", api_games),

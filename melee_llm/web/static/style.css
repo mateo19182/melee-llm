@@ -248,6 +248,7 @@ td.when { color: var(--dim); white-space: nowrap; }
 .vp-btn::before { display: none; }
 .vp-btn:hover:not(:disabled) { transform: none; background: rgba(255, 255, 255, .1); }
 .vp-btn svg { width: 20px; height: 20px; fill: currentColor; }
+.vp-btn.on { color: var(--hi); }
 .vp-live { display: inline-flex; align-items: center; gap: 7px; height: 26px; padding: 0 12px; font-size: 13px; letter-spacing: .12em; color: var(--text); }
 .vp-live::before { background: rgba(255, 59, 85, .16); border-color: rgba(255, 59, 85, .5); }
 .vp-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--live); box-shadow: 0 0 8px var(--live); }
