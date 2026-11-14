@@ -9,11 +9,11 @@ tags:
 
 <!-- Source: writeup/melee-bench.template.md. Numbers and figures come from writeup/make_figures.py; edit prose here, then re-run it. -->
 
-> **TL;DR.** I put frontier LLMs inside Super Smash Bros. Melee in five different ways, and rated all of them on one Elo scale next to Melee's own CPUs and the best published AI bots. LLMs pressing the buttons in real time play like a level 4 CPU. Given unlimited time to think, the best one beats the hardest CPU. Bots that LLMs wrote in 30 minutes land at that same level. The surprise came from coaching: four frontier LLMs took turns coaching a small neural bot, and the bot did best of all with no coach, just the words "Don't die." on repeat.
+> **TL;DR.** People have been building bots for Super Smash Bros. Melee for ten years, and the last two months were the busiest of all: the strongest bot yet, a bot you steer in plain English, top players beating an AI crew on stream, a ranked ladder for bots only, and a simulator that runs the game 100 times faster. Over two days I put all of it on one Elo scale: Melee's own CPUs, the published learned bots, and frontier LLMs in five different roles. The learned bots are far ahead. LLMs pressing the buttons in real time play like a level 4 CPU; given unlimited time to think, the best one beats the hardest CPU, and so do bots that LLMs wrote in 30 minutes. The surprise came from coaching: a small bot coached by four frontier LLMs did best with no coach at all, just the words "Don't die."
 
-Most game benchmarks for LLMs are turn-based: chess, Pokémon, [Slay the Spire](https://arxiv.org/abs/2610.12596). The model can take as long as it likes and the game waits. I wanted the opposite: a real game at 60 frames per second that waits for nobody, where one second of thinking is 60 frames in which you can get hit, grabbed and thrown off the stage.
+Melee came out in 2001 and people still play it competitively. It runs at 60 frames per second and waits for nobody: one second of thinking is 60 frames in which you can get hit, grabbed and thrown off the stage. That makes it a hard target for AI, and its community has built absurdly good open tooling around it: [Slippi](https://slippi.gg) for online play and replays, [libmelee](https://github.com/vladfi1/libmelee) to read the game and press buttons from Python, and a decompilation of the game's own code.
 
-Melee is the obvious candidate. It came out in 2001, people still play it competitively, and its community has built absurdly good open tooling: [Slippi](https://slippi.gg) for online play and replays, [libmelee](https://github.com/vladfi1/libmelee) to read the game and press buttons from Python, and a line of AI bots going back to [Phillip](https://arxiv.org/abs/1702.06230), which beat professional players in 2017. I couldn't find anyone benchmarking LLMs on it, so over two days I built a benchmark, a website to watch it, an AI commentary booth, and a bot of my own.
+I came to it with a question about LLMs. Most game benchmarks for them are turn-based (chess, Pokémon, [Slay the Spire](https://arxiv.org/abs/2610.12596)), where the game waits while the model thinks. I wanted a game that doesn't. The LLMs turned out to be the smaller part of the story, so this post starts with the bots.
 
 ---
 
@@ -29,7 +29,32 @@ Every game in this post is Fox against Fox, a staple of top-level play, on two s
 
 ---
 
-## How it works
+## Ten years of Melee bots
+
+- **2001, the built-in CPUs.** Scripted, levels 1 to 9. Level 9 jabs and grabs on the exact frame, but it almost never shields, always recovers the same way, and loses to one move repeated.
+- **2015, SmashBot.** Dan "altf4" Petro wrote a Fox bot by hand: goals, tactics and exact input sequences, driven by the game's frame data and with zero reaction time. He presented it at [DEF CON 24](https://www.youtube.com/watch?v=_0Z_oN_CZyA) and it played pros in 2017. Its plumbing became libmelee, which almost every bot since is built on.
+- **2017, Phillip.** Vlad Firoiu at MIT trained a neural network by [reinforcement learning alone](https://arxiv.org/abs/1702.06230): no human games, just playing itself. It beat professional players, but it reacted in about 2 frames where a human needs 12 to 15. The [follow-up](https://arxiv.org/abs/1810.07286) made it play at human speed.
+- **2018-2022, Slippi.** Replay files in 2018, rollback netplay in 2020, a ranked ladder in 2022. Suddenly there were hundreds of thousands of recorded human games to learn from.
+- **2020-2024, Phillip again.** [slippi-ai](https://github.com/vladfi1/slippi-ai) set the recipe everyone uses now: first copy humans from replays (behaviour cloning), then improve by self-play while staying close to human play, with a human-like reaction delay of 18 to 24 frames built in. In late 2024 it played top players in public: Zain [won a first-to-5](https://www.youtube.com/watch?v=c8nRFAGvr2c) 5-3, and Moky [lost a first-to-10](https://www.youtube.com/watch?v=1kviVflqXc4) 3-10.
+- **2025, cheap and open.** Eric Gu's [HAL](https://ericyuegu.com/behavior-cloning-melee/) cloned pro Fox games into a 20M-parameter transformer for about $5 of compute, and it beat the level 9 CPU 95% of the time. [MIMIC](https://github.com/erickfm/MIMIC) followed with one model per character. Both published their weights.
+
+## Why now
+
+Then, in the six weeks before I started:
+
+- **Humans against robots, on stream.** Top players took on Phillip in two crew battles, on [1 October](https://www.youtube.com/watch?v=Szm1y1JrNpQ) and [17 October](https://www.twitch.tv/videos/2903721139). The humans won both, with Mew2King as the last player standing each time.
+- **[Faynt](https://www.frisson-labs.com/faynt)** (Frisson Labs, October): one 10M-parameter model that plays all 26 characters and won 240 of 244 games against Phillip's public releases. It reacts instantly while those keep their delay, so the comparison is not a fair one, but it is the strongest bot with public weights.
+- **HAL, scaled up** (October): a 247M-parameter version [reached about 2200 Elo](https://ericyuegu.com/hillclimbing-melee/), the top 1% of the human ladder.
+- **[stomped.dev](https://stomped.dev)** (October): a ranked ladder for bots only. Your bot gets 11 ms per frame to answer.
+- **[Reyn](https://www.frisson-labs.com/reyn)** (11 November, three days before this post): a bot that takes orders in plain English.
+- **[Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev)** (September): a new kind of model that answers a multiple-choice question in 0.15 seconds instead of writing text for 2.
+- **A simulator.** [melee-sim-light](https://github.com/kyhavlov/melee-sim-light) runs the decompiled game without an emulator, about 100 times faster.
+
+Put together, this is new. The strongest bots can be downloaded and run on one home GPU. One of them has a language interface that an LLM can talk to. The game can be simulated far faster than real time. Cloning a decent bot costs a few dollars, and there is a public ladder to test it on. Nobody had put these bots on one scale, or asked where an LLM fits among them. So that is what I built, along with a website to watch it, an AI commentary booth, and a bot of my own.
+
+---
+
+## The benchmark
 
 Everything runs on my home server: the real game, from my own disc, in the Slippi version of the Dolphin emulator. A Python library reads the game state every frame and drives a virtual controller. A dozen games can run side by side.
 
@@ -147,7 +172,12 @@ The Live page has two AI casters: Charlie on play-by-play ("loud, fast, loses hi
 
 ### Our own bot: MeleeBot
 
-On the second day I trained a bot of my own: a 5.4M-parameter transformer that copies human play, trained on 23,000 ranked online Yoshi games. It reads the last 4 seconds of the game and predicts the next controller input, in 2 ms per frame. Its first game, against the level 9 CPU, ended 0-3: it took one stock and lost all four of its own by falling below the stage. A bigger version is training now.
+On the second day I trained a bot of my own, the way HAL did: a small transformer that copies human play, trained on 23,000 ranked online Yoshi games. It reads the last 4 seconds of the game and predicts the next controller input.
+
+- **The first version** (6M parameters) lost all 12 of its games against the level 9 CPU. It took less than one stock per game.
+- **A 20M version** won 1 of 12 and took about twice as many stocks per game.
+
+That is still clearly below the level 9 CPU. The published bots got strong in the second stage, self-play, and that is where this one goes next.
 
 ### A simulator
 
@@ -201,7 +231,7 @@ Per game:
 - **Impressive bots and TASs**: the simulator can save and restore any moment of a game and runs about 100 times faster than the emulator. So a program can try thousands of inputs from the same moment and keep the best. That's how tool-assisted "superplay" works: frame-perfect combos, recoveries and edgeguards no human could pull off. It's also a way to train bots on far more games than a human could ever play.
 - **A faster brain**: a small local model on my GPU at about half a second per decision, since speed is what matters live.
 - **A better coach**: start from "Don't die." and only switch with a good reason.
-- **MeleeBot, bigger**: the 20M version, then onto the board.
+- **MeleeBot, stronger**: fine-tune on a top Yoshi player's games, then self-play in the simulator, then the stomped.dev ladder.
 - **Bot-writer round 2**: three runs per model, so it can actually rank something.
 - **Me**: the board has a slot for a human. I'm not expecting a good number.
 

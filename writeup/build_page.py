@@ -1,6 +1,10 @@
-"""Render writeup/melee-bench.md as a standalone page, writeup/index.html (figures and media stay relative).
+"""Render writeup/melee-bench.md as writeup/index.html, dressed like the rest of the site.
 
     uv run python writeup/build_page.py
+
+The page takes its look from the site's stylesheet and its top bar from the site's index.html, so it follows
+both. Figures and media stay relative, and the stylesheet is linked twice (served path, repo path) so the page
+also works opened from a checkout with no server.
 """
 from __future__ import annotations
 
@@ -11,30 +15,42 @@ from pathlib import Path
 from markdown_it import MarkdownIt
 
 HERE = Path(__file__).resolve().parent
+STATIC = HERE.parent / "melee_llm" / "web" / "static"
 
+# Only what an article needs on top of style.css: a reading column and plain prose elements.
 CSS = """
-:root{--fg:#1b1b1a;--muted:#5d5c58;--bg:#fcfcfb;--rule:#e1e0d9;--code:#f1f0ec;--link:#1f63b8;--p1:#e5383b;--p2:#2a78d6}
-@media (prefers-color-scheme:dark){:root{--fg:#ecebe7;--muted:#a9a8a1;--bg:#1a1a19;--rule:#33332f;--code:#252523;--link:#7fb2f0}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:18px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif}
-main{max-width:46rem;margin:0 auto;padding:3rem 1.25rem 5rem}
-h1{font-size:2.6rem;line-height:1.1;margin:0 0 .3rem;letter-spacing:-.02em}
-.meta{color:var(--muted);margin-bottom:2rem;font-size:.95rem}
-h2{font-size:1.6rem;margin:2.6rem 0 .6rem;line-height:1.2}
-h3{font-size:1.2rem;margin:2rem 0 .4rem}
-a{color:var(--link)}
-hr{border:0;border-top:1px solid var(--rule);margin:2.5rem 0}
-img{display:block;max-width:100%;height:auto;margin:1.4rem auto;border-radius:8px}
-blockquote{margin:1.4rem 0;padding:.2rem 1.1rem;border-left:4px solid var(--p2);background:var(--code);border-radius:0 8px 8px 0}
-blockquote:first-of-type{border-left-color:var(--p1)}
-code{background:var(--code);padding:.1em .3em;border-radius:4px;font-size:.88em}
-pre{background:var(--code);padding:1rem;border-radius:8px;overflow-x:auto;font-size:.8rem;line-height:1.45}
-pre code{background:none;padding:0}
-table{border-collapse:collapse;width:100%;font-size:.88rem;margin:1rem 0;font-variant-numeric:tabular-nums}
-th,td{text-align:left;padding:.35rem .5rem;border-bottom:1px solid var(--rule)}
-em{color:var(--muted)}
-p>em:only-child{display:block;text-align:center;font-size:.9rem;margin-top:-.8rem}
+.frame{max-width:920px}
+.post{max-width:44rem;margin:0 auto;font-size:17px;line-height:1.62}
+.post .meta{color:var(--dim);font-size:14px;margin:-4px 0 26px}
+.post h1{font-size:38px;margin-bottom:.35em}
+.post h2{font-size:25px;margin:2.1em 0 .6em}
+.post h3{font:italic 800 18px/1.2 var(--menu);font-variation-settings:"wdth" 108;text-transform:none;letter-spacing:0;color:var(--gold);text-shadow:var(--outline);margin:1.9em 0 .5em}
+.post p,.post ul,.post ol{margin:0 0 1em}
+.post li{margin:.3em 0}
+.post li::marker{color:var(--gold)}
+.post a{text-decoration:underline;text-decoration-color:rgba(102,224,255,.35);text-underline-offset:2px}
+.post hr{border:0;height:2px;margin:2.4em 0;background:linear-gradient(90deg,transparent,var(--f-mid),transparent)}
+.post img{display:block;max-width:100%;height:auto;margin:1.4em auto .6em;border:1px solid var(--line-hi);border-radius:8px}
+.post blockquote{margin:1.3em 0;padding:12px 18px 2px;background:#030303;border:2px solid #c9ccd2;border-radius:7px;box-shadow:inset 0 0 0 1px #000,0 0 0 1px #000}
+.post code{background:rgba(102,224,255,.1);color:#c9f4ff;padding:.05em .35em;border-radius:3px;font-size:.82em}
+.post pre{background:rgba(3,4,18,.8);border:1px solid var(--line-hi);border-radius:6px;padding:12px 14px;margin:0 0 1em;overflow-x:auto;white-space:pre;font-size:12px;line-height:1.5}
+.post pre code{background:none;color:var(--text);padding:0;font-size:inherit}
+.post table{border-collapse:collapse;width:100%;font-size:14.5px;margin:0 0 1em}
+.post th,.post td{text-align:left;padding:6px 10px;border-bottom:1px solid var(--line)}
+.post th{font:700 12px var(--menu);font-variation-settings:"wdth" 85;text-transform:uppercase;letter-spacing:.08em;color:var(--dim)}
+.post em{color:var(--dim)}
+.post p>em:only-child{display:block;text-align:center;font-size:14px}
+@media (max-width:700px){.frame{width:calc(100% - 30px);padding-left:16px;padding-right:16px}.post{font-size:16px}.post h1{font-size:30px}}
 """
+
+
+def topbar() -> str:
+    """The site's top bar, as plain links, with this page selected."""
+    shell = (STATIC / "index.html").read_text()
+    bar = re.search(r'<header class="topbar">.*?</header>', shell, re.S)[0]
+    bar = re.sub(r'\s*<a id="onair".*?</a>', "", bar)  # filled by the app's script, which this page doesn't load
+    bar = bar.replace(" data-link", "")
+    return bar.replace('<a href="/writeup/"', '<a class="active" href="/writeup/"')
 
 
 def main() -> None:
@@ -50,10 +66,21 @@ def main() -> None:
     page = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{html.escape(title)}</title>
-<meta name="description" content="LLMs, learned bots and Melee's CPUs on one Elo scale, in real-time Super Smash Bros. Melee.">
+<meta name="description" content="Ten years of Melee bots, why now, and one Elo scale for CPUs, learned bots and LLMs.">
+<meta name="theme-color" content="#070926">
+<link rel="icon" href="/static/img/smash-emblem.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="../melee_llm/web/static/style.css">
 <style>{CSS}</style></head>
-<body><main><h1>{html.escape(title)}</h1><div class="meta">Mateo Amado · {html.escape(meta.get("date", ""))}</div>
-{body}</main></body></html>
+<body>
+{topbar()}
+<div class="frame">
+<span class="frame-stripes" aria-hidden="true"></span>
+<div class="frame-title" aria-hidden="true">Write-up</div>
+<main><article class="post"><h1>{html.escape(title)}</h1><div class="meta">Mateo Amado · {html.escape(meta.get("date", ""))}</div>
+{body}</article></main>
+</div>
+</body></html>
 """
     (HERE / "index.html").write_text(page)
     print("wrote writeup/index.html")

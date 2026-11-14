@@ -234,15 +234,8 @@ def tables(s: dict) -> dict:
 
 # ---------------------------------------------------------------- SVG
 
-# Reference palette (dataviz skill), validated light and dark; slots in fixed order.
-SERIES = {  # class: (light, dark)
-    "learned": ("#2a78d6", "#3987e5"),
-    "coach": ("#eb6834", "#d95926"),
-    "written": ("#1baf7a", "#199e70"),
-    "llm": ("#eda100", "#c98500"),
-    "jev": ("#e87ba4", "#d55181"),
-    "ref": ("#898781", "#898781"),
-}
+# Reference palette (dataviz skill), its dark-background slots in fixed order.
+SERIES = {"learned": "#3987e5", "coach": "#d95926", "written": "#199e70", "llm": "#c98500", "jev": "#d55181", "ref": "#898781"}
 SHAPES = {"learned": "circle", "coach": "diamond", "written": "square", "llm": "triangle", "jev": "tri_down",
           "ref": "circle", "scripted": "square"}
 CAT = {"cpu": "ref", "scripted": "ref", "learned": "learned", "coach": "coach", "written": "written",
@@ -256,15 +249,12 @@ FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif'
 
 
 def style() -> str:
-    light = "".join(f".c-{k}{{fill:{a};stroke:{a}}}" for k, (a, _) in SERIES.items())
-    dark = "".join(f".c-{k}{{fill:{b};stroke:{b}}}" for k, (_, b) in SERIES.items())
-    base = (".bg{fill:#fcfcfb}.ring{stroke:#fcfcfb}.t1{fill:#0b0b0b}.t2{fill:#52514e}.tm{fill:#898781}"
-            ".grid{stroke:#e1e0d9}.axis{stroke:#c3c2b7}.band{fill:#52514e;fill-opacity:.09}.conn{stroke:#c3c2b7}")
-    darkbase = (".bg{fill:#1a1a19}.ring{stroke:#1a1a19}.t1{fill:#f0efec}.t2{fill:#c3c2b7}.tm{fill:#898781}"
-                ".grid{stroke:#2c2c2a}.axis{stroke:#383835}.band{fill:#c3c2b7;fill-opacity:.10}.conn{stroke:#4a4a46}")
-    return (f"<style>text{{font-family:{FONT};font-variant-numeric:tabular-nums}}{base}{light}"
-            f".ci{{fill:none;stroke-width:2;stroke-linecap:round}}.hollow{{fill-opacity:0}}"
-            f"@media (prefers-color-scheme: dark){{{darkbase}{dark}}}</style>")
+    """One theme: the site's dark navy (melee_llm/web/static/style.css), since the page is always dark."""
+    series = "".join(f".c-{k}{{fill:{c};stroke:{c}}}" for k, c in SERIES.items())
+    base = (".bg{fill:#080b28}.ring{stroke:#080b28}.t1{fill:#e8ebf7}.t2{fill:#b5bbdc}.tm{fill:#8088b4}"
+            ".grid{stroke:#1b2250}.axis{stroke:#2e3878}.band{fill:#9198c0;fill-opacity:.12}.conn{stroke:#3a4590}")
+    return (f"<style>text{{font-family:{FONT};font-variant-numeric:tabular-nums}}{base}{series}"
+            f".ci{{fill:none;stroke-width:2;stroke-linecap:round}}.hollow{{fill-opacity:0}}</style>")
 
 
 def esc(t: str) -> str:
