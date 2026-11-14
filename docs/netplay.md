@@ -1,12 +1,6 @@
 # Netplay: play our bots from another machine
 
-You play on your own Slippi setup (Slippi Launcher on the laptop). The bot plays on the server, in a rendered Slippi Dolphin on the hidden display `:98`, logged in with its **own** Slippi account. You meet over **Slippi Online Direct Connect**: each side types the other's connect code.
-
-```sh
-uv run python -m melee_llm.netplay host --opponent hal:MASTER --char FOX --connect-code ABCD#123 --games 3
-```
-
-`ABCD#123` is **your** code. In Slippi Launcher you then pick Online → Direct and type the **bot's** code (`status` shows it as `bot_code`).
+You play on your own Slippi setup (Slippi Launcher on the laptop). The bot plays on the server, in a rendered Slippi Dolphin on the hidden display `:98`, logged in with its **own** Slippi account. You meet over **Slippi Online Direct Connect**: each side types the other's connect code. Commands are under [Play](#play).
 
 ## Rules
 
@@ -16,10 +10,10 @@ uv run python -m melee_llm.netplay host --opponent hal:MASTER --char FOX --conne
 
 ## Why Direct Connect
 
-- Slippi Online is rollback netplay with P2P hole punching, and it is what you already play on. Two machines on different networks connect directly over the internet. Tailscale isn't needed. From the laptop, Tailscale reaches the server only through a DERP relay (`relay "mad"`), which would add latency.
-- libmelee supports it out of the box: `Console(user_json_path=..., online_delay=...)` logs Dolphin in, and `MenuHelper.menu_helper_simple(connect_code=...)` gets to Direct and types the code. The MIMIC Discord bot (`vendor/MIMIC/tools/play_netplay.py`) does the same thing.
+- **It is what you already play on.** Slippi Online is rollback netplay with P2P hole punching, so two machines on different networks connect directly over the internet. Tailscale isn't needed: from the laptop it reaches the server only through a DERP relay (`relay "mad"`), which would add latency.
+- **libmelee supports it out of the box.** `Console(user_json_path=..., online_delay=...)` logs Dolphin in, and `MenuHelper.menu_helper_simple(connect_code=...)` gets to Direct and types the code. The MIMIC Discord bot (`vendor/MIMIC/tools/play_netplay.py`) does the same.
 - **Dolphin build**: `bin/Slippi_Mainline.AppImage` is the official mainline netplay build, v4.0.0-mainline-beta.19, the latest release (checked 2026-11-14). Launcher 2.15.x installs the same version on your side. The ExiAI build can't be used: it is beta.14, headless and Null-video only, and too old to pass Slippi's version check.
-- **Alternatives considered**: Dolphin's classic netplay host/traversal works without accounts. But it is delay-based (no rollback), it needs the same build and settings on both ends, and Slippi mainline hides it. Keep it as a fallback only if Direct can't connect, for example behind a symmetric NAT. Not implemented.
+- **Alternative considered**: Dolphin's classic netplay host/traversal works without accounts, but it is delay-based (no rollback), needs the same build and settings on both ends, and Slippi mainline hides it. It is a fallback only if Direct can't connect, for example behind a symmetric NAT. Not implemented.
 
 ## Bot account (one-time; you need to do this)
 
@@ -35,11 +29,11 @@ uv run python -m melee_llm.netplay host --opponent hal:MASTER --char FOX --conne
    - Log out in the Launcher and log in with your own account. Logging out should only delete the local file and leave the copied play key working. That is inferred, not tested: people swap `user.json` files between accounts routinely (e.g. change-slippi-user).
 3. Check it on the server: `uv run python -m melee_llm.netplay check --opponent hal --connect-code ABCD#123` prints `ok`.
 
-Keep the file outside the repo, at `~/.config/melee-llm/slippi-bot/user.json`; `MELEE_NETPLAY_USER_JSON` overrides the path. The code reads only `connectCode` out of it and never logs the rest.
+The file stays outside the repo, at `~/.config/melee-llm/slippi-bot/user.json`; `MELEE_NETPLAY_USER_JSON` overrides the path. The code reads only `connectCode` out of it and never logs the rest.
 
 ## Laptop setup (Arch / Omarchy)
 
-Checked read-only on 2026-11-14: no Slippi Launcher installed, `fuse2` present (AppImages run), `yay`/`paru` available. The ISO is at `~/Downloads/Super Smash Bros. Melee (v1.02 NTSC).iso` and its md5 matches 1.02 NTSC. No controller or GameCube adapter was plugged in. NordVPN is installed.
+Checked read-only on 2026-11-14: no Slippi Launcher installed, `fuse2` present (AppImages run), `yay`/`paru` available, NordVPN installed, no controller or GameCube adapter plugged in. The ISO is at `~/Downloads/Super Smash Bros. Melee (v1.02 NTSC).iso` and its md5 matches 1.02 NTSC.
 
 1. **Launcher**: download `Slippi-Launcher-2.15.2-x86_64.AppImage` from https://github.com/project-slippi/slippi-launcher/releases, `chmod +x` it and run it. The AUR has `slippi-launcher-bin` style packages too, but they are unofficial and untested here.
 2. In the Launcher, set the ISO to the path above, log in, and note your connect code (shown in the top right).
@@ -67,7 +61,7 @@ uv run python -m melee_llm.netplay view        # noVNC of :98 at http://m19182:6
 uv run python -m melee_llm.netplay screenshot  # PNG of :98
 ```
 
-Then on the laptop: Launcher → Play → Online → **Direct** → type the bot's code. Pick your character and press Start. Who picks the stage is up to Slippi; if it's the bot, it picks `--stage`. After a game you both go back to the character screen, still connected, and the bot readies up again.
+`ABCD#123` is **your** code. Then on the laptop: Launcher → Play → Online → **Direct** → type the **bot's** code (`status` shows it as `bot_code`). Pick your character and press Start. Slippi decides who picks the stage; if it's the bot, it picks `--stage`. After a game you both go back to the character screen, still connected, and the bot readies up again.
 
 - **Players**: every player spec (`melee_llm/players.py`) except `cpu:N` (a CPU level is a local VS setting) and `llm_paused` (it blocks the game, which would freeze you too). Speed matters: the game runs at the bot's pace for both of you.
   - HAL (4 ms per frame), Phillip (2 ms) and MIMIC are real time.
@@ -84,13 +78,13 @@ Then on the laptop: Launcher → Play → Online → **Direct** → type the bot
   - `results.jsonl`, one line per game: bot, both codes, bot port, characters, stage, stocks, percent, winner (`bot`, `human` or tie), frames, replay.
   - `status.json` with the current state.
   - `session.log` for background sessions.
-- Spectator ports come from 51800 to 51819, so sessions never collide with the arena (51441) or with ladder jobs.
+- **Ports**: spectator ports come from 51800 to 51819, so sessions never collide with the arena (51441) or with ladder jobs.
 
 ## How it works (`melee_llm/netplay/`)
 
 - `host.py`, `host(cfg, stop, on_status)`: runs one session in the calling thread.
   - Dolphin is `scripts/dolphin-gpu.sh` (VirtualGL on the GPU) on `DISPLAY=:98`, in a 640×480 window, with blocking pipes and `online_delay` 2. The bot's `user.json` is copied into Dolphin's temporary `User/Slippi/`.
-  - Slippi assigns in-game ports only when the game starts, but our subprocess bots fix their port at `setup`. So the session builds **two instances** of the player, one for port 1 and one for port 2, and steps the one whose port has the bot's connect code. The fallback is libmelee's `port_detector`, by character and costume.
+  - Slippi assigns in-game ports only when the game starts, but our subprocess bots fix their port at `setup`. So the session builds **two instances** of the player, one per port, and steps the one whose port has the bot's connect code. The fallback is libmelee's `port_detector`, by character and costume.
   - The idle instance never presses buttons, and its copy of the raw event stream is cleared every frame. Cost: two bot processes, e.g. 2 × 1 GB VRAM for HAL, loaded in about 20-40 s before the bot enters the lobby.
 - **Rollback**: `skip_rollback_frames=True` (libmelee's default), so each agent sees every frame once, at its latest prediction. The bot subprocess rebuilds GameStates through the same libmelee logic, so its frame numbers match. While a correction is pending, the opponent's state is Slippi's prediction (you repeating your last input). HAL's "executed action differs" check is soft here and will log more mismatches online.
 - **Watchdog**: if Dolphin sends no frames for `stall` seconds, it calls `console.interrupt()`, so a dead connection ends the session instead of hanging it.

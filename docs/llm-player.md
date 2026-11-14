@@ -1,6 +1,6 @@
 # LLM player
 
-An LLM picks **macro-actions** from structured state, and a frame-level executor turns them into controller inputs. The LLM never presses buttons. This follows what worked in earlier projects (reflex, LLM Colosseum): give the model structured state, have it choose macros, keep the motor layer deterministic, and favour small fast models.
+An LLM picks **macro-actions** from structured state, and a deterministic frame-level executor turns them into controller inputs. The LLM never presses buttons. This follows what worked in earlier projects (reflex, LLM Colosseum), which also favoured small fast models.
 
 ```sh
 uv run -m melee_llm.match --iso ~/melee.iso --mode paused --p1 llm_paused:claude-haiku-4-5-20251001 --p2 cpu:3
@@ -34,14 +34,12 @@ f1230 laser(short,1) → laser: fired 1, landed
 
 ## Actions
 
-The list covers movement, aerials, grounded attacks, grabs, specials (spacie shine, laser and recovery included) and defence:
-
-- `wait`, `approach`, `retreat`, `dash_dance`, `crouch`, `drop_platform`, `short_hop`, `full_hop` and `wavedash`.
-- `nair|fair|bair|uair|dair`, with `jump` (short, full or double), `dir` and `fastfall`. The executor L-cancels automatically.
-- `jab`, `ftilt`, `utilt`, `dtilt`, `fsmash`, `usmash`, `dsmash` and `dash_attack`.
-- `grab` with `throw` (f, b, u or d).
-- `shine` with `then` (jump, wavedash or hold), `laser` (short-hop laser by default), `side_b`, `up_b` (aimed at the ledge) and `recover`. `recover` is character-aware: double jump, then side-B for spacies near ledge height, then up-B with a per-character reach estimate.
-- `shield`, `roll`, `spot_dodge`, `ledge` (getup, roll, jump, attack or drop) and `tech`.
+- **Movement:** `wait`, `approach`, `retreat`, `dash_dance`, `crouch`, `drop_platform`, `short_hop`, `full_hop` and `wavedash`.
+- **Aerials:** `nair|fair|bair|uair|dair`, with `jump` (short, full or double), `dir` and `fastfall`. The executor L-cancels automatically.
+- **Grounded attacks:** `jab`, `ftilt`, `utilt`, `dtilt`, `fsmash`, `usmash`, `dsmash` and `dash_attack`.
+- **Grabs:** `grab` with `throw` (f, b, u or d).
+- **Specials:** `shine` with `then` (jump, wavedash or hold), `laser` (short-hop laser by default), `side_b`, `up_b` (aimed at the ledge) and `recover`. `recover` is character-aware: double jump, then side-B for spacies near ledge height, then up-B with a per-character reach estimate.
+- **Defence:** `shield`, `roll`, `spot_dodge`, `ledge` (getup, roll, jump, attack or drop) and `tech`.
 
 Reflexes take over without asking the LLM:
 
@@ -52,7 +50,7 @@ Reflexes take over without asking the LLM:
 
 ## Logs
 
-Each game writes a JSONL file to `replays/`, renamed at game end to `<replay>.p<port>.llm.jsonl`. It contains:
+Each game writes a JSONL file to `replays/`, renamed at game end to `<replay>.p<port>.llm.jsonl`:
 
 - A `game_start` record: model, characters, stage and the full system prompt.
 - One `decision` record per decision: frame, asked_frame, obs_text, obs, decision, reason, latency_s, prompt and completion tokens, reply mode, error and the raw text when parsing failed. Paused records add `think_s`. Live records add `latency_frames` and `stale_frames`.
@@ -67,7 +65,7 @@ uv run python tests/test_llm_layer.py      # prints renderings + frame-by-frame 
 uv run python scripts/llm_dryrun.py replays/sample-slippi-js-itemExport.slp llm_live:claude-haiku-4-5-20251001 --decisions 5 --realtime
 ```
 
-`tests/fakesim.py` is a toy version of Fox's physics that reacts to inputs: jumpsquat, short and full hop, fast-fall, aerials with L-cancel, airdodge into wavedash, shield, roll, grab, shine jump-cancel and ledge. It checks that inputs land on the intended frames. It is not Melee. Replay states ignore our inputs, so dry runs measure prompts, parsing and latency, not play quality.
+`tests/fakesim.py` is a toy version of Fox's physics that reacts to inputs: jumpsquat, short and full hop, fast-fall, aerials with L-cancel, airdodge into wavedash, shield, roll, grab, shine jump-cancel and ledge. It checks that inputs land on the intended frames; it is not Melee. Replay states ignore our inputs, so dry runs measure prompts, parsing and latency, not play quality.
 
 ## Measured (2026-11-13, Falco replay, JSON mode, effort=none)
 

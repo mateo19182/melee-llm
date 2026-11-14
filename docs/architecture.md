@@ -1,10 +1,10 @@
 # Architecture
 
-How the repo is laid out, how one game runs, which process owns which display and port, and where results land. Measured costs are in [performance.md](performance.md).
+Repo layout, how one game runs, which process owns which display and port, and where results land. Measured costs are in [performance.md](performance.md).
 
 ## The idea in one paragraph
 
-Everything is built on one function, `runner.play()`: it boots a Slippi Dolphin, connects two players, runs the games and saves a `.slp` replay for each. A player is an `Agent` made from a spec string such as `cpu:9`, `hal:MASTER` or `llm_paused:claude-haiku-4-5-20251001`. Each track (bench, arenas, bot-writer ladder, web jobs, pilots) is a scheduler that starts one child process per game, each with its own Slippi port and replay directory, and appends one line per game to a results file. The web UI only reads those files.
+Everything is built on `runner.play()`: it boots a Slippi Dolphin, connects two players, runs the games and saves a `.slp` replay for each. A player is an `Agent` made from a spec string such as `cpu:9`, `hal:MASTER` or `llm_paused:claude-haiku-4-5-20251001`. Each track (bench, arenas, bot-writer ladder, web jobs, pilots) is a scheduler that starts one child process per game, each with its own Slippi port and replay directory, and appends one line per game to a results file. The web UI only reads those files.
 
 ## Repo map
 
@@ -47,13 +47,13 @@ Gitignored, created by `scripts/setup.sh` or at run time: `bin/` (Dolphin AppIma
    | `realtime` | headless | 60 fps cap, waits for every input |
 
    Headless Dolphins are moved to display `:98`; rendered ones use the caller's `DISPLAY` (`:99` for the live slot).
-2. Connects, then calls `setup()` on every player and `ready()` on every player. A learned bot starts its model process in `setup` and waits for it in `ready`, so two bots load at the same time.
-3. Walks the menus with libmelee's helper until the game starts. In-game CPUs are set on the character screen; the game is refused if it starts with the wrong CPU level.
+2. Connects, then calls `setup()` on every player, then `ready()` on every player. A learned bot starts its model process in `setup` and waits for it in `ready`, so two bots load at the same time.
+3. Walks the menus with libmelee's helper until the game starts. In-game CPUs are set on the character screen; a game that starts with the wrong CPU level is refused.
 4. On every in-game frame: `begin(gs)` for both players, then `step(gs)` for both, then the match registry sample and the caller's `observer`. A learned bot sends the frame to its model in `begin` and reads the answer in `step`, so both models compute at once.
 5. At the end of a game: the result (stocks, then percent, decide a timed-out game), the replay path, `on_game_end()`. A Sudden Death after a timeout is played out but not counted.
 6. On exit, including errors and SIGTERM (callers install `util.exit_on_term()`): players are closed and every process using Dolphin's temporary home is killed, so no stale Dolphin keeps the port.
 
-`step` contract: in `paused`, `lockstep`, `fast` and `realtime` the game waits, so a step may take as long as it likes. In `watch` it must return within about 16 ms.
+`step` contract: in `watch` it must return within about 16 ms. In `paused`, `lockstep`, `fast` and `realtime` the game waits, so a step may take as long as it likes.
 
 ## Player specs
 
@@ -69,7 +69,7 @@ Gitignored, created by `scripts/setup.sh` or at run time: `bin/` (Dolphin AppIma
 | `jev_live`, `jev_paused`, `coach_jev` | TypeSafe Jev as player or coach | [jev.md](jev.md) |
 | `bot:PATH`, `baseline:NAME` | A bot-writer bot, sandboxed with a per-frame time budget | [bot-writer.md](bot-writer.md) |
 
-The web launcher keeps its own description of the kinds (`web/specs.py`: labels, argument widgets, validation). A new kind needs an entry in `players.KINDS` and one in `specs.catalog()`.
+The web launcher keeps its own description of the kinds (`web/specs.py`: labels, argument widgets, validation), so a new kind needs an entry in `players.KINDS` and one in `specs.catalog()`.
 
 ## Tracks
 
@@ -84,7 +84,7 @@ The web launcher keeps its own description of the kinds (`web/specs.py`: labels,
 | Pilots | `scripts/coach_pilot.py`, `scripts/perception_pilot.py` | the script itself with `one` | `replays/coach-pilot/`, `replays/perception/` | win rates |
 | Netplay | `python -m melee_llm.netplay` | in process | `replays/netplay/` | none |
 
-Every track rates with one fit, `melee_llm/ratings.py`: Bradley-Terry by MAP with a Gaussian prior (sd 2 per log-strength), a draw counting as half a win. The tracks differ only in which games go in and where the anchor sits, so their numbers are still not comparable across tracks. The bench is the one scale meant for comparing players across kinds; it imports the other tracks' games where they meet its standard ([bench.md](bench.md)).
+Every track rates with one fit, `melee_llm/ratings.py`: Bradley-Terry by MAP with a Gaussian prior (sd 2 per log-strength), a draw counting as half a win. Tracks differ in which games go in and where the anchor sits, so their numbers are not comparable across tracks. The bench is the one scale meant for comparing players across kinds; it imports the other tracks' games where they meet its standard ([bench.md](bench.md)).
 
 ## Displays and ports
 
@@ -104,9 +104,9 @@ Every track rates with one fit, `melee_llm/ratings.py`: Bradley-Terry by MAP wit
 | Tailscale IP:8767 | `scripts/viewer.py` |
 | 127.0.0.1:8317 | CLIProxy, the LLM endpoint (`MELEE_LLM_BASE_URL` overrides) |
 
-The Slippi spectator port is the only resource parallel Dolphins share; libmelee gives each one its own temporary home. The port blocks are constants in `paths.py`. Only the bot-writer block is claimed across processes; the other tracks hand out ports from one scheduler process each, so two schedulers of the same track must not run at once.
+The Slippi spectator port is the only resource parallel Dolphins share; libmelee gives each one its own temporary home. The port blocks are constants in `paths.py`. Only the bot-writer block is claimed across processes. The other tracks hand out ports from one scheduler process each, so two schedulers of the same track must not run at once.
 
-CPU is shared too. An unthrottled game (fast mode, no player the game waits for) keeps a Dolphin flat out on about two cores, so every track takes a machine-wide slot before starting one: `util.claim_slot`, a lock file in `/tmp/melee-llm-slots/`, 8 slots on this machine (`MELEE_UNTHROTTLED_GAMES`, default a quarter of the hardware threads). The bench's bot-vs-bot games, the bot-writer ladder and fast web jobs take one; real-time games, LLM games the emulator waits for and bot-writer practice games do not. See [performance.md](performance.md).
+CPU is shared too. An unthrottled game (fast mode, no player the game waits for) keeps a Dolphin flat out on about two cores, so every track takes a machine-wide slot before starting one: `util.claim_slot`, a lock file in `/tmp/melee-llm-slots/`, 8 slots on this machine (`MELEE_UNTHROTTLED_GAMES`, default a quarter of the hardware threads). The bench's bot-vs-bot games, the bot-writer ladder and fast web jobs take a slot; real-time games, LLM games the emulator waits for and bot-writer practice games do not. See [performance.md](performance.md).
 
 ## Services
 
@@ -121,7 +121,7 @@ Transient systemd user units, all started from the repo root (`--working-directo
 | `melee-bench` | `python -m melee_llm.bench run --budget 100 --target 125` |
 | `melee-viewer` | `python scripts/viewer.py` |
 
-The code is imported from the working tree, not installed: a running scheduler starts each new game with whatever code is on disk at that moment. Restart the long-running units after pulling a change that moves or renames modules.
+The code is imported from the working tree, not installed, so a running scheduler starts each new game with whatever code is on disk. Restart the long-running units after pulling a change that moves or renames modules.
 
 ## Where results land
 
@@ -133,7 +133,7 @@ The code is imported from the working tree, not installed: a running scheduler s
 | `data/bench/`, `data/llm-arena/<name>/`, `data/arena/` | `results.jsonl` (append-only, one line per game) and `standings.json` |
 | `~/.local/share/melee-llm/botwriter/` | Sandboxes, sessions and ladders (`BOTWRITER_HOME` overrides) |
 
-Results files are append-only jsonl; readers skip a line that was cut by a crash or is still being written (`util.read_jsonl`). Status files that a page polls are written to a temporary name and renamed.
+Readers skip a results line that was cut by a crash or is still being written (`util.read_jsonl`). Status files that a page polls are written to a temporary name and renamed.
 
 ## Environment variables
 
