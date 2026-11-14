@@ -94,8 +94,9 @@ def window(frames, start, length, delay):
 
     frames: FRAME records of one game. Needs start - delay >= 0 and start + length < len(frames).
     """
+    lo = start - delay  # only the frames this window reads
     t = start + np.arange(length)
-    return (*assemble(frame_parts(frames[:start + length]), t, delay), frames[t + 1]["me_pad"])
+    return (*assemble(frame_parts(frames[lo:start + length]), t - lo, delay), frames[t + 1]["me_pad"])
 
 
 def frame_parts(frames):
