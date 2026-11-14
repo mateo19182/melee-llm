@@ -42,22 +42,19 @@ Elo is relative to CPU 9 = 1500, ± the 95% half-width.
   - Live GPT-6.1 Sol discards ~95% of its replies because they arrive more than 2 s late, so its live rating is mostly the fallback behaviour.
   - The overnight run counted 100.1M CLIProxy tokens, but discarded replies weren't counted then: real spend was **115.1M** (recounted from the logs; `spent_recounted` in `data/bench/status.json`). Fixed: every call's tokens now count ([bench](bench.md#scheduler-active-sampling-under-a-budget)).
 
-## What's left (rough priority)
+## What's next
 
-1. **Coach deep-dive (running).** Why does the Jev coach beat random? Ablations on interval, prompt, named features (e.g. "opponent in endlag") and Jev vs LLM. Cheap: Jev costs cents. The bench writes to `data/bench-deepdive/` (target 300 games).
-2. **Janky entrants**, dropped into the bench:
-   - Jev with named features
-   - two LLMs sharing one character
-   - an image-only player
-   - MIMIC trained on your replays
-   - random-command Reyn variants
-3. **Netplay with you.** Blocked on a bot Slippi account and a controller; this takes the `human:mateo` slot.
-4. **Bot-writer round 2.** 3 runs per model plus GPT, longer sessions, harder scripted opponents. Also fix the tool loop that quits after 3 idle replies.
-5. **Write-up "Melee Bot Elo".**
-   - Draft at `writeup/`. Not finished on purpose.
-   - Decided: name the models, SVG figures, include a 2D replay render.
-   - Regenerate the numbers with `python3 writeup/make_figures.py`.
-6. **Longer bets:** a fast local brain (a small model trained on our logs, ~50 ms decisions), Melee puzzles (savestate scenarios), a world model / V-JEPA. The simulator could make bot-only games much cheaper once it can run learned bots.
+Mateo wants all of it, with the LLM-playing side now lower priority and a moderate budget (~10-20M LLM tokens). Three threads:
+
+| Thread | Covers | Next |
+|---|---|---|
+| **Melee A · Hub** (server) | Bench, coach deep-dive, write-up, simulator, web UI and deploys | Deep-dive ablation results ([coach-deepdive](coach-deepdive.md)); cheap non-LLM janky entrants (Jev with named features, MIMIC on Mateo's replays, random-command Reyn variants); write-up "Melee Bot Elo" (draft in `writeup/`, not finished on purpose); learned bots in the simulator |
+| **Melee B · Own bot** (server) | `train/`, `meleebot`, `data/train/` | Yoshi behaviour cloning: model design with Mateo, then training; the bot joins the bench |
+| **Melee D · Play** (laptop) | `human` player, `play.py`, [netplay](netplay.md) | `human` player type in the runner, then Mateo on the bench as `human:mateo` |
+
+Parked: bot-writer round 2 (also fix the tool loop that quits after 3 idle replies), two LLMs sharing a character, image-only player, Melee puzzles, AI caster.
+
+Rules: work in worktrees under `~/.t3/worktrees/melee-llm/`; don't change the live checkout while a bench is running (bench games import it); merge after Mateo's OK.
 
 ## Running services (user units)
 
