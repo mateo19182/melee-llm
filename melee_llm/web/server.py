@@ -1,4 +1,6 @@
-"""Web UI server (Starlette). Bind 127.0.0.1 only: Cloudflare Tunnel + Access put it at https://melee.m19182.dev.
+"""Web UI server (Starlette). Bind 127.0.0.1 only: Cloudflare Tunnel puts it at https://melee.m19182.dev.
+
+Anyone can browse and queue limited matches; settings, cancelling and the paid voice need the operator (web/auth.py).
 
     BIND=127.0.0.1 PORT=8770 python -m melee_llm.web.server
 """
@@ -15,12 +17,12 @@ import uvicorn
 from starlette.applications import Starlette
 from starlette.background import BackgroundTask
 from starlette.requests import Request
-from starlette.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response, StreamingResponse
+from starlette.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from melee_llm.paths import DATA, REPLAYS, ROOT, VOICE_HEARTBEAT
-from melee_llm.web import docs, games, jobs, logs, registry, specs, training
+from melee_llm.web import auth, docs, games, jobs, logs, registry, specs, training
 
 STATIC = Path(__file__).parent / "static"
 SLIPPILAB = ROOT / "vendor/slippilab/dist"
@@ -34,6 +36,18 @@ def ok(data, status: int = 200) -> JSONResponse:
 
 def blocking(fn, *a, **kw):
     return asyncio.to_thread(fn, *a, **kw)
+
+
+def admin(request: Request):
+    return blocking(auth.is_admin, request)
+
+
+def operator_only(handler):
+    async def guarded(request: Request) -> Response:
+        if request.method != "GET" and not await admin(request):
+            return ok({"error": "only the operator can do that"}, 403)
+        return await handler(request)
+    return guarded
 
 
 # --------------------------------------------------------------------------- pages and assets
@@ -90,8 +104,9 @@ async def hls(request: Request) -> Response:
 
 # --------------------------------------------------------------------------- API: launcher and jobs
 
-async def api_catalog(_: Request) -> Response:
-    return ok(await blocking(specs.catalog))
+async def api_catalog(request: Request) -> Response:
+    cat = await blocking(specs.catalog)
+    return ok(cat if await admin(request) else specs.public_catalog(cat))
 
 
 def _job_view(j: dict) -> dict:
@@ -111,6 +126,10 @@ async def api_jobs(request: Request) -> Response:
             "mode": body.get("mode", "lockstep"), "games": int(body.get("games", 1)), "preempt": int(bool(body.get("preempt")))}
     errors, warnings = await blocking(specs.validate, spec["p1"], spec["p2"], spec["char1"], spec["char2"],
                                       spec["stage"], spec["mode"], spec["games"])
+    if not await admin(request):
+        spec["preempt"] = 0
+        waiting = sum(j["status"] == "queued" for j in await blocking(jobs.listing, 0))
+        errors += specs.public_errors(spec, waiting)
     if errors:
         return ok({"errors": errors, "warnings": warnings}, 400)
     if body.get("dry_run"):
@@ -145,6 +164,28 @@ async def api_settings(request: Request) -> Response:
                 await blocking(jobs.set_setting, key, "on" if body[key] else "off")
     return ok({"arena": await blocking(jobs.setting, "arena", "on") == "on",
                "commentator": await blocking(jobs.setting, "commentator", "off") == "on"})
+
+
+async def api_me(request: Request) -> Response:
+    return ok({"admin": await admin(request)})
+
+
+async def login(request: Request) -> Response:
+    """Cloudflare Access guards this path only: keep the JWT it sends as our own cookie, valid as long as the JWT."""
+    nxt = request.query_params.get("next", "/")
+    resp = RedirectResponse(nxt if nxt.startswith("/") and not nxt.startswith("//") else "/", status_code=303)
+    token = request.headers.get("cf-access-jwt-assertion")
+    claims = token and await blocking(auth.verify, token)
+    if claims:
+        resp.set_cookie(auth.COOKIE, token, max_age=max(0, int(claims["exp"] - time.time())), httponly=True, secure=True,
+                        samesite="lax")
+    return resp
+
+
+async def logout(_: Request) -> Response:
+    resp = RedirectResponse("/cdn-cgi/access/logout", status_code=303)
+    resp.delete_cookie(auth.COOKIE)
+    return resp
 
 
 # --------------------------------------------------------------------------- API: live
@@ -356,16 +397,19 @@ SPA = ["/", "/bench", "/bench/{id:path}", "/live", "/matches", "/matches/{id}", 
 
 routes = [
     *[Route(p, index) for p in SPA],
+    Route("/login", login),
+    Route("/logout", logout),
+    Route("/api/me", api_me),
     Route("/slippilab/", slippilab),
     Route("/hls/{path:path}", hls),
     Route("/api/catalog", api_catalog),
     Route("/api/jobs", api_jobs, methods=["GET", "POST"]),
     Route("/api/jobs/{id:int}", api_job),
-    Route("/api/jobs/{id:int}/cancel", api_job_cancel, methods=["POST"]),
-    Route("/api/settings", api_settings, methods=["GET", "POST"]),
+    Route("/api/jobs/{id:int}/cancel", operator_only(api_job_cancel), methods=["POST"]),
+    Route("/api/settings", operator_only(api_settings), methods=["GET", "POST"]),
     Route("/api/live", api_live),
     Route("/api/live/events", api_live_events),
-    Route("/api/live/listen", api_live_listen, methods=["POST"]),
+    Route("/api/live/listen", operator_only(api_live_listen), methods=["POST"]),
     Route("/api/live/audio", api_live_audio),
     Route("/api/matches", api_matches),
     Route("/api/matches/events", api_matches_events),
@@ -387,6 +431,9 @@ routes = [
     # Any version serves the current files; a stale version in a cached index.html then still gets working code.
     Mount("/static/v{version:int}", CachedStatic(directory=STATIC, cache="public, max-age=31536000, immutable")),
     Mount("/static", CachedStatic(directory=STATIC, cache="no-cache")),
+    # The write-up is a standalone page (writeup/build_page.py) with relative figure and media links
+    Route("/writeup", lambda _: RedirectResponse("/writeup/", status_code=308)),
+    Mount("/writeup", CachedStatic(directory=ROOT / "writeup", html=True, check_dir=False, cache="no-cache")),
     # Slippi Lab's build references its assets from the site root
     Mount("/assets", StaticFiles(directory=SLIPPILAB / "assets", check_dir=False)),
     Mount("/zips", StaticFiles(directory=SLIPPILAB / "zips", check_dir=False)),

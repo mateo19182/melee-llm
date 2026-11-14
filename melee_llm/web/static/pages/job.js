@@ -1,16 +1,17 @@
 // One job: spec, per-game results with links to the game pages, token spend, process output.
-import { api, emptyState, every, fmt, h, link, mount, resultText, statusBadge, table, toast } from "../lib.js";
+import { api, emptyState, every, fmt, h, isAdmin, link, mount, resultText, statusBadge, table, toast } from "../lib.js";
 
 export default async function job(root, { id }, signal) {
   const box = h("div.stack");
   mount(root, box);
+  const admin = await isAdmin();
   every(3000, async () => {
     const j = await api(`/api/jobs/${id}`);
     const active = j.status === "queued" || j.status === "running";
     const t = j.tokens;
     mount(box,
       h("div.pagehead", {}, h("h1", {}, `Job #${j.id}`), statusBadge(j.status), h("span.dim", {}, `${j.mode} · ${j.lane} · ${j.stage_name}`),
-        h("span.spacer"), active ? h("button.danger", { disabled: !!j.cancel, onclick: async () => {
+        h("span.spacer"), active && admin ? h("button.danger", { disabled: !!j.cancel, onclick: async () => {
           await api(`/api/jobs/${j.id}/cancel`, { method: "POST" }); toast("Cancelling"); } }, j.cancel ? "Cancelling…" : "Cancel") : null,
         j.lane === "live" && j.status === "running" ? link("/live", h("button.primary", {}, "Watch live")) : null),
       h("div.matchup", {}, h("span.port.p1", { style: { fontSize: "16px" } }, "P1"), h("span.side.p1", {}, j.label1, h("span.char", {}, j.char1_name)),
