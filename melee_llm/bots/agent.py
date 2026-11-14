@@ -92,6 +92,7 @@ class BotAgent(Agent):
         self.errors = 0
         self._proc = None
         self._asked = None  # (steer sent, send time) of the frame the child is working on
+        self._loading = False  # init sent, reply not read yet
 
     @property
     def name(self) -> str:
@@ -107,6 +108,7 @@ class BotAgent(Agent):
         self._start()
 
     def _start(self) -> None:
+        """Spawn the model process and send init; `ready` collects the answer once the model has loaded."""
         if not self.python.exists():
             raise RuntimeError(f"{self.bot}: missing venv {self.python}; see docs/bots.md")
         self._proc = subprocess.Popen([str(self.python), str(SERVER), self.bot], cwd=self.cwd,
@@ -114,6 +116,12 @@ class BotAgent(Agent):
         protocol.send(self._proc.stdin, {
             "op": "init", "port": self.port, "opponent_port": self.opponent_port,
             "character": self.character.name, "config": self.init_config(), "steer": dict(self.steer)})
+        self._loading = True
+
+    def ready(self) -> None:
+        if not self._loading:
+            return
+        self._loading = False
         reply = protocol.recv(self._proc.stdout)
         if not reply["ok"]:
             self.close()
@@ -126,6 +134,7 @@ class BotAgent(Agent):
     def begin(self, gs: melee.GameState) -> None:
         """Send the frame. The runner does this for both players before either `step`, so two bots infer at
         the same time and a frame costs the slower one, not the sum."""
+        self.ready()
         events = self._events[:]
         del self._events[:]
         steer = None if self.steer == self._sent_steer else dict(self.steer)

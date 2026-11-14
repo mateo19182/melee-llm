@@ -315,6 +315,9 @@ class CoachedBot(Agent):
 
     # ------------------------------------------------------------------ per frame
 
+    def ready(self) -> None:
+        self.body.ready()
+
     def begin(self, gs: melee.GameState) -> None:
         self.body.begin(gs)
 

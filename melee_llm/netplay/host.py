@@ -205,6 +205,8 @@ def host(cfg: HostConfig, stop: threading.Event | None = None, on_status=None) -
             players[p] = make_player(cfg.opponent, cfg.char)
             players[p].costume = cfg.costume
             players[p].setup(controller, p, 3 - p)
+        for p in (1, 2):
+            players[p].ready()
         menu = melee.MenuHelper()
         last_frame[0] = time.time()
         threading.Thread(target=watchdog, daemon=True).start()

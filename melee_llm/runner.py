@@ -153,6 +153,8 @@ def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BA
                 raise RuntimeError("could not connect controller")
         for p, a in agents.items():
             a.setup(controllers[p], p, next(q for q in ports if q != p))
+        for a in agents.values():
+            a.ready()
         menu, results = melee.MenuHelper(), []
         last, frames, t0, replay = None, 0, time.time(), None
         seen = set(replay_dir.rglob("*.slp"))
