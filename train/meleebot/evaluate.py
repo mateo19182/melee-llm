@@ -5,7 +5,7 @@
 Games go through melee_llm.match in the repo that contains this train/ directory, using the live
 checkout's venv and data. Results append to data/train/runs/<RUN>/eval.jsonl, one line per game.
 """
-import argparse, json, os, subprocess, sys, time
+import argparse, json, os, queue, subprocess, sys, time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -14,10 +14,19 @@ LIVE = Path.home() / "projects/ai/melee-llm"
 STAGES = ["BATTLEFIELD", "FINAL_DESTINATION", "YOSHIS_STORY", "DREAMLAND", "FOUNTAIN_OF_DREAMS", "POKEMON_STADIUM"]
 
 
+PORTS = queue.Queue()
+for _p in range(52200, 52240):  # melee_llm.paths.TRAIN_EVAL_PORTS
+    PORTS.put(_p)
+
+
 def game(spec, opponent, opp_char, stage, iso, env):
-    cmd = [str(LIVE / ".venv/bin/python"), "-m", "melee_llm.match", "--iso", iso, "--mode", "fast",
+    port = PORTS.get()
+    cmd = [str(LIVE / ".venv/bin/python"), "-m", "melee_llm.match", "--iso", iso, "--mode", "fast", "--port", str(port),
            "--p1", spec, "--char1", "YOSHI", "--p2", opponent, "--char2", opp_char, "--stage", stage]
-    out = subprocess.run(cmd, cwd=REPO, env=env, capture_output=True, text=True, timeout=1800)
+    try:
+        out = subprocess.run(cmd, cwd=REPO, env=env, capture_output=True, text=True, timeout=1800)
+    finally:
+        PORTS.put(port)
     for line in reversed(out.stdout.splitlines()):
         if line.startswith("{"):
             return json.loads(line)

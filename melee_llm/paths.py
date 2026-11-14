@@ -35,3 +35,4 @@ HEADLESS_PORTS = range(51700, 51800)  # web jobs in fast mode
 PERCEPTION_PORTS = range(51860, 51880)
 LLM_ARENA_PORTS = range(51880, 51920)
 BENCH_PORTS = range(51920, 52000)
+TRAIN_EVAL_PORTS = range(52200, 52240)  # lane B: train/meleebot/evaluate.py, one per parallel game
