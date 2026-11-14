@@ -69,16 +69,24 @@ uv run python -m melee_llm.match --mode sim --p1 baseline:rusher --p2 baseline:l
 - The game's RNG is not Dolphin's, so the same seed and inputs repeat exactly here but play out differently on Dolphin.
 - Timeouts are scored on the state at the timer, by stocks then percent. There is no Sudden Death.
 
-## Where it would help here
+## Next work
 
-- **Bot-writer ladders and bench games between scripted bots.** Thousands of games instead of dozens. This is the biggest win, since those bots answer in microseconds.
-- **Scenario tests.**
-  1. Save a state from a real game (ledge, edgeguard, laser pressure).
-  2. Restore it hundreds of times.
-  3. Measure what an LLM coach or a written bot does next.
-  - This is the cheap way to run the Phillip exploit probes from research.md without a modded ISO.
-- **Phillip evaluations** at many games per minute once models are exported with a batch size. slippi-ai's evaluator already does this with `--sim_envs --num_envs N`.
-- **No gain for LLM players.** They are bound by model latency; `paused` mode already waits for them.
+Done so far: `--mode sim`, bot-writer messaging 1.45× faster, macro tests in the real game (`tests/test_macros.py`), opt-in `tools/practice --sim`. Not started, roughly in order of value for effort:
+
+1. **Scenario probes for our agents.** `python -m melee_llm.sim.probe --agent bot:x.py --scene ledge --trials N`: restore a saved scene and report what the agent does next and how often it survives or gets hit. Covers written bots, baselines and LLM players.
+   - Scenes to add to `sim/scenes.py`: offstage recovery from below and from the side, being edgeguarded, under laser pressure, opponent crouching in the corner.
+   - Written bots and baselines are deterministic, so one trial per scene is enough for them; LLM players need several.
+2. **Every macro from every scene.** `test_macros.py` runs each macro from one scene. The ledge bug it caught (Melee ignores the stick on the ledge until it has been neutral) came from the state the macro *starts* in, so running every action from every scene would catch more of that kind.
+3. **Phillip exploit probes** ([research.md](research.md)): Puff Rollout, crouching in the corner, Marth vs lasers.
+   - Phillip can't play through our adapter, so this needs slippi-ai's own `sim_env` in `sim-venv` (setup below), with save/restore and scripted exploit players.
+   - Research-grade: bigger and riskier than 1.
+4. **Learned bots in `--mode sim`.** They read the raw Slippi event stream, so the simulator's state would have to be encoded as Slippi events. This would bring HAL, Phillip, MIMIC and Faynt into sim ladders.
+5. **Ladder in the simulator** for non-CPU pairings. Left out on purpose: no CPUs and a different RNG make its scores incomparable with Dolphin ladders.
+6. **Bot-writer round-trip.** About 0.35 ms per bot per frame remains (unpickling, the bot's step, the JSON reply, two process wake-ups). Next steps would be to pickle the shared part of the state once per frame instead of per bot, or to use shared memory.
+7. **Missing GameState fields:** ECB and the powershield flag. Bots tested here that read the ECB may behave differently on Dolphin.
+8. **Phillip evaluations** at many games per minute, once models are exported with a batch dimension (slippi-ai's evaluator does `--sim_envs --num_envs N`).
+
+Not worth it: LLM players. They are bound by model latency, and `paused` mode already waits for them.
 
 ## Setup
 
