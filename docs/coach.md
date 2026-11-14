@@ -33,7 +33,7 @@ Spec: `coach:<model>[,body=reyn|hal,interval=60,body_arg=...,command=<id>,timeou
 
 ## Pilot (2026-11-13)
 
-Fox on Battlefield and Final Destination, in `fast` mode (each game isolated: its own port, replay dir and process group), Haiku as coach, `interval=300` frames (about one call every 5 s of game time). Results from `uv run scripts/coach_pilot.py summary replays/coach-pilot/{cpu9,phillip,phillip2}`.
+Fox on Battlefield and Final Destination, in `lockstep` mode (each game isolated: its own port, replay dir and process group), Haiku as coach, `interval=300` frames (about one call every 5 s of game time). Results from `uv run scripts/coach_pilot.py summary replays/coach-pilot/{cpu9,phillip,phillip2}`.
 
 | Condition | vs | n | W-L | Stock diff | % diff | Mean distance | Laser rate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -50,12 +50,11 @@ Fox on Battlefield and Final Destination, in `fast` mode (each game isolated: it
 - **Any steering beats no steering against CPU 9.** Every steered condition (Haiku, random and both fixed commands) took 3.2-3.8 stocks more than it lost; uncoached Reyn took 1.7 more.
 - **No evidence the LLM helps beyond that, yet.** Against CPU 9, Haiku (+3.50) sits between the random coach (+3.17) and a fixed "be aggressive" (+3.83). Against Phillip, everything loses. Haiku did lose by less than uncoached Reyn (-2.67 vs -3.00 stocks, -11 vs -83 percent), but random was close (-2.33). With n = 3-6 per cell these differences are within noise.
 - **Coach behaviour.** Haiku made 240 decisions in 12 games and changed the command 127 times (53%), with 1.3 s mean latency, no errors and no router abstentions. It used about 1,850 prompt tokens per call. The random coach changed command almost every call, and four of its picks were abstained.
-- **Reyn is slow.** Its per-frame round trip is p50 32-42 ms and p99 145-210 ms, so its games run at 15-21 fps, not 60. Coached Reyn games on the live stream look like slow motion. HAL (4 ms) is the body to use when the game must look real time.
+- **Reyn was slow in this pilot.** Its per-frame round trip was p50 32-42 ms and p99 145-210 ms (upstream `predict` on the CPU, games in parallel on a loaded machine), so these games ran at 15-21 fps, not 60. Since 2026-11-14 Reyn runs as one CUDA graph per frame: 2.2 / 4.6 ms p50/p99 in real lockstep games, 58-59 fps, with identical actions (see [bots.md](bots.md#reyn-language-steerable)). The coach's 1.3 s latency is now about 80 frames instead of 25, so the pilot's results are not directly comparable with new runs.
 
 ### Next experiments
 
-1. **Make Reyn real-time.** Profile the 35 ms (router vs policy vs feature building), try CUDA graphs or fp16, and predict once per two frames.
-2. **Bigger n against a beatable opponent.** Use HAL or a Phillip tier around 50% win rate for uncoached Reyn, with 30+ games per condition, so coach effects can show up in win rate and not only stock difference.
-3. **A stronger, slower coach.** Sonnet or GPT at `interval=600`, with the opponent's recent habits summarised in the prompt (a scouting report).
-4. **Coach HAL with numeric knobs.** `return_target` and `temperature`, at real-time speed.
+1. **Bigger n against a beatable opponent.** Use HAL or a Phillip tier around 50% win rate for uncoached Reyn, with 30+ games per condition, so coach effects can show up in win rate and not only stock difference.
+2. **A stronger, slower coach.** Sonnet or GPT at `interval=600`, with the opponent's recent habits summarised in the prompt (a scouting report).
+3. **Coach HAL with numeric knobs.** `return_target` and `temperature`, at real-time speed.
 
