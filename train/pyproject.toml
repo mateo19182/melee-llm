@@ -1,0 +1,13 @@
+[project]
+name = "meleebot"
+version = "0.1.0"
+description = "Training our own Melee bot: replay dataset, behaviour cloning, self-play"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "melee>=0.47.6",
+    "numpy>=2.0",
+    "peppi-py>=0.8",
+]
+
+[tool.uv]
+package = false
