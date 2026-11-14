@@ -20,7 +20,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from melee_llm.paths import DATA, REPLAYS, ROOT, VOICE_HEARTBEAT
-from melee_llm.web import docs, games, jobs, logs, registry, specs
+from melee_llm.web import docs, games, jobs, logs, registry, specs, training
 
 STATIC = Path(__file__).parent / "static"
 SLIPPILAB = ROOT / "vendor/slippilab/dist"
@@ -330,6 +330,10 @@ async def api_bench_entrant(request: Request) -> Response:
     return ok(e) if e else ok({"error": "no such entrant"}, 404)
 
 
+async def api_training(_: Request) -> Response:
+    return ok({"runs": await blocking(training.runs), "server_time": time.time()})
+
+
 async def api_netplay(_: Request) -> Response:
     return ok({"sessions": [], "note": "netplay is not wired up yet"})
 
@@ -348,7 +352,7 @@ async def api_doc(request: Request) -> Response:
 
 
 SPA = ["/", "/bench", "/bench/{id:path}", "/live", "/matches", "/matches/{id}", "/launch", "/jobs", "/job/{id}", "/games", "/game/{id}", "/arena", "/coach", "/botwriter",
-       "/botwriter/{id}", "/ladder/{name}", "/play", "/docs", "/docs/{name}"]
+       "/botwriter/{id}", "/ladder/{name}", "/play", "/training", "/docs", "/docs/{name}"]
 
 routes = [
     *[Route(p, index) for p in SPA],
@@ -375,6 +379,7 @@ routes = [
     Route("/api/ladders", api_ladders),
     Route("/api/bench", api_bench),
     Route("/api/bench/entrant/{id:path}", api_bench_entrant),
+    Route("/api/training", api_training),
     Route("/api/netplay", api_netplay),
     Route("/api/docs", api_docs),
     Route("/api/docs/search", api_docs_search),

@@ -9,7 +9,7 @@ tags:
 
 <!-- Source: writeup/melee-bench.template.md. Numbers and figures come from writeup/make_figures.py; edit prose here, then re-run it. -->
 
-> **TL;DR.** I put LLMs inside Super Smash Bros. Melee in five different ways and rated all of them, along with Melee's CPUs and the best published learned bots, on one Elo scale. In real time, every LLM that presses the buttons itself plays about as well as a level 4-5 CPU. Untimed, the best one beats CPU 9. Letting an LLM coach a fast learned bot works well, but a coach that picks commands at random gets you most of the way there. Bots that LLMs wrote in 30 minutes land around CPU 9. The learned bots are in a different league. Numbers as of {{as_of}}, with the benchmark still running.
+> **TL;DR.** I put LLMs inside Super Smash Bros. Melee in five different ways and rated all of them, along with Melee's CPUs and the best published learned bots, on one Elo scale. In real time, every LLM that presses the buttons itself plays about as well as a level 4-5 CPU. Untimed, the best one beats CPU 9. Letting an LLM coach a fast learned bot works well, but telling that bot "Don't die." once and never speaking again works just as well. Bots that LLMs wrote in 30 minutes land around CPU 9. The learned bots are in a different league. Numbers as of {{as_of}}, with the benchmark still running.
 
 Most game benchmarks for LLMs are turn-based: chess, Pokémon, [Slay the Spire](https://arxiv.org/abs/2610.12596). The model can take as long as it wants, and the game waits. I wanted the opposite: a real game at 60 frames per second that doesn't wait for anyone, where a one-second thought costs you 60 frames in which you can get hit, grabbed and thrown off the stage.
 
@@ -104,7 +104,12 @@ Uncoached, Reyn is rated {{elo rt reyn}}. With *any* coach it jumps by 300+ poin
 
 The four LLM coaches land {{coach_delta_min}} to {{coach_delta_max}} points above random, and every one of their intervals overlaps the random coach's. The only coach clearly better than random is Jev ({{elo rt coach_jev}}, {{ci rt coach_jev}}, {{delta rt coach_jev coach:random}} over random), which is also the fastest and, in the pilot, the most conservative: it changed command on about 1 call in 7, where Haiku changed on about half.
 
-My best guess is that uncoached Reyn gets stuck in habits that CPUs and bots punish, and any perturbation unsticks it. The LLMs do understand the game (their stated reasons are sensible), but at one call per 5 seconds, and 1-3 seconds stale, understanding doesn't buy much over noise. This is the result I'm least sure how to read, and the obvious ablations (fixed commands, a "change less often" random coach, faster coach intervals) are next.
+So I ran the ablations ([coach deep-dive](../docs/coach-deepdive.md), ~25 games each, ±175). The answer is less about coaching than about Reyn:
+
+- **Uncoached Reyn plays with no command at all**, and that's what costs it. One random command held for the whole game already gets it to about 2020; switching every 5 seconds adds only ~50 on top, within noise.
+- **Holding "Don't die." for the whole game, with no coach, rates 2398**: level with the Jev coach and above every LLM coach.
+- **Jev wins because it ends up on "Don't die."** 41% of the time, mostly by accident: its favourite pick, "kill now", is routed by Reyn's language layer to "Don't die." every time. The LLMs pick sensible-sounding commands (edgeguard, aggressive play) that turn out to be worth less.
+- The coach's interval (1, 5 or 15 s) and giving it computed features made no measurable difference.
 
 ### LLM-written bots: about CPU 9 for under $2
 

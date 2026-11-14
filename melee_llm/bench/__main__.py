@@ -11,11 +11,13 @@ from melee_llm.bench import scheduler
 def main() -> None:
     p = argparse.ArgumentParser(prog="python -m melee_llm.bench")
     sub = p.add_subparsers(dest="cmd", required=True)
-    r = sub.add_parser("run", help="active-sampling fill until CIs are good or the budget is spent (resumable)")
+    r = sub.add_parser("run", help="active-sampling fill until more games stop being useful (resumable)")
     d = scheduler.Config()
     r.add_argument("--iso", default=d.iso)
-    r.add_argument("--budget", type=float, default=d.budget_tokens / 1e6, help="CLIProxy tokens, millions")
+    r.add_argument("--budget", type=float, default=None, help="optional CLIProxy token cap, millions (default: none)")
     r.add_argument("--target", type=float, default=d.target, help="95%% CI half-width to reach, Elo")
+    r.add_argument("--min-gain", type=float, default=d.min_gain,
+                   help="Elo of narrowing 20 more games must buy for a wider-than-target entrant to keep playing")
     r.add_argument("--parallel", type=int, default=d.max_parallel)
     r.add_argument("--load-cap", type=float, default=d.load_cap)
     r.add_argument("--slots", default="", help="per kind, e.g. fast=3,realtime=6,untimed_llm=8")
@@ -48,7 +50,8 @@ def main() -> None:
         print(json.dumps(rec, default=float))
     elif a.cmd == "run":
         kv = lambda s: {k: int(v) for k, v in (x.split("=") for x in s.split(",") if x)}  # noqa: E731
-        cfg = scheduler.Config(iso=a.iso, budget_tokens=int(a.budget * 1e6), target=a.target, max_parallel=a.parallel,
+        cfg = scheduler.Config(iso=a.iso, budget_tokens=None if a.budget is None else int(a.budget * 1e6),
+                               target=a.target, min_gain=a.min_gain, max_parallel=a.parallel,
                                load_cap=a.load_cap, defer_unit=a.defer_unit, max_games=a.max_games, only=a.only,
                                stagger_s=a.stagger, ports=tuple(int(x) for x in a.ports.split("-")), context=a.context,
                                gpu_slots=a.gpu_slots)
@@ -59,6 +62,7 @@ def main() -> None:
         from melee_llm.bench import imports, ratings
         out = Path(a.out)
         imp, exc = imports.load()
+        imp = [g for g in imp if g["source"] != out.name]  # a side run's own games are already its results
         from melee_llm.bench import recount
         st = ratings.standings(recount.apply(scheduler.read_results(out / "results.jsonl"), recount.load(out / "recount.json")),
                                imp, exc, boot=a.boot)

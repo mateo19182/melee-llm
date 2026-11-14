@@ -7,6 +7,7 @@ dependencies = [
     "httpx>=0.28.1",
     "markdown-it-py>=4.3.0",
     "melee>=0.47.6",
+    "melee-sim-light",
     "openai>=3.50.0",
     "pillow>=13.0.0",
     "starlette>=1.10.0",
@@ -15,7 +16,11 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=8", "ruff>=0.8"]
+dev = [
+    "peppi-py>=0.8.6",
+    "pytest>=8",
+    "ruff>=0.8",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
@@ -27,3 +32,6 @@ line-length = 140
 [tool.ruff.lint]
 select = ["E", "F", "I", "B"]
 ignore = ["E501", "E702", "E731", "B023", "B905"]
+
+[tool.uv.sources]
+melee-sim-light = { git = "https://github.com/kyhavlov/melee-sim-light", rev = "eea7b5fbcd0243baf4c1956d52f3e1d0f536edc4" }

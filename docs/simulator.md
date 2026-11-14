@@ -4,7 +4,7 @@
 
 slippi-ai already ships a bridge to it (`slippi_ai/sim_env`). Phillip's training most likely runs on it: the slippi-ai README thanks Enzyme for a "decomp-based simulator that runs melee even faster than dolphin".
 
-We tested it on 2026-11-14 with upstream commit `eea7b5fb`. It has **no license file**, so we use it locally and don't redistribute it. Its game data is extracted from our ISO.
+We tested it on 2026-11-14 with upstream commit `eea7b5fb`. It has **no license file**, so we don't redistribute it: `pyproject.toml` pins that commit as a git dependency, so `uv sync` builds it from GitHub on each machine (about a minute, once). Its game data is extracted from our ISO and stays local.
 
 ## Results
 
@@ -29,19 +29,20 @@ We tested it on 2026-11-14 with upstream commit `eea7b5fb`. It has **no license 
 - **slippi-ai bug.** slippi-ai @ `5ada33e` looks players up by `present`, which melee_sim clears for an eliminated player. Every game that ends on stocks crashes. `scripts/sim_phillip_eval.py` patches the two lookups at runtime, so the vendored repo stays untouched.
 - **No CPU opponents.** The public API exposes no CPU players. CPU-level baselines stay on Dolphin.
 - **Rules.** Supported matches are UCF, no items, and frozen Pokémon Stadium, which is what Slippi plays anyway.
-- **Learned bots don't run in it through our adapter.** They read the raw Slippi event stream (`ConsoleTap`), which the simulator does not produce. Phillip can still play in it through slippi-ai's own `sim_env` (above).
+- **Learned bots** read the raw Slippi event stream, so `sim/slippi.py` writes one from the simulator (below).
 
 ## Playing our agents in it: `--mode sim`
 
 `melee_llm/sim` runs any of our agents in the simulator, with the same contract as `runner.play`. `runner.play(mode="sim")` dispatches to it, so match.py, the bench, the ladders and the arena take it by mode name:
 
 ```sh
-uv pip install -e vendor/melee-sim-light   # once, into the main venv (setup below)
 uv run python -m melee_llm.match --mode sim --p1 baseline:rusher --p2 baseline:laser --char1 FOX --char2 FOX --games 3
 ```
 
 - **`sim/state.py`** builds the libmelee `GameState` from each observation, field for field as libmelee's Console builds it from Slippi. That includes the action frames re-indexed to start at 1, the moonwalk warning, `off_stage`, `distance`, projectiles and each player's controller state.
 - **`sim/controller.py`** is a `melee.Controller` with no pipe. Agents press buttons on it as live. Each frame it converts `current` to the integers the game reads, the way Dolphin converts libmelee's pipe values.
+- **`sim/world.py`** steps one match frame by frame (controllers in, `GameState` out) with `save()`/`restore()`; the runner plays whole games on it.
+- **`sim/scenes.py`** reaches situations with plain inputs and saves them: standing mid-stage, dashing, hanging on the ledge. `tests/test_macros.py` runs the LLM player's input macros from them in the real game (it replaced a hand-written toy physics model, and caught a ledge macro that did nothing when the stick was still held from the grab).
 - **`sim/parity.py`** checks both against libmelee. It replays a Dolphin `.slp`'s raw inputs through the simulator and compares every field with libmelee's own parse of the same replay.
 
 **Exactness against libmelee.** 40 random replays of ours between controller-driven players gave 152,375 compared frames. Every field matched except `hitstun_frames_left`:
@@ -49,28 +50,43 @@ uv run python -m melee_llm.match --mode sim --p1 baseline:rusher --p2 baseline:l
 - Outside it, libmelee reports whatever Melee keeps in that shared slot (e.g. 32 while shielding or spot-dodging); the simulator reports 0.
 - A game stays in sync until the first random choice that comes out differently: 15 of the 40 games never diverged.
 
+**Learned bots in it.** They parse the raw Slippi event stream with their own libmelee build, so `sim/slippi.py` writes Slippi 3.19 events (what our Dolphin writes) from each simulator frame. `World` publishes them to the bots through `controller.slippi_tap`, the way `ConsoleTap` forwards Dolphin's.
+- **Against Dolphin, field by field** (`python -m melee_llm.sim.slippi REPLAY.slp`): 10 replays, 30,735 frames before divergence. Every field libmelee or HAL reads is exact: sticks, triggers, physical buttons, raw stick, action, position, facing, percent, shield, stocks, airborne, jumps, hurtbox, speeds, hitlag and items.
+- **Written as 0**, because the simulator doesn't report them: last attack, combo count, last hit by, ground id, L-cancel status, animation index, instance ids, most state bit flags, and the stick direction bits of the processed buttons (stateful; nothing we feed reads them).
+- **Approximated:** hitstun outside hitstun, fractional action frames, and the pre-frame position and action (taken from the previous post-frame).
+- **Processed sticks:** Melee clamps the raw stick to radius 80, truncates, then zeroes any axis at |raw| ≤ 22. HAL's own readback check uses the same rule. `StateBuilder` now fills `main_stick`, `c_stick`, `l_shoulder` and `processed_button` that way too, and the libmelee parity check (which now covers them) matches on all 30,725 frames, except 2 trigger frames with Z and a digital L/R held together.
+- **HAL vs Phillip gm** (Battlefield, a 1-minute game): no errors, and HAL's executed-action check never fired. About 4–6 ms per frame, which is the two models thinking in parallel; the simulator is 0.3 ms of that. So learned-bot games are bounded by the models, not the game. The saving is no Dolphin process or display per game, so many can run side by side, up to what the GPU holds.
+
 **Closed loop.** Bot-writer baselines rusher vs laser (Fox ditto, Battlefield), with the seed of a headless Dolphin game, replayed that Dolphin game input for input and frame for frame for all 28,923 frames. The final state was the same 4–4, 5.7% vs 0%.
 
 **Speed.** That game took 32 s in the simulator and 143 s in headless Dolphin. Most of the 32 s was the bot-writer sandbox: pickling the `GameState` to each bot process each frame (9 s) and waiting for the bots one after the other (10 s). With faster pickling and both bots asked at once, the same game takes 25 s (37 s before, measured back to back on a loaded machine); what remains is mostly the bot round-trip, about 0.35 ms. Building the state takes 0.23 ms/frame and the simulator 0.12 ms. Two in-process agents (idle vs multishine) run about 4,700 frames/s, an 8-minute game in 6 s.
 
 **Differences from Dolphin.**
-- No in-game CPU and no learned bots: `play` refuses both.
+- No in-game CPU: `play` refuses it.
 - No `.slp` replays (`GameResult.replay` is None).
 - No ECB and no powershield flag in the `GameState`: they keep libmelee's defaults.
 - `hitstun_frames_left` is 0 outside hitstun.
 - The game's RNG is not Dolphin's, so the same seed and inputs repeat exactly here but play out differently on Dolphin.
 - Timeouts are scored on the state at the timer, by stocks then percent. There is no Sudden Death.
 
-## Where it would help here
+## Next work
 
-- **Bot-writer ladders and bench games between scripted bots.** Thousands of games instead of dozens. This is the biggest win, since those bots answer in microseconds.
-- **Scenario tests.**
-  1. Save a state from a real game (ledge, edgeguard, laser pressure).
-  2. Restore it hundreds of times.
-  3. Measure what an LLM coach or a written bot does next.
-  - This is the cheap way to run the Phillip exploit probes from research.md without a modded ISO.
-- **Phillip evaluations** at many games per minute once models are exported with a batch size. slippi-ai's evaluator already does this with `--sim_envs --num_envs N`.
-- **No gain for LLM players.** They are bound by model latency; `paused` mode already waits for them.
+Done so far: `--mode sim`, bot-writer messaging 1.45× faster, macro tests in the real game (`tests/test_macros.py`), opt-in `tools/practice --sim`. Not started, roughly in order of value for effort:
+
+1. **Scenario probes for our agents.** `python -m melee_llm.sim.probe --agent bot:x.py --scene ledge --trials N`: restore a saved scene and report what the agent does next and how often it survives or gets hit. Covers written bots, baselines and LLM players.
+   - Scenes to add to `sim/scenes.py`: offstage recovery from below and from the side, being edgeguarded, under laser pressure, opponent crouching in the corner.
+   - Written bots and baselines are deterministic, so one trial per scene is enough for them; LLM players need several.
+2. **Every macro from every scene.** `test_macros.py` runs each macro from one scene. The ledge bug it caught (Melee ignores the stick on the ledge until it has been neutral) came from the state the macro *starts* in, so running every action from every scene would catch more of that kind.
+3. **Phillip exploit probes** ([research.md](research.md)): Puff Rollout, crouching in the corner, Marth vs lasers.
+   - Phillip can't play through our adapter, so this needs slippi-ai's own `sim_env` in `sim-venv` (setup below), with save/restore and scripted exploit players.
+   - Research-grade: bigger and riskier than 1.
+4. **Learned bots in `--mode sim`.** They read the raw Slippi event stream, so the simulator's state would have to be encoded as Slippi events. This would bring HAL, Phillip, MIMIC and Faynt into sim ladders.
+5. **Ladder in the simulator** for non-CPU pairings. Left out on purpose: no CPUs and a different RNG make its scores incomparable with Dolphin ladders.
+6. **Bot-writer round-trip.** About 0.35 ms per bot per frame remains (unpickling, the bot's step, the JSON reply, two process wake-ups). Next steps would be to pickle the shared part of the state once per frame instead of per bot, or to use shared memory.
+7. **Missing GameState fields:** ECB and the powershield flag. Bots tested here that read the ECB may behave differently on Dolphin.
+8. **Phillip evaluations** at many games per minute, once models are exported with a batch dimension (slippi-ai's evaluator does `--sim_envs --num_envs N`).
+
+Not worth it: LLM players. They are bound by model latency, and `paused` mode already waits for them.
 
 ## Setup
 
@@ -85,9 +101,8 @@ git clone https://github.com/kyhavlov/melee-sim-light
 uv venv sim-venv --python 3.12
 VIRTUAL_ENV=$PWD/sim-venv uv pip install -e "./slippi-ai[onnx-cuda,jax]" -e ./melee-sim-light
 
-# For --mode sim: the main venv (uv run keeps it; `uv sync` removes it, so reinstall after a sync).
-# The replay parity check also needs peppi-py.
-cd .. && uv pip install -e vendor/melee-sim-light peppi-py
+# The main venv gets melee-sim-light (and peppi-py, for the parity check) from `uv sync`;
+# --mode sim and the simulator tests need only the data/ extracted above (or MSL_DATA_DIR).
 
 # Check our replays against the simulator (strict, frame by frame)
 cd melee-sim-light && uv run python -m tools.validation.validate_replay --backend native --workers 12 \

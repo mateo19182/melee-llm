@@ -14,6 +14,7 @@ own Slippi port (51920-51999) and replay dir; a wall timeout kills the group, Do
 from __future__ import annotations
 
 import json
+import math
 import os
 import random
 import signal
@@ -48,13 +49,15 @@ OVERHEAD = 60_000  # token-equivalent of one game's machine time: keeps free gam
 TIMEOUT = {"fast": 25 * 60, "realtime": 25 * 60, "untimed_llm": 3 * 3600}
 LOAD_COST = {"fast": 2.0, "realtime": 1.5, "untimed_llm": 0.3}  # rough load each kind adds
 LOAD_SLACK_IDLE = 4.0  # untimed LLM games (Dolphin blocked on the API) may start up to load_cap + this
+PLATEAU_GAMES = 20  # an entrant still wider than the target is settled once this many more games would gain < min_gain
 
 
 @dataclass
 class Config:
     iso: str = str(Path.home() / "melee.iso")
-    budget_tokens: int = 100_000_000
+    budget_tokens: int | None = None  # optional CLIProxy token cap; by default the bench stops when games stop being useful
     target: float = 125.0  # 95% CI half-width, Elo
+    min_gain: float = 5.0  # Elo of CI narrowing PLATEAU_GAMES more games must still buy for an entrant to keep playing
     max_parallel: int = 14
     load_cap: float = 36.0
     min_running: int = 2  # keep this many games going even when others push the load over the cap
@@ -126,7 +129,7 @@ class Bench:
         self.results_path = out / "results.jsonl"
         self.entrants = by_id()
         self.results = read_results(self.results_path)
-        self.imported, self.excluded = imports.load()
+        self.imported, self.excluded = self._imports()
         self.imported_at = time.time()
         self.lock = threading.Lock()
         self.load = 0.0
@@ -142,6 +145,7 @@ class Bench:
         self.suspended: dict[str, float] = {}  # entrant → until (after repeated errors)
         self.stop_reason: str | None = None
         self.unconverged: dict = {}
+        self.settled: dict = {}  # wider than the target, but more games would barely narrow them
         self._est: dict[str, int] = {}
         self._est_at = -1
         self.t0 = time.time()
@@ -178,9 +182,13 @@ class Bench:
             return prior
         return int((sum(own) + prior) / (len(own) + 1))
 
+    def _imports(self) -> tuple[list[dict], dict]:
+        games, excluded = imports.load()
+        return [g for g in games if g["source"] != self.out.name], excluded  # a side run's own games are its results
+
     def games(self) -> list[dict]:
         if time.time() - self.imported_at > 1800:
-            self.imported, self.excluded = imports.load()
+            self.imported, self.excluded = self._imports()
             self.imported_at = time.time()
         with self.lock:
             return [r for r in self.results if r.get("status") == "ok"] + self.context + self.imported
@@ -216,7 +224,8 @@ class Bench:
         spends = a.provider in ("claude", "gpt") or b.provider in ("claude", "gpt")
         if spends:
             inflight = sum(r["est_tokens"] for r in run)
-            if spent + inflight + self.est_tokens(a.id) + self.est_tokens(b.id) > cfg.budget_tokens:
+            if cfg.budget_tokens is not None and \
+                    spent + inflight + self.est_tokens(a.id) + self.est_tokens(b.id) > cfg.budget_tokens:
                 return False
             if deferred and sum(r["spends"] for r in run) >= cfg.deferred_llm:
                 return False
@@ -266,17 +275,21 @@ class Bench:
         self.load = os.getloadavg()[0]
         act = self.active()
         values: dict[tuple[str, str], float] = {}
-        unconverged = {}
+        unconverged, settled = {}, {}
         for track in ratings.TRACK_NAMES:
             players = [e.id for e in act if track in tracks_of(e)]
             if not players:
                 continue
             f, cov = self.track_fit(track, games, players)
             half = self.needs(track, f, cov)
-            unconverged[track] = sorted(k for k, v in half.items() if v > cfg.target)
+            n = Counter(p for g in f.games for p in (g["p1"], g["p2"]))
+            wide = {k for k, v in half.items() if v > cfg.target}
+            # a CI shrinks about like 1/sqrt(games): stop paying for one that PLATEAU_GAMES more games barely move
+            flat = {k for k in wide if half[k] * (1 - math.sqrt(n[k] / (n[k] + PLATEAU_GAMES))) < cfg.min_gain}
+            unconverged[track], settled[track] = sorted(wide - flat), sorted(flat)
             K = [k for k in half]
             C = np.array([f.contrast(k) for k in K]) if K else np.zeros((0, len(f.players)))
-            weight = np.array([1.0 if half[k] > cfg.target else 0.02 for k in K])
+            weight = np.array([1.0 if k in wide - flat else 0.02 for k in K])
             for i, a in enumerate(players):
                 for b in players[i + 1:]:
                     t = game_track(self.entrants[a], self.entrants[b])
@@ -288,9 +301,10 @@ class Bench:
                     sd = cov @ d
                     red = w * (C @ sd) ** 2 / (1 + w * d @ sd) * ELO**2
                     values[(a, b)] = values.get((a, b), 0.0) + float(weight @ red)
-        self.unconverged = unconverged
+        self.unconverged, self.settled = unconverged, settled
         if not any(unconverged.values()):
-            self.stop_reason = f"every entrant's 95% CI is within ±{cfg.target:.0f}"
+            self.stop_reason = (f"every rating is within ±{cfg.target:.0f}"
+                                + (" or no longer narrowing" if any(settled.values()) else ""))
             return None
         best, best_score = None, 0.0
         for (a, b), v in values.items():
@@ -420,7 +434,7 @@ class Bench:
               "stop_reason": self.stop_reason, "budget_tokens": self.cfg.budget_tokens, "spent": sp,
               "spent_recounted": corrected,
               "target": self.cfg.target, "load": round(os.getloadavg()[0], 1), "games_started": self.started,
-              "unconverged": self.unconverged, "suspended": {k: round(v) for k, v in self.suspended.items()
+              "unconverged": self.unconverged, "settled": self.settled, "suspended": {k: round(v) for k, v in self.suspended.items()
                                                                               if v > time.time()},
               "running": [{k: r[k] for k in ("id", "p1", "p2", "stage", "mode", "track", "started", "est_tokens", "port")}
                           for r in list(self.running.values())],
@@ -428,8 +442,9 @@ class Bench:
         _write_json(self.out / "status.json", st)
 
     def run(self) -> None:
+        cap = f"cap {self.cfg.budget_tokens:,} tokens" if self.cfg.budget_tokens is not None else "no token cap"
         self.log(f"bench: {len(self.results)} results so far, {len(self.imported)} imported games; "
-                 f"budget {self.cfg.budget_tokens:,} tokens, {self.spent()['tokens']:,} spent")
+                 f"{cap}, {self.spent()['tokens']:,} spent")
         self.refresh_standings(force=True)
         stop = threading.Event()
         signal.signal(signal.SIGTERM, lambda *_: stop.set())
@@ -443,19 +458,19 @@ class Bench:
                     self.start(job)
                     waiting = ""
                 else:
-                    waiting = self.stop_reason or "no feasible pairing (slots, GPU, budget)"
+                    waiting = self.stop_reason or "no feasible pairing (slots, GPU, token cap)"
             else:
                 waiting = why or waiting
             spent = self.spent()["tokens"]
-            if not self.stop_reason and spent >= self.cfg.budget_tokens:
-                self.stop_reason = f"token budget reached ({spent:,})"
+            if not self.stop_reason and self.cfg.budget_tokens is not None and spent >= self.cfg.budget_tokens:
+                self.stop_reason = f"token cap reached ({spent:,})"
             if not self.stop_reason and self.cfg.max_games and self.started >= self.cfg.max_games and not self.running:
                 self.stop_reason = "max games played"
             if self.stop_reason and not self.running:
                 break
             if self.running or not waiting.startswith("no feasible"):
                 idle_since = time.time()
-            elif time.time() - idle_since > 1800:  # nothing fits and nothing ran for 30 min: budget or GPU exhausted
+            elif time.time() - idle_since > 1800:  # nothing fits and nothing ran for 30 min: token cap or GPU exhausted
                 self.stop_reason = "no affordable informative pairing left for 30 min"
                 break
             if time.time() - last_status > 10:

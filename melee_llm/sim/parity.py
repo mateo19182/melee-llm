@@ -13,6 +13,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+import melee
 import numpy as np
 
 from melee_llm.runner import replay_states
@@ -21,7 +22,7 @@ from melee_llm.sim.state import SIM_STAGE, StateBuilder
 FIELDS = ("character", "action", "action_frame", "facing", "percent", "shield_strength", "stock", "hitstun_frames_left",
           "hitlag_left", "on_ground", "jumps_left", "invulnerable", "speed_air_x_self", "speed_ground_x_self",
           "speed_y_self", "speed_x_attack", "speed_y_attack", "moonwalkwarning", "off_stage")
-CONTROLLER = ("button", "raw_main_stick", "c_stick")
+CONTROLLER = ("button", "processed_button", "raw_main_stick", "main_stick", "c_stick", "l_shoulder")
 
 
 def _inputs_from_replay(slp: Path):
@@ -37,36 +38,54 @@ def _inputs_from_replay(slp: Path):
     return game, np.asarray(game.frames.id), raw
 
 
-def compare(slp: Path, verbose: bool = False) -> dict:
+def sim_frames(slp: Path):
+    """Run the replay's raw inputs through melee_sim. Yields (observation, input row or None, frame, ports, stage),
+    starting with the reset frame."""
     import melee_sim as msl
+
+    from melee_llm.sim.world import DATA_DIR
     game, ids, raw = _inputs_from_replay(slp)
     ports = [int(p.port.value if hasattr(p.port, "value") else p.port) + 1 for p in game.start.players]
-    truth = {gs.frame: gs for gs in replay_states(slp)}
-    stage = next(iter(truth.values())).stage
+    stage = melee.enums.to_internal_stage(game.start.stage)
+    from melee_llm.sim.slippi import EXTERNAL
+    chars = [EXTERNAL[int(p.character)] for p in game.start.players]
     n = len(ids)
-    from melee_llm.sim.runner import DATA_DIR
     env = msl.EnvBatch(batch_size=1, length=n + 1, action_format="raw", data_dir=str(DATA_DIR))
-    env.configure_match(stage=SIM_STAGE[stage], seed=game.start.random_seed,
-                        players=tuple(msl.PlayerConfig(truth[ids[0]].players[p].character.value, controller_port=p - 1)
-                                      for p in ports))
-    env.reset_all()
-    builder = StateBuilder(stage, ports)
+    try:
+        env.configure_match(stage=SIM_STAGE[stage], seed=game.start.random_seed,
+                            players=tuple(msl.PlayerConfig(c.value, controller_port=p - 1) for p, c in zip(ports, chars)))
+        env.reset_all()
+        obs = env.current_frame[0]
+        yield obs, None, int(obs["frame_id"]), ports, stage
+        for t in range(n - 1):
+            u = t + 1  # buffer row t produces the frame after the reset/current one
+            row = env.raw_action_view[t, 0]
+            for i, r in enumerate(raw):
+                pr = row["players"][i]
+                pr["buttons"] = r["buttons"][u]
+                pr["main_x"] = r["main_x"][u]
+                pr["main_y"] = r["main_y"][u] if r["main_y"] is not None else 0
+                pr["c_x"] = r["c_x"][u] if r["c_x"] is not None else round(float(r["cs_x"][u]) * 80)
+                pr["c_y"] = r["c_y"][u] if r["c_y"] is not None else round(float(r["cs_y"][u]) * 80)
+                pr["l"], pr["r"] = round(float(r["l"][u]) * 140), round(float(r["r"][u]) * 140)
+            env.step()
+            obs = env.current_frame[0]
+            yield obs, row, int(obs["frame_id"]), ports, stage
+    finally:
+        env.close()
+
+
+def compare(slp: Path, verbose: bool = False) -> dict:
+    truth = {gs.frame: gs for gs in replay_states(slp)}
     mismatches, compared, diverged = Counter(), 0, None
     examples = {}
-    builder.build(env.current_frame[0])
-    for t in range(n - 1):
-        u = t + 1  # buffer row t produces the frame after the reset/current one
-        row = env.raw_action_view[t, 0]
-        for i, r in enumerate(raw):
-            pr = row["players"][i]
-            pr["buttons"] = r["buttons"][u]
-            pr["main_x"] = r["main_x"][u]
-            pr["main_y"] = r["main_y"][u] if r["main_y"] is not None else 0
-            pr["c_x"] = r["c_x"][u] if r["c_x"] is not None else round(float(r["cs_x"][u]) * 80)
-            pr["c_y"] = r["c_y"][u] if r["c_y"] is not None else round(float(r["cs_y"][u]) * 80)
-            pr["l"], pr["r"] = round(float(r["l"][u]) * 140), round(float(r["r"][u]) * 140)
-        env.step()
-        gs = builder.build(env.current_frame[0], row)
+    builder = None
+    for obs, row, _, ports, stage in sim_frames(slp):
+        if builder is None:
+            builder = StateBuilder(stage, ports)
+        gs = builder.build(obs, row)
+        if row is None:
+            continue
         want = truth.get(gs.frame)
         if want is None:
             continue
@@ -101,8 +120,7 @@ def compare(slp: Path, verbose: bool = False) -> dict:
                         examples.setdefault("projectile." + f, (gs.frame, None, getattr(x, f), getattr(y, f)))
                 if abs(x.position.x - y.position.x) > 1e-4 or abs(x.speed.x - y.speed.x) > 1e-4:
                     mismatches["projectile.position/speed"] += 1
-    env.close()
-    return {"replay": str(slp), "frames": n, "compared": compared, "diverged_at": diverged,
+    return {"replay": str(slp), "frames": len(truth), "compared": compared, "diverged_at": diverged,
             "mismatches": dict(mismatches), "examples": examples}
 
 
