@@ -14,6 +14,7 @@ const routes = [
   [/^\/botwriter\/(?<id>[\w.-]+)$/, () => import("./pages/session.js")],
   [/^\/ladder\/(?<name>[\w.-]+)$/, () => import("./pages/botwriter.js")],
   [/^\/play$/, () => import("./pages/play.js")],
+  [/^\/docs(\/(?<name>[\w-]+))?$/, () => import("./pages/docs.js")],
 ];
 
 let current = null;

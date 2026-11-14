@@ -15,11 +15,11 @@ import uvicorn
 from starlette.applications import Starlette
 from starlette.background import BackgroundTask
 from starlette.requests import Request
-from starlette.responses import FileResponse, JSONResponse, PlainTextResponse, Response, StreamingResponse
+from starlette.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response, StreamingResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from melee_llm.web import games, jobs, live, logs, registry, specs
+from melee_llm.web import docs, games, jobs, live, logs, registry, specs
 from melee_llm.web.paths import ROOT
 
 STATIC = Path(__file__).parent / "static"
@@ -38,8 +38,20 @@ def blocking(fn, *a, **kw):
 
 # --------------------------------------------------------------------------- pages and assets
 
+class RevalidatedStatic(StaticFiles):
+    """Without Cache-Control, browsers cache JS heuristically and keep running old modules after a deploy."""
+
+    def file_response(self, *a, **kw) -> Response:
+        resp = super().file_response(*a, **kw)
+        resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
+
 async def index(_: Request) -> Response:
-    return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
+    # Version the entry module by the newest static file, so a deploy also replaces copies cached before RevalidatedStatic.
+    version = max(int(p.stat().st_mtime) for p in STATIC.rglob("*.js"))
+    html = (STATIC / "index.html").read_text().replace('src="/static/app.js"', f'src="/static/app.js?v={version}"')
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
 
 
 async def slippilab(_: Request) -> Response:
@@ -282,8 +294,21 @@ async def api_netplay(_: Request) -> Response:
     return ok({"sessions": [], "note": "netplay is not wired up yet"})
 
 
+async def api_docs(_: Request) -> Response:
+    return ok(await blocking(docs.listing))
+
+
+async def api_docs_search(request: Request) -> Response:
+    return ok(await blocking(docs.search, request.query_params.get("q", "")))
+
+
+async def api_doc(request: Request) -> Response:
+    d = await blocking(docs.render, request.path_params["name"])
+    return ok(d) if d else ok({"error": "no such doc"}, 404)
+
+
 SPA = ["/", "/live", "/matches", "/matches/{id}", "/launch", "/jobs", "/job/{id}", "/games", "/game/{id}", "/arena", "/coach", "/botwriter",
-       "/botwriter/{id}", "/ladder/{name}", "/play"]
+       "/botwriter/{id}", "/ladder/{name}", "/play", "/docs", "/docs/{name}"]
 
 routes = [
     *[Route(p, index) for p in SPA],
@@ -307,7 +332,10 @@ routes = [
     Route("/api/botwriter/sessions/{id}", api_session),
     Route("/api/ladders", api_ladders),
     Route("/api/netplay", api_netplay),
-    Mount("/static", StaticFiles(directory=STATIC)),
+    Route("/api/docs", api_docs),
+    Route("/api/docs/search", api_docs_search),
+    Route("/api/docs/{name}", api_doc),
+    Mount("/static", RevalidatedStatic(directory=STATIC)),
     # Slippi Lab's build references its assets from the site root
     Mount("/assets", StaticFiles(directory=SLIPPILAB / "assets", check_dir=False)),
     Mount("/zips", StaticFiles(directory=SLIPPILAB / "zips", check_dir=False)),

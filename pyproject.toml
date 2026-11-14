@@ -5,8 +5,10 @@ description = "LLMs playing, coaching and writing bots for Super Smash Bros. Mel
 requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.28.1",
+    "markdown-it-py>=4.3.0",
     "melee>=0.47.6",
     "openai>=3.50.0",
+    "pillow>=13.0.0",
     "starlette>=1.10.0",
     "uvicorn>=0.54.0",
     "websockify>=0.13.0",
