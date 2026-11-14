@@ -10,6 +10,7 @@ from dataclasses import asdict
 
 import melee
 
+from melee_llm.paths import LIVE_PORT
 from melee_llm.players import make
 from melee_llm.runner import DOLPHIN, play
 from melee_llm.util import exit_on_term
@@ -29,12 +30,13 @@ def main() -> None:
                         "realtime: headless, 60 fps cap, waits for slow inputs; "
                         "sim: no Dolphin, melee-sim-light (docs/simulator.md)")
     p.add_argument("--games", type=int, default=1)
+    p.add_argument("--port", type=int, default=LIVE_PORT, help="Slippi port; parallel games need distinct ones")
     a = p.parse_args()
     if not a.iso and a.mode != "sim":
         p.error("--iso is required except with --mode sim")
     exit_on_term()  # so play()'s cleanup runs under `timeout`/kill
     agents = {1: make(a.p1, a.char1), 2: make(a.p2, a.char2)}
-    for r in play(agents, a.iso, melee.Stage[a.stage], a.mode, a.games):
+    for r in play(agents, a.iso, melee.Stage[a.stage], a.mode, a.games, slippi_port=a.port):
         print(json.dumps(asdict(r), default=float))
 
 
