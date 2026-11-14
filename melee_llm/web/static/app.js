@@ -3,6 +3,7 @@ import { api, h, mount } from "./lib.js";
 
 const routes = [
   [/^\/(live)?$/, () => import("./pages/live.js")],
+  [/^\/matches(\/(?<id>[\w.-]+))?$/, () => import("./pages/matches.js")],
   [/^\/(launch|jobs)$/, () => import("./pages/launch.js")],
   [/^\/job\/(?<id>\d+)$/, () => import("./pages/job.js")],
   [/^\/games$/, () => import("./pages/games.js")],

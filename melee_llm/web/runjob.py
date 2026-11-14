@@ -55,7 +55,8 @@ def main() -> None:
     error = None
     try:
         play(agents, a.iso, melee.Stage[job["stage"]], job["mode"], job["games"], replay_dir=out, slippi_port=a.port,
-             observer=on)
+             observer=on, meta={"source": "job", "label": f"job #{job['id']}", "job_id": job["id"],
+                                "specs": {1: job["p1"], 2: job["p2"]}})
     except BaseException as e:
         error = f"{type(e).__name__}: {e}"
         raise

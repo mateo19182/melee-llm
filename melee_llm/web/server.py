@@ -19,7 +19,7 @@ from starlette.responses import FileResponse, JSONResponse, PlainTextResponse, R
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from melee_llm.web import games, jobs, live, logs, specs
+from melee_llm.web import games, jobs, live, logs, registry, specs
 from melee_llm.web.paths import ROOT
 
 STATIC = Path(__file__).parent / "static"
@@ -190,6 +190,52 @@ async def api_live_events(request: Request) -> Response:
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
+# --------------------------------------------------------------------------- API: all matches (registry)
+
+def _no_ring(m: dict) -> dict:
+    return {k: v for k, v in m.items() if k != "ring"}
+
+
+async def api_matches(_: Request) -> Response:
+    return ok({"matches": [_no_ring(m) for m in await blocking(registry.snapshot)], "server_time": time.time()})
+
+
+async def api_matches_events(request: Request) -> Response:
+    """SSE over the match registry: `match` (status without frames, at most every 0.5 s per match or on a phase
+    change), `frames` {id, frames: samples newer than the last ones sent} and `gone` {id}. `?id=` follows one."""
+    only = request.query_params.get("id")
+
+    async def stream():
+        yield _sse("hello", {"server_time": time.time()})
+        sent: dict[str, tuple[float, str]] = {}  # id → (when the status went out, phase)
+        last_frame: dict[str, int] = {}
+        ping = time.time()
+        while not await request.is_disconnected():
+            ms = [m for m in await blocking(registry.snapshot) if not only or m["id"] == only]
+            now = time.time()
+            for m in ms:
+                mid = m["id"]
+                prev = sent.get(mid)
+                if prev is None or prev[1] != m.get("phase") or (now - prev[0] >= 0.5 and m.get("phase") not in registry.ENDED):
+                    sent[mid] = (now, m.get("phase"))
+                    yield _sse("match", _no_ring(m))
+                new = [f for f in m.get("ring") or [] if f[0] > last_frame.get(mid, -10**9)]
+                if new and m.get("phase") not in registry.ENDED:
+                    last_frame[mid] = new[-1][0]
+                    yield _sse("frames", {"id": mid, "frames": new})
+            for mid in set(sent) - {m["id"] for m in ms}:
+                sent.pop(mid, None)
+                last_frame.pop(mid, None)
+                yield _sse("gone", {"id": mid})
+            if now - ping > 15:
+                ping = now
+                yield b": ping\n\n"
+            await asyncio.sleep(0.1)
+
+    return StreamingResponse(stream(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
 # --------------------------------------------------------------------------- API: results
 
 async def api_games(request: Request) -> Response:
@@ -236,7 +282,7 @@ async def api_netplay(_: Request) -> Response:
     return ok({"sessions": [], "note": "netplay is not wired up yet"})
 
 
-SPA = ["/", "/live", "/launch", "/jobs", "/job/{id}", "/games", "/game/{id}", "/arena", "/coach", "/botwriter",
+SPA = ["/", "/live", "/matches", "/matches/{id}", "/launch", "/jobs", "/job/{id}", "/games", "/game/{id}", "/arena", "/coach", "/botwriter",
        "/botwriter/{id}", "/ladder/{name}", "/play"]
 
 routes = [
@@ -250,6 +296,8 @@ routes = [
     Route("/api/settings", api_settings, methods=["GET", "POST"]),
     Route("/api/live", api_live),
     Route("/api/live/events", api_live_events),
+    Route("/api/matches", api_matches),
+    Route("/api/matches/events", api_matches_events),
     Route("/api/games", api_games),
     Route("/api/games/{id}", api_game),
     Route("/api/replay/{id}/{name}", api_replay),
@@ -264,6 +312,8 @@ routes = [
     Mount("/assets", StaticFiles(directory=SLIPPILAB / "assets", check_dir=False)),
     Mount("/zips", StaticFiles(directory=SLIPPILAB / "zips", check_dir=False)),
     *[Route(f"/{n}", (lambda n: lambda _: FileResponse(SLIPPILAB / n))(n)) for n in ("favicon.ico", "logo.png", "logo-square.png")],
+    Route("/slippilab-live.js", lambda _: FileResponse(SLIPPILAB / "live-renderer.js", media_type="text/javascript",
+                                                        headers={"Cache-Control": "no-cache"})),
 ]
 
 app = Starlette(routes=routes)

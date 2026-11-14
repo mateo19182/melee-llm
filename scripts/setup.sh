@@ -21,6 +21,6 @@ if [ ! -d vendor/slippilab ]; then
   git clone -q https://github.com/frankborden/slippilab.git vendor/slippilab
   git -C vendor/slippilab apply ../../patches/slippilab.patch
 fi
-(cd vendor/slippilab && npm ci --no-audit --no-fund && npx vite build)
+(cd vendor/slippilab && npm ci --no-audit --no-fund && npx vite build && npm run build:live)
 uv sync
 echo "ready. ISO: NTSC 1.02, md5 0e63d4223b01d9aba596259dc155a174"

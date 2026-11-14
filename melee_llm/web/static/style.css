@@ -191,3 +191,33 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   .np-mid { grid-column: 1 / -1; order: -1; }
   .np-pct { font-size: 20px; min-width: 0; }
 }
+
+/* all matches */
+.mc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+.mc { padding: 10px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.mc-title { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.mc-meta { color: var(--dim); font-size: 12px; margin-top: 3px; }
+.mc-stage { position: relative; aspect-ratio: 4 / 3; background: #0d1017; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
+.mc-canvas, .mc-video { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.mc-video { background: #000; object-fit: contain; }
+.mc-overlay { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; color: var(--dim);
+  background: rgba(11, 13, 18, .55); font-size: 13px; pointer-events: none; }
+.mc-overlay.on { display: flex; }
+.mc-players { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mc-player.p2 { text-align: right; }
+.mc-player.p2 .mc-score { flex-direction: row-reverse; }
+.mc-name { font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+.mc-score { display: flex; align-items: center; gap: 8px; }
+.mc-pct { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.mc-players.big .mc-pct { font-size: 30px; }
+.mc-players.big .mc-name { font-size: 16px; }
+.mc-decision { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mc-links { display: flex; gap: 12px; font-size: 12.5px; flex-wrap: wrap; }
+.badge.speed { color: #0b0d12; background: var(--warn); border-color: var(--warn); }
+.mc-focus { max-width: 1100px; margin: 0 auto; }
+.mc-focus .mc-stage { aspect-ratio: 16 / 10; }
+.mc-done-strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.mc-done { padding: 10px 12px; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+.mc-done.bad { border-color: #5a1f2c; }
+.mc-done-players { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 760px) { .mc-grid { grid-template-columns: 1fr; } }

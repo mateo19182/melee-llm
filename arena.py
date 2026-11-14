@@ -96,7 +96,9 @@ def main() -> None:
         t0 = time.time()
         try:
             agents = {1: make(p1, c1), 2: make(p2, c2)}
-            [res] = play(agents, a.iso, melee.Stage[stage], "lockstep", 1, observer=live.observer(agents))
+            [res] = play(agents, a.iso, melee.Stage[stage], "lockstep", 1, observer=live.observer(agents),
+                         meta={"source": "arena", "label": f"arena game {len(results) + 1}", "specs": {1: p1, 2: p2},
+                               "elo": {"1": elo.get(p1, 1500), "2": elo.get(p2, 1500)}})
         except (RuntimeError, OSError) as e:
             print(f"game failed: {p1} vs {p2}: {e}", flush=True)
             live.done(str(e))
