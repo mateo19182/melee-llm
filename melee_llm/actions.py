@@ -12,10 +12,27 @@ from dataclasses import dataclass, field
 from typing import Callable, Generator, Iterator
 
 import melee
-from melee import Action as A, Button as B, Character as C
+from melee import Action as A
+from melee import Button as B
+from melee import Character as C
 
-from melee_llm.state import (AERIALS, DAMAGED, DEAD, GRABBED, LEDGE, SHIELDING, SHINE_IDS, SIDEB_IDS,
-                             SPACIES, UPB_IDS, actionable, edge_x, ground_below, in_hitstun, ledge_x)
+from melee_llm.state import (
+    AERIALS,
+    DAMAGED,
+    DEAD,
+    GRABBED,
+    LEDGE,
+    SHIELDING,
+    SHINE_IDS,
+    SIDEB_IDS,
+    SPACIES,
+    UPB_IDS,
+    actionable,
+    edge_x,
+    ground_below,
+    in_hitstun,
+    ledge_x,
+)
 
 # Jumpsquat frames (NTSC 1.02); unknown characters default to 4.
 JUMPSQUAT = {C.FOX: 3, C.FALCO: 5, C.MARTH: 4, C.SHEIK: 3, C.PEACH: 5, C.CPTFALCON: 4, C.JIGGLYPUFF: 5,
@@ -540,6 +557,8 @@ def ledge(c: Ctx, option: str = "getup") -> Macro:
     d = c.sign("center")
     inp = {"getup": press(main=(d, 0)), "roll": press(B.BUTTON_R), "jump": press(B.BUTTON_Y, main=(d, 0)),
            "attack": press(B.BUTTON_A), "drop": press(main=(0, -1))}.get(option, press(main=(d, 0)))
+    if not inp.buttons:  # Melee ignores the stick on the ledge until it has been neutral since the grab
+        yield NEUTRAL
     yield inp
     yield NEUTRAL if option != "jump" else Input(stick(d, 0))
     if option == "drop":
