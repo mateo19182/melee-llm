@@ -12,6 +12,7 @@ from pathlib import Path
 
 import melee
 
+from melee_llm import matches
 from melee_llm.agents.base import Agent
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -115,11 +116,15 @@ def _cpus_ready(gs: melee.GameState, agents: dict[int, Agent]) -> bool:
 
 def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BATTLEFIELD,
          mode: str = "watch", games: int = 1, replay_dir: Path | None = None,
-         slippi_port: int = 51441, observer: Callable[[str, dict], None] | None = None) -> list[GameResult]:
+         slippi_port: int = 51441, observer: Callable[[str, dict], None] | None = None,
+         meta: dict | None = None) -> list[GameResult]:
     """Run `games` games. Parallel calls need distinct `slippi_port`s (and distinct X displays if rendered).
 
     `observer(event, info)`, if given, is called with "game_start" {game, replay, gs}, "frame" {gs} on every
     in-game frame (after the agents stepped) and "game_end" {game, result}. It must be fast.
+
+    Every call publishes itself to the match registry (melee_llm.matches, shown on the web UI's All matches
+    page). `meta` overrides what it guesses: {"source", "label", "job_id", "specs": {port: spec}, ...}.
     """
     notify = observer or (lambda event, info: None)
     assert len(agents) == 2, "two ports for now"
@@ -136,10 +141,16 @@ def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BA
     ports = sorted(agents)
     controllers = {p: melee.Controller(console=console, port=p, type=melee.ControllerType.STANDARD) for p in ports}
     display = os.environ.get("DISPLAY")
+    pub = matches.publisher(agents, stage, mode, games, slippi_port, replay_dir, meta)
+    error = None
     if fast:  # keep headless Dolphins off the streamed display
         os.environ["DISPLAY"] = HEADLESS_DISPLAY
     try:
         console.run(iso_path=iso)
+    except BaseException as e:
+        if pub:
+            pub.close(e)
+        raise
     finally:
         if fast:
             os.environ.pop("DISPLAY", None) if display is None else os.environ.__setitem__("DISPLAY", display)
@@ -173,11 +184,15 @@ def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BA
                     replay = _new_replay(replay_dir, seen)
                     for a in agents.values():
                         a.on_game_start(gs, replay)
+                    if pub:
+                        pub.game_start(len(results), gs, replay)
                     notify("game_start", {"game": len(results), "replay": replay, "gs": gs})
                 last, frames = gs, frames + 1
                 for p, a in agents.items():
                     if not a.cpu_level:
                         a.step(gs)
+                if pub:
+                    pub.frame(gs)
                 notify("frame", {"gs": gs})
                 continue
             if last is not None:
@@ -187,6 +202,8 @@ def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BA
                 results[-1].replay = str(found) if found else None
                 for a in agents.values():
                     a.on_game_end(last)
+                if pub:
+                    pub.game_end(len(results) - 1, results[-1])
                 notify("game_end", {"game": len(results) - 1, "result": results[-1]})
                 last = None
             start = gs.menu_state != melee.Menu.CHARACTER_SELECT or _cpus_ready(gs, agents)
@@ -194,10 +211,15 @@ def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BA
                 menu.menu_helper_simple(gs, controllers[p], a.character, stage, cpu_level=a.cpu_level,
                                         costume=a.costume or p, autostart=start and p == ports[0])
         return results
+    except BaseException as e:
+        error = e
+        raise
     finally:
         for a in agents.values():
             a.close()
         console.stop()
+        if pub:
+            pub.close(error)
 
 
 def replay_states(slp: str | Path):
