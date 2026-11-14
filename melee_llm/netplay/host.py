@@ -28,7 +28,7 @@ from melee_llm.paths import DOLPHIN_RENDERED as DOLPHIN  # mainline beta.19 netp
 from melee_llm.paths import REPLAYS
 from melee_llm.players import make as make_player
 from melee_llm.runner import Console
-from melee_llm.util import port_free as _port_free
+from melee_llm.util import port_free
 
 DISPLAY = ":98"  # hidden Xvfb (melee-xvfb-headless). Never :99, the streamed live slot
 WINDOW = (640, 480)  # :98's screen size
@@ -168,7 +168,7 @@ def host(cfg: HostConfig, stop: threading.Event | None = None, on_status=None) -
     code = normalize_code(cfg.connect_code)
     me_code = bot_code(cfg.user_json)
     char, stage = melee.Character[cfg.char], melee.Stage[cfg.stage]
-    port = next((p for p in SPECTATOR_PORTS if _port_free(p)), None)
+    port = next((p for p in SPECTATOR_PORTS if port_free(p)), None)
     if port is None:
         raise RuntimeError(f"no free Slippi spectator port in {SPECTATOR_PORTS.start}-{SPECTATOR_PORTS.stop - 1}")
     OUT.mkdir(parents=True, exist_ok=True)
@@ -295,7 +295,7 @@ def smoke(cfg: HostConfig, seconds: float = 90.0, shots: Path | None = None) -> 
     shots.mkdir(parents=True, exist_ok=True)
     logged_in = Path(cfg.user_json).is_file()
     code = normalize_code(cfg.connect_code)
-    port = next(p for p in SPECTATOR_PORTS if _port_free(p))
+    port = next(p for p in SPECTATOR_PORTS if port_free(p))
     os.environ["DISPLAY"] = cfg.display
     console = NetplayConsole(path=str(DOLPHIN), fullscreen=False, save_replays=False, disable_audio=True,
                              gfx_backend="OGL", emulation_speed=1.0, blocking_input=True, slippi_port=port,
