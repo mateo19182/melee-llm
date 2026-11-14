@@ -26,27 +26,43 @@ function cost(sp) {
   return parts.length ? parts.join(" · ") : h("span.faint", {}, "free");
 }
 
+function spendLine(st) {
+  const sp = st.spent_recounted || st.spent;
+  if (!sp) return null;
+  const prov = Object.entries(sp.by_provider || {}).map(([k, v]) => `${k} ${fmt.k(v)}`).join(", ");
+  const jev = sp.usd_est?.jev ? ` + Jev ${fmt.usd(sp.usd_est.jev)}` : "";
+  return `${fmt.k(sp.tokens ?? 0)} LLM tokens${prov ? ` (${prov})` : ""}${jev}`;
+}
+
+function outcome(st) {
+  const r = st.stop_reason || "";
+  if (r.startsWith("token budget reached") || r.startsWith("token cap reached"))
+    return `Stopped at its ${fmt.k(st.budget_tokens)}-token cap. The bench now has no cap: it plays while games still narrow a rating.`;
+  return r ? r[0].toUpperCase() + r.slice(1) + "." : "";
+}
+
 function progress(st, s) {
-  const spent = st.spent?.tokens ?? 0, budget = st.budget_tokens || 1;
+  const running = st.phase === "running";
   const phase = { running: "live", done: "ok", stopped: "muted", stale: "bad" }[st.phase] || "";
   const unconv = Object.values(st.unconverged || {}).flat();
+  const settled = Object.values(st.settled || {}).flat();
+  const list = (xs) => `${xs.slice(0, 8).join(", ")}${xs.length > 8 ? "…" : ""}`;
   return h("div.card.bench-progress", {},
-    h("div.row", {}, badge(st.phase || "not started", phase),
-      h("span", {}, `${fmt.k(spent)} / ${fmt.k(budget)} CLIProxy tokens`),
-      h("div.budget", {}, h("div.bar", { style: { width: `${Math.min(100, (100 * spent) / budget)}%` } })),
-      h("span.dim", {}, `${s.games.bench} bench + ${s.games.imported} imported games`),
-      st.running ? h("span.dim", {}, `${st.running.length} running`) : null,
-      st.load !== undefined ? h("span.dim", {}, `load ${st.load}`) : null,
+    h("div.row", {}, badge(st.phase === "done" ? "finished" : st.phase || "not started", phase),
+      h("span", { title: `${s.games.bench} played by the bench, ${s.games.imported} from earlier runs under the same rules` },
+        `${(s.games.bench + s.games.imported).toLocaleString()} games`),
+      h("span.dim", {}, spendLine(st)),
+      running && st.running?.length ? h("span.dim", {}, `${st.running.length} playing now`) : null,
       h("span.spacer"),
-      st.updated ? h("span.faint", {}, `updated ${fmt.ago(st.updated)}`) : null),
+      st.updated ? h("span.faint", {}, `${running ? "updated" : "finished"} ${fmt.ago(st.updated)}`) : null),
+    running && st.budget_tokens ? h("div.budget", { style: { marginTop: "8px" } },
+      h("div.bar", { style: { width: `${Math.min(100, (100 * (st.spent?.tokens ?? 0)) / st.budget_tokens)}%` } })) : null,
     h("div.small-meta", { style: { marginTop: "8px" } },
-      st.phase === "running"
-        ? (unconv.length ? `${unconv.length} entrants still wider than ±${st.target}: ${unconv.slice(0, 8).join(", ")}${unconv.length > 8 ? "…" : ""}` : "all CIs within target")
-        : st.stop_reason || "",
-      st.waiting && st.phase === "running" ? h("span.faint", {}, ` · waiting: ${st.waiting}`) : null,
-      st.spent?.by_provider ? h("span.faint", {}, ` · ${Object.entries(st.spent.by_provider).map(([k, v]) => `${k} ${fmt.k(v)}`).join(", ")}`) : null,
-      st.spent?.usd_est?.jev ? h("span.faint", {}, ` · jev ${fmt.usd(st.spent.usd_est.jev)}`) : null,
-      st.spent_recounted ? h("span.faint", { title: st.spent_recounted.note }, ` · ${fmt.k(st.spent_recounted.tokens)} counting discarded replies`) : null));
+      running
+        ? (unconv.length ? `Still narrowing (wider than ±${st.target}): ${list(unconv)}` : "Every rating is settled")
+        : outcome(st),
+      settled.length ? h("span.faint", {}, ` · more games would barely move: ${list(settled)}`) : null,
+      running && st.waiting ? h("span.faint", {}, ` · waiting: ${st.waiting}`) : null));
 }
 
 function explainer() {
