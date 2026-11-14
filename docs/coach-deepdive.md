@@ -1,6 +1,17 @@
 # Coach deep-dive: why coaching Reyn helps, and why Jev coaches best
 
-As of 2026-11-14. Real-time track, Fox ditto on Battlefield and Final Destination, Elo relative to CPU 9 = 1500, ± the 95% half-width.
+As of 2026-11-14 (wrapped up at 15:10 with 183 ablation games; no further runs planned). Real-time track, Fox ditto on Battlefield and Final Destination, Elo relative to CPU 9 = 1500, ± the 95% half-width.
+
+## Answer
+
+**Reyn needs a command, and the best one is "Don't die."; the coach barely matters beyond that.**
+
+1. **Most of the gain is having any command at all.** Uncoached Reyn plays with no command (1746). One random command held all game already reaches 2018 (+272 over none); switching every 5 s adds only ~50 more (random coach 2068; fixed and sticky random are −50 ±174 and −65 ±181 vs it, within noise). So it isn't the perturbation of changing commands.
+2. **Holding "Don't die." all game, with no coach at all, rates 2398**: level with the Jev coach (+52 ±164), above every LLM coach (2132-2259) and +330 ±168 over the random coach.
+3. **Jev coaches best because it ends up holding "Don't die."** 41% of the time, mostly through a router accident (its "kill now" pick is routed to "Don't die."). The LLM coaches pick sensible-sounding commands (edgeguard, aggressive play) that are worth less.
+4. **Interval, computed features and the menu don't measurably matter** at ~25 games per variant: Jev at 1 s / 5 s / 15 s is 2278 / 2346 / 2154, Jev with features 2189, Haiku with features 2183, random over Jev's top-6 commands 2169. All within ±175 of each other.
+
+Practical upshot: to make a stronger coached Reyn, start from "Don't die." as the default and only switch away for a clear reason; and fix the router's `kill_now` mapping (or keep it, knowingly).
 
 ## The questions
 
@@ -52,3 +63,29 @@ What they hold (share of calls, effective command):
 **Game-level associations are flat.** Across coach games, the result relative to the Elo expectation does not depend on change rate (low half +0.06 ±0.05, high half −0.04 ±0.05), time with no command or distinct commands. Windows right after a change do worse than held windows for every LLM and Jev, but that is selection (coaches change when losing).
 
 **Head to head**, Jev's edge is clearest: Jev beat the LLM coaches 25-3 (Haiku 8-0, Sonnet 6-0, Luna 8-1, Sol 3-2) and the random coach 9-2; the random coach beat uncoached Reyn 9-0. On the fitted scale Jev is +273 ±130 over random; the LLM coaches are +49 to +177 (±132-145) over random and −96 to −224 (±130-138) under Jev (Laplace intervals on the difference).
+
+## Ablation results
+
+`scripts/coach_deepdive.py ablations data/bench-deepdive/results.jsonl`: 183 games (133 rated, 47 ran under 50 fps on a loaded machine and were not rated, 3 errors), fitted jointly with the main bench's games. ± is the 95% Laplace interval; the last two columns are differences from the random coach and the Jev coach.
+
+| Entrant | Elo | ± | Games (new) | vs random | vs Jev |
+|---|---|---|---|---|---|
+| Reyn, fixed "Don't die." | 2398 | 165 | 32 (32) | +330 ±168 | +52 ±164 |
+| Jev coach (5 s) | 2346 | 126 | 79 (5) | +278 ±122 | 0 |
+| Jev coach, 1 s | 2278 | 177 | 26 (26) | +210 ±173 | −67 ±176 |
+| GPT-6 Luna coach | 2259 | 138 | 50 | +191 ±133 | −86 ±128 |
+| Sonnet 5.5 coach | 2238 | 143 | 43 | +170 ±140 | −108 ±137 |
+| Haiku 4.5 coach | 2236 | 139 | 50 | +167 ±135 | −110 ±132 |
+| Jev coach + features | 2189 | 179 | 25 (25) | +121 ±172 | −157 ±186 |
+| Haiku coach + features | 2183 | 208 | 15 (15) | +115 ±203 | −163 ±207 |
+| Random coach, Jev's top 6 | 2169 | 182 | 23 (23) | +101 ±178 | −176 ±189 |
+| Jev coach, 15 s | 2154 | 177 | 24 (24) | +85 ±173 | −192 ±184 |
+| GPT-6.1 Sol coach | 2132 | 128 | 71 | +64 ±128 | −213 ±135 |
+| Random coach | 2068 | 111 | 122 (16) | 0 | −278 ±122 |
+| Random coach, one command | 2018 | 178 | 23 (23) | −50 ±174 | −328 ±188 |
+| Random coach, sticky (p_change 0.25) | 2003 | 182 | 22 (22) | −65 ±181 | −342 ±192 |
+| Reyn, no command | 1746 | 106 | 103 (10) | −322 ±131 | −600 ±143 |
+
+Anchors in the same fit: Phillip gm 2488, HAL MASTER 2234, Phillip plat 1945, MIMIC 1919. MIMIC was dropped from the run partway (too slow to rate under load). No ablation game reached the 8-minute timer, so the Sudden Death scoring fix (PR #5, deployed mid-run) changed no result.
+
+**Limits.** ~25 games per variant leaves ±175: enough to see that "Don't die." and Jev are well above random and that fixed/sticky random are not better than switching, not enough to rank interval or feature variants. The window analysis above is short-horizon (5 s) and the bench is whole games; they agree on "Don't die." being best.

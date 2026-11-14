@@ -29,7 +29,7 @@ We tested it on 2026-11-14 with upstream commit `eea7b5fb`. It has **no license 
 - **slippi-ai bug.** slippi-ai @ `5ada33e` looks players up by `present`, which melee_sim clears for an eliminated player. Every game that ends on stocks crashes. `scripts/sim_phillip_eval.py` patches the two lookups at runtime, so the vendored repo stays untouched.
 - **No CPU opponents.** The public API exposes no CPU players. CPU-level baselines stay on Dolphin.
 - **Rules.** Supported matches are UCF, no items, and frozen Pokémon Stadium, which is what Slippi plays anyway.
-- **Learned bots don't run in it through our adapter.** They read the raw Slippi event stream (`ConsoleTap`), which the simulator does not produce. Phillip can still play in it through slippi-ai's own `sim_env` (above).
+- **Learned bots** read the raw Slippi event stream, so `sim/slippi.py` writes one from the simulator (below).
 
 ## Playing our agents in it: `--mode sim`
 
@@ -50,12 +50,19 @@ uv run python -m melee_llm.match --mode sim --p1 baseline:rusher --p2 baseline:l
 - Outside it, libmelee reports whatever Melee keeps in that shared slot (e.g. 32 while shielding or spot-dodging); the simulator reports 0.
 - A game stays in sync until the first random choice that comes out differently: 15 of the 40 games never diverged.
 
+**Learned bots in it.** They parse the raw Slippi event stream with their own libmelee build, so `sim/slippi.py` writes Slippi 3.19 events (what our Dolphin writes) from each simulator frame. `World` publishes them to the bots through `controller.slippi_tap`, the way `ConsoleTap` forwards Dolphin's.
+- **Against Dolphin, field by field** (`python -m melee_llm.sim.slippi REPLAY.slp`): 10 replays, 30,735 frames before divergence. Every field libmelee or HAL reads is exact: sticks, triggers, physical buttons, raw stick, action, position, facing, percent, shield, stocks, airborne, jumps, hurtbox, speeds, hitlag and items.
+- **Written as 0**, because the simulator doesn't report them: last attack, combo count, last hit by, ground id, L-cancel status, animation index, instance ids, most state bit flags, and the stick direction bits of the processed buttons (stateful; nothing we feed reads them).
+- **Approximated:** hitstun outside hitstun, fractional action frames, and the pre-frame position and action (taken from the previous post-frame).
+- **Processed sticks:** Melee clamps the raw stick to radius 80, truncates, then zeroes any axis at |raw| ≤ 22. HAL's own readback check uses the same rule. `StateBuilder` now fills `main_stick`, `c_stick`, `l_shoulder` and `processed_button` that way too, and the libmelee parity check (which now covers them) matches on all 30,725 frames, except 2 trigger frames with Z and a digital L/R held together.
+- **HAL vs Phillip gm** (Battlefield, a 1-minute game): no errors, and HAL's executed-action check never fired. About 4–6 ms per frame, which is the two models thinking in parallel; the simulator is 0.3 ms of that. So learned-bot games are bounded by the models, not the game. The saving is no Dolphin process or display per game, so many can run side by side, up to what the GPU holds.
+
 **Closed loop.** Bot-writer baselines rusher vs laser (Fox ditto, Battlefield), with the seed of a headless Dolphin game, replayed that Dolphin game input for input and frame for frame for all 28,923 frames. The final state was the same 4–4, 5.7% vs 0%.
 
-**Speed.** That game took 32 s in the simulator and 143 s in headless Dolphin. Most of the 32 s is the bot-writer sandbox: pickling the `GameState` to each bot process each frame (9 s) and waiting for the bots (10 s). Building the state takes 0.23 ms/frame and the simulator 0.12 ms. Two in-process agents (idle vs multishine) run about 4,700 frames/s, an 8-minute game in 6 s.
+**Speed.** That game took 32 s in the simulator and 143 s in headless Dolphin. Most of the 32 s was the bot-writer sandbox: pickling the `GameState` to each bot process each frame (9 s) and waiting for the bots one after the other (10 s). With faster pickling and both bots asked at once, the same game takes 25 s (37 s before, measured back to back on a loaded machine); what remains is mostly the bot round-trip, about 0.35 ms. Building the state takes 0.23 ms/frame and the simulator 0.12 ms. Two in-process agents (idle vs multishine) run about 4,700 frames/s, an 8-minute game in 6 s.
 
 **Differences from Dolphin.**
-- No in-game CPU and no learned bots: `play` refuses both.
+- No in-game CPU: `play` refuses it.
 - No `.slp` replays (`GameResult.replay` is None).
 - No ECB and no powershield flag in the `GameState`: they keep libmelee's defaults.
 - `hitstun_frames_left` is 0 outside hitstun.

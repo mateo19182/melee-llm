@@ -13,10 +13,12 @@ from datetime import datetime
 from pathlib import Path
 
 from melee_llm.bench.entrants import BOTWRITER, Entrant, by_id, resolve
-from melee_llm.paths import ARENA, ROOT
+from melee_llm.paths import ARENA, DATA, ROOT
 from melee_llm.util import read_jsonl as _jsonl
 
 STAGES = ("BATTLEFIELD", "FINAL_DESTINATION")
+# other runs of the bench scheduler (own out dir); a run never imports its own dir (Bench drops source == out.name)
+SIDE_BENCHES = ("bench-deepdive",)
 MIN_FPS = 50.0
 
 
@@ -114,5 +116,10 @@ def load() -> tuple[list[dict], dict[str, int]]:
                   "stocks": {str({"a": pa, "b": pb}[k]): v for k, v in (r.get("stocks") or {}).items()},
                   "percent": {str({"a": pa, "b": pb}[k]): v for k, v in (r.get("percent") or {}).items()}}
             c.add(src, n, names[1], names[2], rr, stage=r["stage"], mode="fast", ts=r.get("ts"), replay=r.get("replay"))
+    # side runs of the bench itself (same scheduler and rules), e.g. the coach deep-dive's ablations
+    for name in SIDE_BENCHES:
+        for n, r in enumerate(_jsonl(DATA / name / "results.jsonl")):
+            if r.get("status") == "ok":
+                c.add(name, n, r["p1"], r["p2"], r, stage=r["stage"], mode=r["mode"], ts=r.get("ts"), replay=r.get("replay"))
     return c.games, dict(c.excluded)
 

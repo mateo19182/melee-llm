@@ -55,8 +55,10 @@ per-game state. `BotAgent` wraps the file as an `Agent`:
 - **Process isolation.** The bot runs in `python -I -B` with a scrubbed environment (no API keys,
   `HOME` set to a scratch dir), a 4 GiB address-space limit and its own session. A crash cannot
   take down the match.
-- **Protocol.** The parent pickles each GameState down to the child (about 0.1 ms per frame). The
-  child answers with JSON: the bot's full controller state. The parent never unpickles anything
+- **Protocol.** The parent pickles each GameState down to the child (about 0.05 ms per frame, with
+  reductions in `host.py` that skip numpy's and copyreg's slow paths but rebuild the same types). It
+  sends to both bots before reading either answer, so they think at the same time. The child
+  answers with JSON: the bot's full controller state. The parent never unpickles anything
   the bot produces. Only the inputs that changed are written to the real Dolphin pipe, with
   libmelee's analog fixing kept exact. START is dropped.
 - **Budget.** The default is 16 ms per frame of wall time, measured in the parent, in every mode.

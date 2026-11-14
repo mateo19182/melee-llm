@@ -7,8 +7,11 @@ The bot's stdout is redirected to stderr (its log) so prints cannot corrupt the 
 from __future__ import annotations
 
 import copy
+import copyreg
 import importlib.util
+import io
 import json
+import operator
 import os
 import pickle
 import struct
@@ -17,9 +20,61 @@ import time
 import traceback
 
 import melee
+import melee.controller
+import melee.gamestate
+import numpy as np
 
 BUTTONS = [b for b in melee.Button if b not in (melee.Button.BUTTON_MAIN, melee.Button.BUTTON_C)]
 _LEN = struct.Struct(">I")
+
+
+class _Unset:
+    """Marks a slot that was never assigned."""
+
+
+def _slots(cls: type) -> tuple[str, ...]:
+    return tuple(s for c in reversed(cls.__mro__) for s in vars(c).get("__slots__", ()))
+
+
+def _rebuild(cls: type, values: tuple):
+    o = object.__new__(cls)
+    for k, v in zip(_SLOTTED[cls], values):
+        if v is not _Unset:
+            object.__setattr__(o, k, v)
+    return o
+
+
+def _reducer(cls: type, slots: tuple[str, ...]):
+    get = operator.attrgetter(*slots) if len(slots) > 1 else lambda o: tuple(getattr(o, k) for k in slots)
+
+    def reduce(o):
+        try:
+            values = get(o)
+        except AttributeError:
+            values = tuple(getattr(o, k, _Unset) for k in slots)
+        return _rebuild, (cls, values)
+    return reduce
+
+
+# Default pickling costs ~110 us per frame for libmelee's GameState, because numpy scalars carry their dtype
+# and slotted objects go through copyreg in Python. These reductions rebuild the same types and values in
+# less than half the time.
+_SLOTTED = {c: _slots(c) for m in (melee.gamestate, melee.controller) for c in vars(m).values()
+            if isinstance(c, type) and c.__module__ == m.__name__ and "__slots__" in vars(c)}
+_TABLE = copyreg.dispatch_table.copy()
+_TABLE.update({t: (lambda x, t=t: (t, (float(x),))) for t in (np.float16, np.float32, np.float64)})
+_TABLE.update({t: (lambda x, t=t: (t, (int(x),))) for t in
+               (np.int8, np.uint8, np.int16, np.uint16, np.int32, np.uint32, np.int64, np.uint64)})
+_TABLE[np.bool_] = lambda x: (np.bool_, (bool(x),))
+_TABLE.update({c: _reducer(c, s) for c, s in _SLOTTED.items()})
+
+
+def dumps(obj) -> bytes:
+    f = io.BytesIO()
+    p = pickle.Pickler(f, protocol=pickle.HIGHEST_PROTOCOL)
+    p.dispatch_table = _TABLE
+    p.dump(obj)
+    return f.getvalue()
 
 
 def write_frame(f, payload: bytes) -> None:
