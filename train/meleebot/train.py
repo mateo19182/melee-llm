@@ -151,6 +151,7 @@ def main():
     if init:
         c = model.config
         centers = model.stick_centers.numpy()
+        a.layers, a.width, a.context, a.pos = c.layers, c.width, c.context, c.pos  # run.json shows the real shape
     else:
         c = Config(layers=a.layers, width=a.width, heads=a.width // 32, context=a.context, dropout=dropout,
                    pos=a.pos, features=features)
