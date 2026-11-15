@@ -131,4 +131,4 @@ Any spec `melee_llm/players.py` understands works, including the bot-writer's `b
 
 ## Results
 
-The bench has finished. Final numbers are in [status.md](status.md), and the Bench page shows the standings.
+The last run (2026-11-15, 900 token-free games) brought every CPU, written bot and learned bot except Faynt within ±100. The LLM players and coaches still have ±126 to ±190 and need token games to narrow. Numbers are in [status.md](status.md), and the Bench page shows the standings.
