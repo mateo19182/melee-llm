@@ -162,6 +162,20 @@ Notes on the table:
 - **No session used its 30 minutes.** They ended after 24 to 29 minutes; eight hit the cap of 30 "keep improving" nudges.
 - **Practice games stalled.** 227 of 329 simulator practice games ran to the 8-minute timer, because `rusher` stops attacking after its first up-smash and the starter bot jabs out of range. Seven of the nine sessions mention stalls. The scripted baselines are retired from the ladder, the bench and, since round 2, the sandbox; the starter bot now runs in and up-smashes.
 
+**Round 2, 2026-11-15: five runs each at high effort, one protocol.** Opus 5.5, Sonnet 5.5 and Haiku 5.5 on Claude Code through CLIProxy, 30 minutes, `--effort high`, three sessions at a time with one per model in each wave (`round2.json`, log in `rounds/r2-high/`). All 15 sessions ran their full time and handed in a valid bot. No ladder: the bots went straight onto the bench (693 token-free games, 60 to 87 per bot, each within ±100).
+
+| model | bench Elo of the five runs | mean | SD | cost per run | LoC |
+| --- | --- | --- | --- | --- | --- |
+| Opus 5.5 | 1879, 1759, 1713, 1636, 1506 | 1699 | 139 | $2.76-4.65 | 352-459 |
+| Haiku 5.5 | 1728, 1719, 1685, 1673, 1627 | 1686 | 40 | $0.12-1.08 | 60-109 |
+| Sonnet 5.5 | 1945, 1686, 1654, 1621, 1395 | 1660 | 196 | $0.72-1.28 | 63-332 |
+
+- **The round measures the starter bot, not the models.** The new starter (runs in, up-smashes) is itself at about 1685: Haiku run 1 handed it in unchanged, and Sonnet run 4 changed three lines (1654). It was only tested against an idle Fox and the old starter before the round, not against the CPUs.
+- **The three models are level** (means 1660 to 1699, with an SD between runs of up to 196). Haiku's bots are all the starter with small edits. Opus and Sonnet rewrote it in eight of ten runs and ended, on average, where they started.
+- **Two runs clearly improved on it:** Sonnet run 5 (1945, level with MIMIC) and Opus run 5 (1879). **Two made it clearly worse:** Sonnet run 3 (1395) and Opus run 4 (1506).
+- **Not comparable with round 1,** where the starter was weak. The medium-effort means there were Opus 1752, Haiku 1233, Sonnet 1133.
+- **An agent took the site down.** In a first attempt a Sonnet agent ran `pkill -f melee_llm` to clear a stuck practice game, which killed `melee-web`, `melee-arena` and the batch. Sandboxes now carry `pkill` and `killall` wrappers that only reach the session's own processes; this is not a hard boundary. That attempt's six sessions are in `sessions-aborted/`.
+
 **Harness observations**
 
 - **Tool loop:** 3 idle replies in a row end the loop (`model_stopped`) whatever time is left, so a 30-minute GPT run could quit early. Not tested with full sessions yet.
