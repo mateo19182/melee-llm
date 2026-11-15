@@ -1,7 +1,7 @@
 ---
 title: "Melee bots are getting really good"
 subtitle: "…and what we can learn from them"
-date: 2026-11-14
+date: 2026-11-15
 draft: true
 tags:
   - writing
@@ -10,7 +10,7 @@ tags:
 
 <!-- Source: writeup/melee-bench.template.md. Numbers and figures come from writeup/make_figures.py; edit prose here, then re-run it. -->
 
-> **TL;DR.** People have been building bots for Super Smash Bros. Melee for ten years, and the last two months were the busiest of all: the strongest bot yet, a bot you steer with English commands, top players beating an AI crew on stream, a ranked ladder for bots only, and a simulator that runs the game 100 times faster. Over two days I put all of it on one Elo scale: Melee's own CPUs, the published learned bots, and frontier LLMs in five different roles. The learned bots are far ahead. LLMs pressing the buttons in real time play like a level 4 CPU; given unlimited time to think, the best one beats the hardest CPU, and so do bots that LLMs wrote in 30 minutes. The surprise came from coaching: a small bot coached by four frontier LLMs did best with no coach at all, just the words "Don't die."
+> **TL;DR.** People have been building bots for Super Smash Bros. Melee for ten years, and the last two months were the busiest of all: the strongest bot yet, a bot you steer with English commands, top players beating an AI crew on stream, a ranked ladder for bots only, and a simulator that runs the game 100 times faster. Over two days I put all of it on one Elo scale: Melee's own CPUs, the published learned bots, and frontier LLMs in five different roles. The learned bots are far ahead. LLMs pressing the buttons in real time play below a level 1 CPU, no better than their autopilot with no model behind it; given unlimited time to think, the best one beats the hardest CPU, and so do bots that LLMs wrote in 30 minutes. The surprise came from coaching: a small bot coached by four frontier LLMs did best with no coach at all, just the words "Don't die."
 
 [Slides from the 5-minute talk](slides.html)
 
@@ -104,9 +104,9 @@ The models were Claude Haiku 4.5, Claude Sonnet 5.5, GPT-6 Luna and GPT-6.1 Sol,
 
 Every entrant plays the same game: Fox vs Fox, Battlefield or Final Destination, 4 stocks, 8 minutes. All the results go into one Elo fit, the rating system from chess: 400 points of difference means the stronger side wins about 10 games out of 11. The hardest CPU, level 9, is pinned at **1500**, and every rating comes with a 95% interval.
 
-There are two boards, because "LLM plays" means two things: a **real-time** board where the game never waits, and an **untimed** board where it waits for every decision. CPUs and bots play the same either way, so they appear on both and tie the two scales together.
+There is one board with two clocks, because "LLM plays" means two things: in **real time** the game never waits, and **untimed** it waits for every decision. CPUs and bots act on every frame and play the same either way, so they tie the two together.
 
-Nobody picked the games by hand. A scheduler chooses the next game every few seconds, favouring games that would tighten the widest intervals for the fewest tokens. Cheap bot games get played a lot; expensive LLM games go where they teach the most. Overnight it played {{games_bench}} games in {{hours}} hours, and with older games that met the same rules and a follow-up study, the boards hold {{games_rt}} real-time and {{games_ut}} untimed games.
+Nobody picked the games by hand. A scheduler chooses the next game every few seconds, favouring games that would tighten the widest intervals for the fewest tokens. Cheap bot games get played a lot; expensive LLM games go where they teach the most. With older games that met the same rules, the board holds {{games_board}} games.
 
 ---
 
@@ -118,9 +118,9 @@ From the top:
 
 - **Faynt never lost**: {{rec rt faynt}}, most of it against Phillip gm. With a perfect record the fit can only say "much better than everyone", so its {{elo rt faynt}} is really a floor. Then Phillip gm ({{elo rt phillip:gm}}) and HAL ({{elo rt hal:MASTER}}).
 - **Reyn being coached** sits around HAL, whoever the coach is. And right near the top, **Reyn with no coach, holding "Don't die."** More on that below.
-- **The bots LLMs wrote** cluster around the level 9 CPU.
-- **CPU levels barely matter in a Fox mirror.** Level 9 is 1500 and level 8 {{elo rt cpu:8}}, but levels 1-7 sit between {{elo rt cpu:4}} and {{elo rt cpu:7}} in no useful order: level 1 ({{elo rt cpu:1}}) is above level 5 ({{elo rt cpu:5}}). The CPU Fox jumps off the stage by itself a lot, and that matters more than its level.
-- **At the bottom: every LLM playing live**, {{live_min}} to {{live_max}}, about a level 4 CPU, together with live Jev.
+- **The bots LLMs wrote** run from {{written_min}} to {{written_max}}: {{n_written_above_cpu9}} of {{n_written}} beat the level 9 CPU, and the best is level with MIMIC.
+- **The CPU levels rise in order**, from {{elo rt cpu:1}} for level 1 to {{elo rt cpu:8}} for level 8 and 1500 for level 9. That is a 20:1 gap in odds between the weakest and the hardest, small next to the 1,000 points between level 9 and Phillip gm.
+- **At the bottom: every LLM playing live**, {{live_min}} to {{live_max}}, below even the level 1 CPU, together with live Jev and two players that use no model at all.
 
 ### 1. In real time, speed beats smarts
 
@@ -128,7 +128,7 @@ From the top:
 
 Given time to think, the models spread out: GPT-6.1 Sol beats the level 9 CPU ({{elo ut llm_paused:gpt-6.1-sol}}), the other three land between {{paused_rest_min}} and {{paused_rest_max}}, and all of them beat Jev ({{elo ut jev_paused}}). Bigger models make better choices than the fast one.
 
-Live, all of that disappears. Every model loses {{tax_min}} to {{tax_max}} points, and they end up level with each other and with Jev. Sol, the best thinker, is the clearest case: its replies take 2-3 seconds, so **{{drop llm_live:gpt-6.1-sol}}** of them arrive too late and get thrown away. Live Sol is basically my default behaviour with an LLM occasionally getting a word in, and it still rates as high as any other live LLM ({{elo rt llm_live:gpt-6.1-sol}}). At this speed, the LLMs add nothing measurable over the simple autopilot they're wrapped in. Even Haiku, fast enough that only {{drop llm_live:claude-haiku-4-5-20251001}} of its replies are dropped, acts on a game state about 70 frames old, and in Melee that's several exchanges ago.
+Live, all of that disappears. Every model loses {{tax_min}} to {{tax_max}} points, and they end up level with each other and with Jev. Sol, the best thinker, is the clearest case: its replies take 2-3 seconds, so **{{drop llm_live:gpt-6.1-sol}}** of them arrive too late and get thrown away. Live Sol is basically my default behaviour with an LLM occasionally getting a word in, and it still rates as high as any other live LLM ({{elo rt llm_live:gpt-6.1-sol}}). I checked that with two controls. The autopilot alone, never asking a model, rates {{elo rt llm_live:none}}, and a player that picks a random action at every decision rates {{elo rt llm_live:random}}. Every live LLM is inside the autopilot's interval: at this speed, the LLMs add nothing measurable over the simple autopilot they're wrapped in. Untimed, the same random player rates {{elo ut llm_paused:random}}, far below every model, so there the thinking does count. Even Haiku, fast enough that only {{drop llm_live:claude-haiku-4-5-20251001}} of its replies are dropped, acts on a game state about 70 frames old, and in Melee that's several exchanges ago.
 
 [LLM Colosseum](https://github.com/OpenGenerativeAI/llm-colosseum) found the same thing in Street Fighter (GPT-3.5 beat GPT-4 by being faster); this puts it on a scale with error bars.
 
@@ -147,18 +147,19 @@ So I dug in, with about 25 extra games per variant:
 
 The lesson is less about LLMs than about the bot: the instruction that matters most is the boring one, and a language interface can quietly turn your coach's words into something else.
 
-### 3. An LLM can write a level 9 CPU in 30 minutes
+### 3. An LLM can write a level 9 CPU in 30 minutes, sometimes
 
-![Bench rating of the bots LLMs wrote in 30 minutes, next to CPUs, scripted bots and Phillip's low tiers](figures/bot-writer.svg)
+![Bench rating of every bot an LLM wrote in a 30-minute session, next to CPUs, MIMIC and Phillip silver](figures/bot-writer.svg)
 
-One 30-minute coding session per model, so **one run each**:
+A coding agent gets a folder with a starter bot, docs and a practice tool, and 30 minutes. I ran {{n_written}} sessions with Claude Opus, Sonnet and Haiku, in three batches:
 
-- **Sonnet 5.5** wrote a compact 135-line bot that shines, grabs shielding opponents and shoots lasers from afar: {{elo rt written:sonnet-5.5/run1}}, just above the level 9 CPU. It declared itself done after 21 minutes and ignored about 25 "keep improving" nudges.
-- **Haiku 4.5** wrote the simplest bot, 108 lines that mostly call a built-in shine combo: {{elo rt written:haiku-4.5/run1}}, and the only written bot to take a game off a learned bot.
-- **Opus 5.5** wrote the most engineered one, 303 lines with a move queue, frame-data-based defence and combos: {{elo rt written:opus-5.5/run1}}, the weakest of the three.
-- An earlier **Sonnet** pilot held a button instead of tapping it, so its main move rarely came out, and it fell off the bottom twice a game: {{elo rt written:sonnet/pilot1}}, the lowest rating on the board.
+- **First try, one run each.** Sonnet's 135-line bot (shine, grab, lasers) rates {{elo rt written:sonnet-5.5/run1}}, Haiku 4.5's 108 lines {{elo rt written:haiku-4.5/run1}}, and Opus's 303 lines, the most engineered, {{elo rt written:opus-5.5/run1}}.
+- **Three runs each at medium effort.** Opus was clearly ahead: {{w_opus_medium_min}} to {{w_opus_medium_max}}, all above the level 9 CPU. Sonnet ({{w_sonnet_medium_min}} to {{w_sonnet_medium_max}}) and Haiku ({{w_haiku_medium_min}} to {{w_haiku_medium_max}}) stayed below it.
+- **Five runs each at high effort, with a better starter bot.** The three models came out level: Opus {{w_opus_high_mean}} on average, Haiku {{w_haiku_high_mean}}, Sonnet {{w_sonnet_high_mean}}.
 
-Two runs of the same model differ far more than different models do. A few lines of input timing decide everything, so this ranks nothing yet.
+That tie says more about the starter than about the models. The new starter was 60 lines that run at the opponent and up-smash, and I had not checked how strong it was before the batch. One Haiku session handed it in unchanged, and it rates {{elo rt written:haiku-5.5-high/run1}}: above the level 9 CPU. Haiku only ever edited it. Opus and Sonnet mostly rewrote it, into as many as 450 lines, and on average ended where they started. Two sessions clearly improved on it (the best reached {{written_max}}), and two made it clearly worse.
+
+So: runs of one model differ by hundreds of points, a few lines of input timing decide more than the model does, and 60 lines of the right idea beat most of what 30 minutes of a strong model adds.
 
 ### 4. Screenshots don't help
 

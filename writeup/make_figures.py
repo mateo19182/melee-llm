@@ -45,9 +45,8 @@ LLMS = [  # model id, short name
 LABELS = {
     "faynt": "Faynt 10M", "mimic": "MIMIC", "hal:MASTER": "HAL (master)", "reyn": "Reyn, uncoached",
     "phillip:gm": "Phillip gm", "phillip:plat": "Phillip plat", "phillip:silver": "Phillip silver",
-    "baseline:rusher": "Script: rusher", "baseline:laser": "Script: laser", "baseline:shine": "Script: shine",
-    "written:sonnet-5.5/run1": "Sonnet 5.5 bot", "written:haiku-4.5/run1": "Haiku 4.5 bot",
-    "written:opus-5.5/run1": "Opus 5.5 bot", "written:sonnet/pilot1": "Sonnet 5.5 bot (pilot)",
+    "llm_live:none": "No model: the live autopilot alone", "llm_live:random": "Random actions, live",
+    "llm_paused:random": "Random actions, untimed",
     "coach:random": "Random coach", "coach_jev": "Jev coach", "jev_live": "Jev, live", "jev_paused": "Jev, untimed",
     "reyn:stock_protection": "Reyn holding \"Don't die.\"", "coach:random,fixed": "One random command, held",
     "coach:random,sticky": "Random coach, sticky", "coach:random,jev6": "Random coach, Jev's top 6",
@@ -66,7 +65,14 @@ for _m, _n in LLMS:
     LABELS[f"coach:{_m}"] = f"{_n} coach"
 
 
+STARTER = "written:haiku-5.5-high/run1"  # handed in the round-2 starter bot unchanged
+
+
 def label(i: str) -> str:
+    if m := re.fullmatch(r"written:(\w+)-([\d.]+)(?:-(\w+))?/run(\d)", i):
+        model, ver, effort, run = m.groups()
+        name = f"{model.capitalize()} {ver}, {effort + ' effort' if effort else 'first try'}, run {run}"
+        return "The starter bot (Haiku left it as it was)" if i == STARTER else name
     return LABELS.get(i) or (f"CPU {i[4:]}" if i.startswith("cpu:") else i)
 
 
@@ -126,22 +132,15 @@ def extract() -> dict:
             p["stock_diff"] = round(statistics.fmean(p["stock_diff"]), 2)
 
     botwriter = {}
-    lb = BOTWRITER / "ladders/v1/leaderboard.json"
-    if lb.exists():
-        metas = {}
-        for m in (BOTWRITER / "sessions").glob("*/meta.json"):
-            meta = json.loads(m.read_text())
-            metas[meta["name"]] = meta
-        for name, e in json.loads(lb.read_text())["entrants"].items():
-            meta = metas.get(name) or metas.get(name.replace("sonnet-5.5/pilot1", "sonnet/pilot1"), {})
-            botwriter[name] = {"roster_score": e["roster_score"], "hard_score": e["hard_score"],
-                               "cpu_level": e["cpu_ladder_level"], "cost_usd": meta.get("cost_usd"),
-                               "lines": meta.get("bot_lines"), "minutes": round(meta.get("wall_s", 0) / 60, 1)}
+    for m in (BOTWRITER / "sessions").glob("*/meta.json"):
+        meta = json.loads(m.read_text())
+        botwriter[meta["name"]] = {"cost_usd": meta.get("cost_usd"), "lines": meta.get("bot_lines"),
+                                   "minutes": round(meta.get("wall_s", 0) / 60, 1)}
 
     return {
         "as_of": st["generated"],
         "games": {"bench": st["games"]["bench"], "imported": st["games"]["imported"],
-                  "rt": st["tracks"]["realtime"]["games"], "ut": st["tracks"]["untimed"]["games"]},
+                  "board": st["board"]["games"]},
         "status": {k: status[k] for k in ("started_at", "updated", "phase", "stop_reason", "budget_tokens",
                                           "spent", "spent_recounted", "games_started", "unconverged") if k in status},
         "boards": boards, "live": drops, "perception": perception, "botwriter": botwriter,
@@ -159,11 +158,21 @@ def numbers(s: dict) -> dict:
     paused = [ut[f"llm_paused:{m}"]["elo"] for m, _ in LLMS if f"llm_paused:{m}" in ut]
     taxes = [ut[f"llm_paused:{m}"]["elo"] - rt[f"llm_live:{m}"]["elo"] for m, _ in LLMS]
     per = s["perception"]
+    groups: dict[str, list] = {}
+    for i, p in rt.items():
+        if m := re.fullmatch(r"written:(\w+)-[\d.]+-(\w+)/run\d", i):
+            groups.setdefault(f"{m[1]}_{m[2]}", []).append(p["elo"])
+    written = [p["elo"] for i, p in rt.items() if i.startswith("written:")]
     return {
+        **{f"w_{g}_mean": f"{statistics.fmean(v):.0f}" for g, v in groups.items()},
+        **{f"w_{g}_min": f"{min(v):.0f}" for g, v in groups.items()},
+        **{f"w_{g}_max": f"{max(v):.0f}" for g, v in groups.items()},
+        "n_written": str(len(written)), "written_min": f"{min(written):.0f}", "written_max": f"{max(written):.0f}",
+        "n_written_above_cpu9": str(sum(e > 1500 for e in written)),
         "as_of": datetime.fromtimestamp(s["as_of"], CET).strftime("%Y-%m-%d %H:%M CET"),
         "hours": f"{(t1 - t0) / 3600:.1f}",
         "games_bench": f"{s['games']['bench']:,}", "games_imported": f"{s['games']['imported']:,}",
-        "games_rt": f"{s['games']['rt']:,}", "games_ut": f"{s['games']['ut']:,}",
+        "games_board": f"{s['games']['board']:,}",
         "coach_llm_min": f"{min(coaches):.0f}", "coach_llm_max": f"{max(coaches):.0f}",
         "coach_delta_min": f"{min(coaches) - rt['coach:random']['elo']:+.0f}",
         "coach_delta_max": f"{max(coaches) - rt['coach:random']['elo']:+.0f}",
@@ -174,10 +183,6 @@ def numbers(s: dict) -> dict:
         "n_entrants": str(len({p["id"] for b in s["boards"].values() for p in b})),
         **{f"perc_{k}": f"{v['w']}–{v['n'] - v['w']}" for k, v in per.items()},
         **{f"perc_{k}_n": str(v["n"]) for k, v in per.items()},
-        **{f"bw_{k.replace('/', '_')}_{f}": str(v[f]) for k, v in s["botwriter"].items()
-           for f in ("roster_score", "lines", "minutes")},
-        **{f"bw_{k.replace('/', '_')}_cost": f"${v['cost_usd']:.2f}" for k, v in s["botwriter"].items()
-           if v.get("cost_usd") is not None},
     }
 
 
@@ -214,8 +219,7 @@ CAT = {"cpu": "ref", "scripted": "ref", "learned": "learned", "coach": "coach", 
        "llm": "llm", "jev": "jev"}
 LEGEND = [("learned", "learned", "Learned bot"), ("coach", "coach", "LLM or Jev coaching Reyn"),
           ("written", "written", "Bot written by an LLM"), ("llm", "llm", "LLM playing directly"),
-          ("jev", "jev", "Jev playing directly"), ("ref", "ref", "Built-in CPU"),
-          ("ref", "scripted", "Scripted bot")]
+          ("jev", "jev", "Jev playing directly"), ("ref", "ref", "Built-in CPU or a player with no model")]
 
 FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif'
 
@@ -333,17 +337,23 @@ def kind(p):
 
 
 def fig_leaderboard(s, n):
-    rows = [p for p in s["boards"]["rt"] if not deepdive(p)]
-    c = Chart("Melee Bench, real-time board",
+    # 27 written bots would swamp the chart: keep the best and the weakest, the rest are in their own figure
+    written = sorted((p for p in s["boards"]["rt"] if p["id"].startswith("written:")), key=lambda p: p["elo"])
+    hide = {p["id"] for p in written[1:-1]}
+    names = {written[-1]["id"]: f"Best written bot ({label(written[-1]['id']).split(',')[0]})",
+             written[0]["id"]: f"Weakest written bot ({label(written[0]['id']).split(',')[0]})"}
+    rows = [p for p in s["boards"]["rt"] if not deepdive(p) and p["id"] not in hide]
+    c = Chart("Melee Bench, everyone who plays in real time",
               f"Fox ditto, BF/FD, full games. Dot: Bradley-Terry Elo; line: 95% interval. Snapshot {n['as_of']}.",
-              len(rows), 900, 2700, list(range(1000, 2701, 250)), legend=LEGEND)
+              len(rows), 500, 2700, list(range(500, 2701, 250)), legend=LEGEND)
     c.ref(1500, "CPU 9 anchor")
     for i, p in enumerate(rows):
         cls, shape = kind(p)
         right = f"{p['elo']:.0f}"
         if p["elo"] > c.x1:
             right = f"{p['elo']:.0f}, {p['w']}–{p['l']}"
-        c.row(i, label(p["id"]), p["elo"], p["lo"], p["hi"], cls, shape, right, emph=p["id"] in SHOW_INACTIVE)
+        c.row(i, names.get(p["id"]) or label(p["id"]), p["elo"], p["lo"], p["hi"], cls, shape, right,
+              emph=p["id"] in SHOW_INACTIVE)
     c.save("leaderboard-realtime.svg")
 
 
@@ -377,10 +387,10 @@ def fig_latency(s, n):
     pairs = [(name, f"llm_paused:{m}", f"llm_live:{m}") for m, name in LLMS] + [("Jev", "jev_paused", "jev_live")]
     pairs.sort(key=lambda t: -ut[t[1]]["elo"])
     c = Chart("The latency tax: same model, untimed vs real time",
-              "Untimed: the game waits for every decision. Real time: 60 fps, never waits. 95% intervals are about ±110-145.",
-              len(pairs), 900, 1900, list(range(900, 1901, 200)), right_w=120,
+              "Untimed: the game waits for every decision. Real time: 60 fps, never waits. 95% intervals are about ±125-190.",
+              len(pairs), 600, 1900, list(range(600, 1901, 200)), right_w=120,
               legend=[("learned", "learned", "Untimed (game waits)"), ("coach", "learned", "Real time")])
-    for v, nm in ((1500, "CPU 9"), (rt["cpu:5"]["elo"], "CPU 5")):
+    for v, nm in ((1500, "CPU 9"), (rt["cpu:1"]["elo"], "CPU 1"), (rt["llm_live:none"]["elo"], "no model")):
         c.ref(v, nm)
     c.out.append(text(c.W - 14, c.top - 10, "replies too stale", "tm", 10.5, "end"))
     for i, (name, a, b) in enumerate(pairs):
@@ -397,20 +407,19 @@ def fig_latency(s, n):
 
 def fig_botwriter(s, n):
     rt = {p["id"]: p for p in s["boards"]["rt"]}
-    ids = [i for i in rt if i.startswith("written:")] + ["baseline:rusher", "baseline:shine", "baseline:laser",
-                                                          "cpu:9", "cpu:8", "cpu:7", "phillip:silver", "phillip:plat"]
+    ids = [i for i in rt if i.startswith("written:")] + ["cpu:9", "cpu:7", "cpu:1", "mimic", "phillip:silver"]
     ids = sorted((i for i in ids if i in rt), key=lambda i: -rt[i]["elo"])
     bw = s["botwriter"]
     c = Chart("Bots written by LLMs in 30 minutes",
-              "Real-time board (token-free bots rate the same on both). Right: API-equivalent cost of the coding session.",
-              len(ids), 900, 2100, list(range(1000, 2101, 200)), right_w=110,
+              "Each row is one 30-minute coding session. Right: API-equivalent cost of the session and the bot's length.",
+              len(ids), 800, 2200, list(range(800, 2201, 200)), label_w=270, right_w=120,
               legend=[("written", "written", "Written by an LLM"), ("learned", "learned", "Learned bot"),
-                      ("ref", "ref", "Built-in CPU"), ("ref", "scripted", "Scripted bot")])
+                      ("ref", "ref", "Built-in CPU")])
     c.ref(1500, "CPU 9 anchor")
     for i, k in enumerate(ids):
         p = rt[k]
         cls, shape = kind(p)
-        meta = bw.get(k.removeprefix("written:").replace("sonnet/pilot1", "sonnet-5.5/pilot1"), {})
+        meta = bw.get(k.removeprefix("written:"), {})
         right = f"${meta['cost_usd']:.2f}, {meta['lines']} lines" if meta.get("cost_usd") else ""
         c.row(i, label(k), p["elo"], p["lo"], p["hi"], cls, shape, right, emph=k.startswith("written:"))
     c.save("bot-writer.svg")
