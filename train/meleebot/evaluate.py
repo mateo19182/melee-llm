@@ -22,12 +22,12 @@ for _p in range(52200, 52240):  # melee_llm.paths.TRAIN_EVAL_PORTS
 _START = threading.Lock()
 
 
-def game(spec, opponent, opp_char, stage, iso, env):
+def game(spec, opponent, opp_char, stage, iso, env, char="YOSHI"):
     port = PORTS.get()
     with _START:  # Dolphin names replays by the second a game starts: keep starts apart
         time.sleep(2)
     cmd = [str(LIVE / ".venv/bin/python"), "-m", "melee_llm.match", "--iso", iso, "--mode", "fast", "--port", str(port),
-           "--p1", spec, "--char1", "YOSHI", "--p2", opponent, "--char2", opp_char, "--stage", stage]
+           "--p1", spec, "--char1", char, "--p2", opponent, "--char2", opp_char, "--stage", stage]
     try:
         out = subprocess.run(cmd, cwd=REPO, env=env, capture_output=True, text=True, timeout=1800)
     finally:
@@ -43,7 +43,7 @@ def main():
     ap.add_argument("run")
     ap.add_argument("--opponent", default="cpu:9"); ap.add_argument("--opp-char", default="FOX")
     ap.add_argument("--games", type=int, default=12); ap.add_argument("--parallel", type=int, default=6)
-    ap.add_argument("--stages", default="BATTLEFIELD,FINAL_DESTINATION,YOSHIS_STORY,DREAMLAND")
+    ap.add_argument("--stages", default=",".join(STAGES))
     ap.add_argument("--iso", default=str(Path.home() / "melee.iso"))
     a = ap.parse_args()
 
