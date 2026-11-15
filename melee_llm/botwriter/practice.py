@@ -2,7 +2,7 @@
 it); `check` replays recorded games through the bot offline to catch crashes and slow frames.
 
   python -m melee_llm.botwriter.practice play  --bot bot.py --opponent cpu:7 --games 5
-  python -m melee_llm.botwriter.practice play  --bot bot.py --opponent baseline:rusher --games 20 --sim
+  python -m melee_llm.botwriter.practice play  --bot bot.py --opponent self --games 20 --sim
   python -m melee_llm.botwriter.practice check --bot bot.py [--replay x.slp]
 """
 from __future__ import annotations
@@ -27,13 +27,13 @@ from melee_llm.sim import world
 
 STAGES = {"fd": melee.Stage.FINAL_DESTINATION, "bf": melee.Stage.BATTLEFIELD,
           "FINAL_DESTINATION": melee.Stage.FINAL_DESTINATION, "BATTLEFIELD": melee.Stage.BATTLEFIELD}
-PRACTICE_SPECS = ("cpu:N (1-9)", "idle", "baseline:NAME", "bot:PATH", "self")
+PRACTICE_SPECS = ("cpu:N (1-9)", "idle", "bot:PATH", "self")
 
 
 def _opponent(spec: str, bot: Path, char: melee.Character, budget, log_dir: Path):
     if spec == "self":
         spec = f"bot:{bot}"
-    if spec.startswith("agent:"):
+    if spec.startswith(("agent:", "baseline:")):  # learned bots stay hidden; the scripted baselines stall
         raise SystemExit(f"opponent {spec!r} is not available in practice; use one of {PRACTICE_SPECS}")
     return make_agent(spec, char, budget, log_dir, allow_agents=False)
 

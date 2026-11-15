@@ -39,6 +39,8 @@ def run_one(run: dict, plan: dict, ports: str) -> dict:
     for flag, key in (("--budget-usd", "budget_usd"), ("--effort", "effort"), ("--iso", "iso"), ("--base-url", "base_url")):
         if run.get(key) or plan.get(key):
             cmd += [flag, str(run.get(key) or plan.get(key))]
+    if run.get("cliproxy", plan.get("cliproxy")):
+        cmd.append("--cliproxy")
     p = subprocess.run(cmd, capture_output=True, text=True)
     try:
         lines = p.stdout.splitlines()

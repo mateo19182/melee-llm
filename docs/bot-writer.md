@@ -14,10 +14,11 @@ Code lives in `melee_llm/botwriter/`:
 | `dolphin.py` | Claims a distinct Slippi port per process so Dolphins run in parallel. Finds the ISO. |
 | `ladder.py`, `ladder.example.json` | Evaluation: jobs, parallel workers, `games.jsonl`, `leaderboard.json`, ratings. |
 | `session.py`, `toolloop.py` | Build a sandbox, run a coding agent with a budget, collect the bot, transcript and cost. |
-| `batch.py`, `round1.json` | Run a plan of sessions N at a time with per-slot port ranges and retries; the paused round-1 plan. |
+| `batch.py`, `round1.json`, `round2.json` | Run a plan of sessions N at a time with per-slot port ranges and retries; the plans of both rounds. |
 | `similarity.py` | Near-copy check of a bot against public SmashBot. |
 | `template/` | What the agent sees: `README.md` (task, rules, scoring, tools), `bot.py` starter, `docs/`. |
-| `baselines/` | Scripted Fox bots (`rusher`, `laser`, `shine`), copied into the sandbox as `opponents/`. |
+| `baselines/` | Scripted Fox bots (`rusher`, `laser`, `shine`). Retired: they stall, so the sandbox and `tools/practice` no longer offer them. |
+| `keyproxy.py` | Loopback proxy that adds the CLIProxy key, so `--cliproxy` sessions never hold it. |
 
 ## Usage
 
@@ -43,6 +44,8 @@ uv run python -m melee_llm.botwriter.ladder run --config ladder.json      # resu
 uv run python -m melee_llm.botwriter.ladder board --config ladder.json    # recompute leaderboard.json
 ```
 
+`--cliproxy` (claude harness) sends the CLI's model calls to CLIProxy at `--base-url` through `keyproxy.py`, so they are billed there and not to the CLI's own sign-in; the same key works in a plan as `"cliproxy": true`. A claude session is nudged to continue until its time is up (the cap of 30 nudges is gone).
+
 Other `session run` flags: `--slippi-ports` (the session's practice port range, default `51590-51593`), `--base-url` (the `openai` harness endpoint, default `http://127.0.0.1:8317/v1`) and `--max-tokens` (its total token budget, default 5,000,000). `ladder run --dry-run` lists the jobs without playing.
 
 ## Bot API
@@ -65,7 +68,7 @@ One file defines `class Bot` with a `character` attribute and `step(gamestate, c
 
 ## Practice tools (sandbox)
 
-- `tools/practice` plays in `fast` mode (headless, unthrottled), alternating spawn sides. Each game prints a compact block plus a final JSON line; the full report, replays and `bot.log` go to `runs/<ts>/`. Opponents: `cpu:N`, `idle`, `baseline:*`, `bot:PATH` and `self`. `agent:` specs (learned bots) are refused, so the hidden tier stays hidden. `--sim` plays in the simulator instead of Dolphin ([simulator.md](simulator.md)).
+- `tools/practice` plays in `fast` mode (headless, unthrottled), alternating spawn sides. Each game prints a compact block plus a final JSON line; the full report, replays and `bot.log` go to `runs/<ts>/`. Opponents: `cpu:N`, `idle`, `bot:PATH` and `self`. `agent:` specs (learned bots) are refused, so the hidden tier stays hidden, and so are `baseline:` specs, which stall. `--sim` plays in the simulator instead of Dolphin ([simulator.md](simulator.md)).
 - `tools/check-bot` needs no ISO. It replays the sample `.slp` files through the bot and reports crashes, exceptions, policy violations and frame times.
 - `tools/inspect-replay` and `tools/time-left`.
 
@@ -157,7 +160,7 @@ Notes on the table:
 - **The 28-game ladder misled on single bots:** Opus run 3 fell from 1931 to 1689 with more opponents, and Haiku run 2, which lost all 28, is level with CPU 3.
 - **Not separable from the first wave:** effort (medium against the default) and load (nine sessions at once against three) both changed.
 - **No session used its 30 minutes.** They ended after 24 to 29 minutes; eight hit the cap of 30 "keep improving" nudges.
-- **Practice games stalled.** 227 of 329 simulator practice games ran to the 8-minute timer, because `rusher` stops attacking after its first up-smash and the starter bot jabs out of range. Seven of the nine sessions mention stalls. The scripted baselines are retired from the ladder and the bench for this reason; they are still in the sandbox as `opponents/` until round 2 replaces them.
+- **Practice games stalled.** 227 of 329 simulator practice games ran to the 8-minute timer, because `rusher` stops attacking after its first up-smash and the starter bot jabs out of range. Seven of the nine sessions mention stalls. The scripted baselines are retired from the ladder, the bench and, since round 2, the sandbox; the starter bot now runs in and up-smashes.
 
 **Harness observations**
 

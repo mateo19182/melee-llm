@@ -1,0 +1,18 @@
+{"minutes": 30, "concurrency": 3, "effort": "high", "cliproxy": true, "ports_start": 51560, "ports_per_slot": 4, "max_retries": 1,
+ "runs": [
+  {"name": "opus-5.5-high/run1", "harness": "claude", "model": "claude-opus-5-5", "budget_usd": 15},
+  {"name": "sonnet-5.5-high/run1", "harness": "claude", "model": "claude-sonnet-5-5", "budget_usd": 8},
+  {"name": "haiku-5.5-high/run1", "harness": "claude", "model": "claude-haiku-5-5", "budget_usd": 3},
+  {"name": "opus-5.5-high/run2", "harness": "claude", "model": "claude-opus-5-5", "budget_usd": 15},
+  {"name": "sonnet-5.5-high/run2", "harness": "claude", "model": "claude-sonnet-5-5", "budget_usd": 8},
+  {"name": "haiku-5.5-high/run2", "harness": "claude", "model": "claude-haiku-5-5", "budget_usd": 3},
+  {"name": "opus-5.5-high/run3", "harness": "claude", "model": "claude-opus-5-5", "budget_usd": 15},
+  {"name": "sonnet-5.5-high/run3", "harness": "claude", "model": "claude-sonnet-5-5", "budget_usd": 8},
+  {"name": "haiku-5.5-high/run3", "harness": "claude", "model": "claude-haiku-5-5", "budget_usd": 3},
+  {"name": "opus-5.5-high/run4", "harness": "claude", "model": "claude-opus-5-5", "budget_usd": 15},
+  {"name": "sonnet-5.5-high/run4", "harness": "claude", "model": "claude-sonnet-5-5", "budget_usd": 8},
+  {"name": "haiku-5.5-high/run4", "harness": "claude", "model": "claude-haiku-5-5", "budget_usd": 3},
+  {"name": "opus-5.5-high/run5", "harness": "claude", "model": "claude-opus-5-5", "budget_usd": 15},
+  {"name": "sonnet-5.5-high/run5", "harness": "claude", "model": "claude-sonnet-5-5", "budget_usd": 8},
+  {"name": "haiku-5.5-high/run5", "harness": "claude", "model": "claude-haiku-5-5", "budget_usd": 3}
+ ]}
