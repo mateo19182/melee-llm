@@ -71,12 +71,20 @@ class ReynBot(BotAgent):
 
 
 class MeleeBot(BotAgent):
-    """Our own behaviour-cloned bot (train/meleebot). arg: run name in data/train/runs (default: bc-6m-v1).
+    """Our own behaviour-cloned bot (train/meleebot). arg: run name in data/train/runs (default: bc-6m-v1),
+    optionally followed by initial steer values, e.g. `bc-20m-ft,delay=3,rank=PRO`.
 
     steer: delay (0-12 frames of reaction delay), rank (UNKNOWN/PLATINUM/DIAMOND/MASTER/PRO), win (1, 0 or None),
     temperature.
     """
     bot, python, cwd = "meleebot", ROOT / "train/.venv/bin/python", ROOT / "train"
+
+    def __init__(self, arg=None, **kw):
+        run, *opts = (arg or "").split(",")
+        super().__init__(run or None, **kw)
+        for o in opts:
+            k, _, v = o.partition("=")
+            self.steer[k] = v if k == "rank" else None if v == "None" else float(v) if k == "temperature" else int(v)
 
     def init_config(self):
         return {"checkpoint": str(DATA / "train/runs" / (self.arg or "bc-6m-v1") / "last.pt"), **self.config}

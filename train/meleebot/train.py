@@ -20,8 +20,8 @@ COND_DROP = 0.1   # share of windows trained without rank / result, so both can 
 
 
 class Windows(torch.utils.data.IterableDataset):
-    def __init__(self, data_dir, games, stick_centers, batch, context, seed, features="v1"):
-        self.data_dir, self.g, self.centers, self.features = data_dir, games, stick_centers, features
+    def __init__(self, data_dir, games, stick_centers, batch, context, seed, features="v1", delays=(0, fe.MAX_DELAY)):
+        self.data_dir, self.g, self.centers, self.features, self.delays = data_dir, games, stick_centers, features, delays
         self.batch, self.context, self.seed = batch, context, seed
         # A window needs MAX_DELAY frames before it and one after; starts are drawn uniformly over frames.
         self.starts = np.maximum(games["length"] - context - fe.MAX_DELAY - 1, 0)
@@ -39,7 +39,7 @@ class Windows(torch.utils.data.IterableDataset):
         pick = rng.integers(0, self.cum[-1], B)
         gi = np.searchsorted(self.cum, pick, side="right")
         within = pick - np.concatenate([[0], self.cum])[gi]
-        delay = rng.integers(0, fe.MAX_DELAY + 1, B)
+        delay = rng.integers(self.delays[0], self.delays[1] + 1, B)
         num = np.empty((B, T, fe.NUM), np.float32)
         actions = np.empty((B, T, 2), np.int64)
         target = np.empty((B, T), FRAME["me_pad"])
@@ -119,8 +119,14 @@ def main():
                     help="wsd: warmup, constant, then a linear cool-down over the last --cooldown share of steps")
     ap.add_argument("--cooldown", type=float, default=0.2)
     ap.add_argument("--dropout", type=float, default=0.1)
+    ap.add_argument("--delays", default=f"0-{fe.MAX_DELAY}",
+                    help="input delays to train on, e.g. 2-4 to focus on netplay (the model still accepts 0-12)")
     ap.add_argument("--compile-mode", help="torch.compile mode, e.g. max-autotune-no-cudagraphs")
     a = ap.parse_args()
+    delays = tuple(int(x) for x in a.delays.split("-"))
+    if not 0 <= delays[0] <= delays[-1] <= fe.MAX_DELAY:
+        raise SystemExit(f"--delays must be within 0-{fe.MAX_DELAY}")
+    delays = (delays[0], delays[-1])
 
     os.makedirs(a.run_dir, exist_ok=True)
     torch.manual_seed(0)
@@ -165,10 +171,10 @@ def main():
     scheds = [torch.optim.lr_scheduler.LambdaLR(o, lambda s: lr_scale(s, a.steps, warmup, a.schedule, a.cooldown))
               for o in opts]
 
-    loader = torch.utils.data.DataLoader(Windows(a.data_dir, train_g, centers, a.batch, c.context, 1, features),
+    loader = torch.utils.data.DataLoader(Windows(a.data_dir, train_g, centers, a.batch, c.context, 1, features, delays),
                                          batch_size=None, num_workers=a.workers, pin_memory=True,
                                          persistent_workers=True, prefetch_factor=4)
-    val_maker = Windows(a.data_dir, val_g, centers, a.batch, c.context, 2, features)
+    val_maker = Windows(a.data_dir, val_g, centers, a.batch, c.context, 2, features, delays)
     val_batches = [val_maker.make(frames, np.random.default_rng(i)) for i in range(20)]
 
     def evaluate():

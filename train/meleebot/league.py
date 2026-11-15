@@ -3,7 +3,8 @@
     uv run python -m meleebot.league play RUN_OR_ROSTER... [--opponents NAME,...] [--games 6] [--parallel 4]
     uv run python -m meleebot.league table
 
-A player is a run directory in data/train/runs/ (plays Yoshi) or a ROSTER name. `play` pits each named
+A player is a run directory in data/train/runs/ (plays Yoshi), optionally `RUN@dN` to play at N frames of
+input delay (netplay is about 2-4; each delay is rated as its own player), or a ROSTER name. `play` pits each named
 player against each opponent (default: the whole roster), cycling the six legal stages. Games append to
 data/train/league/games.jsonl; `table` fits Bradley-Terry ratings (melee_llm.ratings) over all of them, with
 cpu9-fox at 0. The roster's Phillip tiers give the scale fixed points; roster-vs-roster games
@@ -38,8 +39,9 @@ RUNS = LIVE / "data/train/runs"
 def player(name):
     if name in ROSTER:
         return ROSTER[name]
-    if (RUNS / name / "last.pt").exists():
-        return f"meleebot:{name}", "YOSHI"
+    run, _, delay = name.partition("@d")
+    if (RUNS / run / "last.pt").exists():
+        return f"meleebot:{run}" + (f",delay={int(delay)}" if delay else ""), "YOSHI"
     sys.exit(f"{name}: not a roster bot ({', '.join(ROSTER)}) nor a run with last.pt")
 
 
