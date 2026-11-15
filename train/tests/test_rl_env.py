@@ -49,7 +49,7 @@ def reference(enc, obs, row):
 
 def test_frames_match_live_parsing():
     rng = np.random.default_rng(1)
-    env = SelfPlay(4, lambda r: random_matchup(r, CHARS, CHARS), seed=3, max_frame=1000)  # short timer: matches restart
+    env = SelfPlay(4, lambda r, i: random_matchup(r, i, CHARS, CHARS), seed=3, max_frame=1000)  # short timer: matches restart
     centers = np.stack(np.meshgrid(np.arange(-80, 81, 20), np.arange(-80, 81, 20)), -1).reshape(-1, 2).astype(np.float32)
     encoders = [None] * env.n
     inputs = np.zeros((env.n, 2), env.env.raw_action_view.dtype["players"].base)
@@ -93,7 +93,7 @@ def test_actor_matches_full_windows():
     if not ck_path.exists():
         pytest.skip("no bc-20m-ft checkpoint")
     model, ck = load(ck_path, "cpu")
-    env = SelfPlay(2, lambda r: random_matchup(r, CHARS, CHARS), seed=5, max_frame=300)
+    env = SelfPlay(2, lambda r, i: random_matchup(r, i, CHARS, CHARS), seed=5, max_frame=300)
     delay, C = 3, model.config.context
     actor = Actor(model, ck, [0, 1], 0, delay=delay, device="cpu")
     rng = np.random.default_rng(0)

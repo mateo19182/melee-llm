@@ -3,7 +3,7 @@
 Each step takes both players' raw controller inputs for every match and returns the new frame as the
 dataset stores it (schema.FRAME, field for field what play.RawFrames reads from Slippi in a live game):
 frames[:, 0] is player 0's view (me = player 0), frames[:, 1] player 1's. Finished matches restart on
-the next step with a fresh matchup from `matchup(rng)`; frames before 0 are the countdown, where inputs
+the next step with a fresh matchup from `matchup(rng, i)`; frames before 0 are the countdown, where inputs
 do nothing and the dataset has no frames.
 """
 import os
@@ -91,12 +91,12 @@ def reward(prev, cur, damage_weight=0.01):
     return (opp_lost - my_lost) + damage_weight * (opp_taken - my_taken)
 
 
-def random_matchup(rng, chars=("YOSHI",), opp_chars=("YOSHI",)):
+def random_matchup(rng, i=0, chars=("YOSHI",), opp_chars=("YOSHI",)):
     return (rng.choice(STAGE_IDS), CHARACTERS.index(rng.choice(chars)), CHARACTERS.index(rng.choice(opp_chars)))
 
 
 class SelfPlay:
-    """n matches stepped together. matchup(rng) -> (stage id, CHARACTERS index of player 0, of player 1)."""
+    """n matches stepped together. matchup(rng, i) -> (stage id, CHARACTERS index of player 0, of player 1) for match i."""
 
     def __init__(self, n, matchup=random_matchup, seed=0, max_frame=TIMER_FRAMES, ring=1024):
         import melee_sim as msl
@@ -117,7 +117,7 @@ class SelfPlay:
     def _configure(self, ids):
         cfgs = []
         for i in ids:
-            stage, c0, c1 = self.matchup(self.rng)
+            stage, c0, c1 = self.matchup(self.rng, i)
             self._next_stage[i], self._next_chars[i] = fe.STAGE_INDEX[int(stage)], (c0, c1)
             self.games += 1
             cfgs.append(self.msl.MatchConfig(

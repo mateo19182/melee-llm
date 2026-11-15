@@ -14,20 +14,22 @@ from ..schema import RANKS
 
 
 class Ring:
-    """Write slot and attention mask for the current step, shared by every layer's RingCache."""
+    """Write slot and attention mask for the current step, shared by every layer's RingCache. All state lives on
+    the device and changes in place, so a step can be captured in a CUDA graph."""
 
     def __init__(self, n, size, device):
-        self.size, self.w = size, -1
+        self.size = size
+        self.w = torch.full((1,), size - 1, dtype=torch.long, device=device)
         self.owner = torch.full((n, size), -1, dtype=torch.long, device=device)  # game id that wrote each slot
         self.slot = torch.arange(size, device=device)
-        self.mask = None
+        self.mask = torch.zeros(n, 1, 1, size, dtype=torch.bool, device=device)
 
     def advance(self, game, active):
         """game: (n,) id of each match's current game; active: (n,) whether this frame belongs to it."""
-        self.w = (self.w + 1) % self.size
-        self.owner[:, self.w] = torch.where(active, game, -1)
+        self.w.copy_((self.w + 1) % self.size)
+        self.owner.scatter_(1, self.w.expand(len(game), 1), torch.where(active, game, -1)[:, None])
         # a token may always see itself, so matches in their countdown get finite (ignored) outputs
-        self.mask = ((self.owner == game[:, None]) | (self.slot == self.w))[:, None, None]
+        self.mask.copy_(((self.owner == game[:, None]) | (self.slot == self.w))[:, None, None])
 
 
 class RingCache:
@@ -37,15 +39,15 @@ class RingCache:
         self.v = torch.zeros_like(self.k)
 
     def update(self, k, v):
-        self.k[:, :, self.ring.w] = k[:, :, -1]
-        self.v[:, :, self.ring.w] = v[:, :, -1]
+        self.k.index_copy_(2, self.ring.w, k[:, :, -1:].to(self.k.dtype))
+        self.v.index_copy_(2, self.ring.w, v[:, :, -1:].to(self.v.dtype))
         return self.k, self.v, self.ring.mask
 
 
 class Actor:
     """Plays side `side` of matches `idx` (indices into the env's batch)."""
 
-    def __init__(self, model, ckpt, idx, side, delay=3, rank=None, win=1, temperature=1.0, device="cuda"):
+    def __init__(self, model, ckpt, idx, side, delay=3, rank=None, win=1, temperature=1.0, device="cuda", graphs=True):
         self.model, self.idx, self.side, self.delay, self.temperature = model, np.asarray(idx), side, delay, temperature
         self.features = model.config.features
         self.device = torch.device(device)
@@ -61,6 +63,7 @@ class Actor:
                      np.zeros((n, D, 2), np.int64))   # state, opponent pad, actions of the last D frames
         self.game = torch.zeros(n, dtype=torch.long, device=self.device)
         self.age = np.zeros(n, np.int64)
+        self.graph, self.graphs = None, graphs and self.device.type == "cuda"
 
     def tokens(self, frames, start, chars, stage):
         """Model inputs for this frame: dict of (n, ...) numpy arrays, one token per match.
@@ -78,22 +81,71 @@ class Actor:
                     me_char=chars[:, 0], opp_char=chars[:, 1], stage=stage, delay=np.full(n, self.delay),
                     rank=np.full(n, self.rank), win=np.full(n, self.win))
 
-    @torch.inference_mode()
-    def act(self, tok, start, active):
-        """Sample this frame's choice for every match: dict head -> (n,) numpy class indices."""
+    def _inputs(self, tok, start, active):
+        self.age = np.where(start, 0, self.age + 1)
+        x = {k: torch.as_tensor(v)[:, None] if k in ("num", "actions") else torch.as_tensor(v) for k, v in tok.items()}
+        return x, torch.as_tensor(self.age)[:, None], torch.as_tensor(start), torch.as_tensor(active)
+
+    def _step(self, b, pos, start, active):
+        """Device-only work of one frame: advance the ring, run the trunk, sample. Returns (hidden, choice)."""
+        self.game += start.long()
+        self.ring.advance(self.game, active)
         with torch.autocast(self.device.type, torch.bfloat16, enabled=self.device.type == "cuda"):
-            choice = self.model._choose(self.hidden(tok, start, active), self.temperature)
-        return {k: v.cpu().numpy() for k, v in choice.items()}
+            h = self.model.trunk(b, pos, self.caches)[:, -1]
+            return h, self.model._choose(h, self.temperature)
 
     @torch.inference_mode()
+    def run(self, tok, start, active):
+        """(hidden (n, width), choice dict head -> (n,) tensor) for this frame's token of every match."""
+        x = self._inputs(tok, start, active)
+        if not self.graphs:
+            return self._step(*(_to(v, self.device) for v in x))
+        if self.graph is None:
+            self._capture(x)
+        for dst, src in zip(_flat(self.static), _flat(x)):
+            dst.copy_(src, non_blocking=True)
+        self.graph.replay()
+        return self.out
+
+    def _capture(self, x):
+        """Record one step as a CUDA graph (fixed shapes: the ring never grows) and replay it from then on.
+        Capture runs a real step, so ring and game state are saved first and restored after warming up."""
+        self.static = _to(x, self.device)
+        saved = [t.clone() for t in self._state()]
+        s = torch.cuda.Stream()
+        s.wait_stream(torch.cuda.current_stream())
+        with torch.cuda.stream(s):
+            for _ in range(2):
+                self._step(*self.static)
+        torch.cuda.current_stream().wait_stream(s)
+        self.graph = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(self.graph):
+            self.out = self._step(*self.static)
+        for t, v in zip(self._state(), saved):
+            t.copy_(v)
+
+    def _state(self):
+        return [self.game, self.ring.w, self.ring.owner, *(t for c in self.caches for t in (c.k, c.v))]
+
+    def act(self, tok, start, active):
+        """Sample this frame's choice for every match: dict head -> (n,) numpy class indices."""
+        return {k: v.cpu().numpy() for k, v in self.run(tok, start, active)[1].items()}
+
     def hidden(self, tok, start, active):
-        """The trunk's output for this frame's token of every match, (n, width)."""
-        start_t = torch.as_tensor(start, device=self.device)
-        self.game += start_t.long()
-        self.age = np.where(start, 0, self.age + 1)
-        self.ring.advance(self.game, torch.as_tensor(active, device=self.device))
-        b = {k: torch.as_tensor(v, device=self.device)[:, None] if k in ("num", "actions") else torch.as_tensor(v, device=self.device)
-             for k, v in tok.items()}
-        pos = torch.as_tensor(self.age, device=self.device)[:, None]
-        with torch.autocast(self.device.type, torch.bfloat16, enabled=self.device.type == "cuda"):
-            return self.model.trunk(b, pos, self.caches)[:, -1]
+        return self.run(tok, start, active)[0]
+
+
+def _flat(x):
+    if isinstance(x, dict):
+        return [t for v in x.values() for t in _flat(v)]
+    if isinstance(x, (tuple, list)):
+        return [t for v in x for t in _flat(v)]
+    return [x]
+
+
+def _to(x, device):
+    if isinstance(x, dict):
+        return {k: _to(v, device) for k, v in x.items()}
+    if isinstance(x, (tuple, list)):
+        return type(x)(_to(v, device) for v in x)
+    return x.to(device)

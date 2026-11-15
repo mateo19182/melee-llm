@@ -116,7 +116,7 @@ class Policy(nn.Module):
         self.given = nn.ModuleList(nn.Embedding(n, w) for n in sizes[:-1])
 
     def trunk(self, b, pos=None, caches=None, last_only=False, mask=None):
-        """b: num (B,T,NUM), actions (B,T,2), and per-window me_char, opp_char, stage, rank, win, delay (B,).
+        """b: num (B,T,NUM), actions (B,T,2), and me_char, opp_char, stage, rank, win, delay per window (B,) or per token (B,T).
 
         pos: absolute frame positions (T,) or (B,T), default 0..T-1. caches: one Cache per layer, for `step`.
         last_only: return only the last token, (B,1,width); the last block then skips the other tokens.
@@ -131,7 +131,7 @@ class Policy(nn.Module):
             x = x + self.pos.weight[:T]
         per_window = (self.char_me(b["me_char"]) + self.char_opp(b["opp_char"]) + self.stage(b["stage"])
                       + self.rank(b["rank"]) + self.win(b["win"]) + self.delay(b["delay"]))
-        x = x + per_window[:, None]
+        x = x + (per_window[:, None] if per_window.dim() == 2 else per_window)
         angles = rope_angles(pos, self.config.width // self.config.heads) if self.config.pos == "rope" else None
         for i, blk in enumerate(self.blocks):
             x = blk(x, angles, None if caches is None else caches[i], last_only and i == len(self.blocks) - 1, mask)
