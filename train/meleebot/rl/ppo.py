@@ -15,7 +15,8 @@ before the update, so PPO's ratio compares like with like. Loss: clipped policy 
 Reward per frame: stocks taken - stocks lost + --damage * (damage dealt - taken).
 
 Writes RUN_DIR/rl.jsonl (one line per iteration), last.pt (a normal meleebot checkpoint, playable by the
-league and bots), value.pt, and snap-NNNNN.pt every --save-every iterations.
+league and bots), value.pt, snap-NNNNN.pt every --save-every iterations, and replays/*.slp: one game per pool
+group every --replay-minutes (the learner is port 1).
 """
 import argparse
 import copy
@@ -33,6 +34,7 @@ from ..model import HEADS, load, save
 from ..schema import CHARACTERS
 from .env import STAGE_IDS, SelfPlay, reward, to_inputs
 from .policy import Actor
+from .replays import Recorder
 
 
 def parse_pool(spec):
@@ -128,6 +130,7 @@ def main():
     ap.add_argument("--lam", type=float, default=0.95)
     ap.add_argument("--damage", type=float, default=0.01)
     ap.add_argument("--max-frame", type=int, default=8 * 3600)
+    ap.add_argument("--replay-minutes", type=float, default=10, help="record one game per pool group this often")
     ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args()
     os.makedirs(a.run_dir, exist_ok=True)
@@ -167,6 +170,9 @@ def main():
         if len(idx):
             opponents.append((name, Actor(nets[name], ck, idx, 1, delay=a.delay)))
 
+    recorder = Recorder(env, os.path.join(a.run_dir, "replays"))
+    first = {g: int(np.flatnonzero(group == g)[0]) for g in range(len(pool)) if (group == g).any()}
+    last_armed = -1e9
     U, n = a.unroll, a.envs
     inputs = np.zeros((n, 2), env.env.raw_action_view.dtype["players"].base)
     frames, fid = env.frames.copy(), env.frame_id.copy()
@@ -200,6 +206,11 @@ def main():
             rec["age"].append(learner.age.copy())
             before = frames
             out, done, fresh = env.step(inputs)
+            if time.time() - last_armed > a.replay_minutes * 60:
+                last_armed = time.time()
+                for g, i in first.items():
+                    recorder.arm(i, f"it{it:05d}-yoshi-vs-{pool[g][0]}")
+            recorder.after_step(done, fresh)
             frames = out.copy()
             r = reward(before[:, 0], frames[:, 0], a.damage)
             r[fresh] = 0
