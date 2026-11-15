@@ -29,10 +29,13 @@ HEADS = ("shoulder", "cstick", "stick", "buttons")
 
 
 def rope_angles(pos, head_dim):
-    """cos, sin for absolute positions (T,), each (T, head_dim/2); float32, games run to ~30k frames."""
+    """cos, sin for absolute positions (T,) -> (T, head_dim/2) each, or per window (B, T) -> (B, 1, T, head_dim/2).
+    float32: games run to ~30k frames."""
     half = head_dim // 2
     freq = 10000 ** (-torch.arange(half, device=pos.device, dtype=torch.float32) / half)
-    ang = pos.to(torch.float32)[:, None] * freq
+    ang = pos.to(torch.float32)[..., None] * freq
+    if pos.dim() == 2:
+        ang = ang[:, None]
     return ang.cos(), ang.sin()
 
 
@@ -52,24 +55,37 @@ class Block(nn.Module):
         self.mlp = nn.Sequential(nn.Linear(c.width, 4 * c.width), nn.GELU(), nn.Linear(4 * c.width, c.width))
         self.heads, self.drop, self.rope, self.context = c.heads, c.dropout, c.pos == "rope", c.context
 
-    def forward(self, x, angles, cache=None, last_only=False):
-        """cache: dict holding this layer's last context-1 keys/values; x is then the newest token(s).
+    def forward(self, x, angles, cache=None, last_only=False, mask=None):
+        """cache: this layer's Cache (or rl.policy.RingCache); x is then the newest token, which may see everything
+        cached. mask: boolean attention mask (True = may attend), default causal.
 
         last_only: compute only the newest token's output, which may attend to every token."""
         B, T, D = x.shape
         q, k, v = self.qkv(self.ln1(x)).view(B, T, 3, self.heads, D // self.heads).permute(2, 0, 3, 1, 4)
         if self.rope:
             q, k = rope(q, angles), rope(k, angles)
-        if cache is not None:  # one new token, which may see everything cached
-            if "k" in cache:
-                k, v = torch.cat([cache["k"], k], 2), torch.cat([cache["v"], v], 2)
-            cache["k"], cache["v"] = k[:, :, -(self.context - 1):], v[:, :, -(self.context - 1):]
+        if cache is not None:
+            k, v, mask = cache.update(k, v)
         if last_only:
             q, x, T = q[:, :, -1:], x[:, -1:], 1
-        a = F.scaled_dot_product_attention(q, k, v, is_causal=cache is None and T > 1,
+            mask = None if mask is None else mask[..., -1:, :]
+        a = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, is_causal=mask is None and cache is None and T > 1,
                                            dropout_p=self.drop if self.training else 0)
         x = x + F.dropout(self.proj(a.transpose(1, 2).reshape(B, T, D)), self.drop, self.training)
         return x + F.dropout(self.mlp(self.ln2(x)), self.drop, self.training)
+
+
+class Cache:
+    """One layer's keys/values of the last context-1 frames, for `Policy.step` (one game)."""
+
+    def __init__(self, context):
+        self.context, self.k, self.v = context, None, None
+
+    def update(self, k, v):
+        if self.k is not None:
+            k, v = torch.cat([self.k, k], 2), torch.cat([self.v, v], 2)
+        self.k, self.v = k[:, :, -(self.context - 1):], v[:, :, -(self.context - 1):]
+        return k, v, None
 
 
 def _head(width, n):
@@ -99,11 +115,12 @@ class Policy(nn.Module):
         self.out = nn.ModuleList(_head(w, n) for n in sizes)
         self.given = nn.ModuleList(nn.Embedding(n, w) for n in sizes[:-1])
 
-    def trunk(self, b, pos=None, caches=None, last_only=False):
+    def trunk(self, b, pos=None, caches=None, last_only=False, mask=None):
         """b: num (B,T,NUM), actions (B,T,2), and per-window me_char, opp_char, stage, rank, win, delay (B,).
 
-        pos: absolute frame positions (T,), default 0..T-1. caches: one dict per layer, for `step`.
+        pos: absolute frame positions (T,) or (B,T), default 0..T-1. caches: one Cache per layer, for `step`.
         last_only: return only the last token, (B,1,width); the last block then skips the other tokens.
+        mask: (B,1,T,T) boolean attention mask instead of plain causal (e.g. windows spanning two games).
         """
         T = b["num"].shape[1]
         if pos is None:
@@ -117,7 +134,7 @@ class Policy(nn.Module):
         x = x + per_window[:, None]
         angles = rope_angles(pos, self.config.width // self.config.heads) if self.config.pos == "rope" else None
         for i, blk in enumerate(self.blocks):
-            x = blk(x, angles, None if caches is None else caches[i], last_only and i == len(self.blocks) - 1)
+            x = blk(x, angles, None if caches is None else caches[i], last_only and i == len(self.blocks) - 1, mask)
         return self.ln(x)
 
     def forward(self, b):
@@ -149,7 +166,7 @@ class Policy(nn.Module):
         return self._choose(self.trunk(b, torch.as_tensor([pos], device=b["num"].device), caches)[:, -1], temperature)
 
     def new_caches(self):
-        return [{} for _ in self.blocks]
+        return [Cache(self.config.context) for _ in self.blocks]
 
 
 def save(path, model, extra):
