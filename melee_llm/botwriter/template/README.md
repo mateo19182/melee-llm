@@ -48,6 +48,8 @@ class Bot:
   recorded. The evaluator enforces this and logs every attempt. A bot that tries is disqualified.
 - Don't try to find or read the evaluation harness, the hidden opponents or other entries. Work
   inside this directory, and keep scratch files and scripts here too, not in `/tmp`.
+- This machine runs other sessions and services. Stop only processes you started: `pkill` and
+  `killall` here only reach your own, and never use `kill` on a PID you did not start.
 - Write your own bot. Don't port or copy SmashBot or other public Melee bots, from memory or
   otherwise. Entries are checked for near-copies of SmashBot.
 

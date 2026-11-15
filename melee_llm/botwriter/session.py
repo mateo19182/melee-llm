@@ -64,10 +64,55 @@ def make_sandbox(dest: Path, iso: str | None, deadline: float | None, session_id
     _script(tools / "practice", f'{env}\nexec "{py}" -m melee_llm.botwriter.practice play "$@"')
     _script(tools / "check-bot", f'{env}\nexec "{py}" -m melee_llm.botwriter.practice check "$@"')
     _script(tools / "inspect-replay", f'{env}\nexec "{py}" -m melee_llm.botwriter.summary "$@"')
+    # Agents clean up stuck practice games with `pkill -f melee_llm`, which also matches the web server, the
+    # bench and the other sessions. These wrappers come first on PATH and only signal this session's processes.
+    for name in ("pkill", "killall"):
+        (tools / name).write_text(SAFE_KILL.format(py=py))
+        (tools / name).chmod(0o755)
     dl = f"{deadline:.0f}" if deadline else ""
     _script(tools / "time-left", f'python3 -c "import time; d=\'{dl}\'; print(\'no deadline\' if not d else '
                                  f'f\'{{max(0,(float(d)-time.time()))/60:.1f}} minutes left\')"')
     return dest
+
+
+SAFE_KILL = '''#!{py} -I
+"""pkill/killall limited to this session's own processes (those carrying its BOTWRITER_SESSION)."""
+import os, re, signal, sys
+sid = os.environ.get("BOTWRITER_SESSION", "")
+args, sig, full = sys.argv[1:], signal.SIGTERM, os.path.basename(sys.argv[0]) != "killall"
+pats = []
+for a in args:
+    if a in ("-9", "-KILL", "-SIGKILL"):
+        sig = signal.SIGKILL
+    elif not a.startswith("-"):
+        pats.append(a)
+if not sid or not pats:
+    sys.exit("usage: pkill [-9] [-f] PATTERN (only this session's processes are signalled)")
+skip, pid = set(), os.getpid()
+while pid > 1:  # never signal ourselves or the shell and agent above us
+    skip.add(pid)
+    try:
+        pid = int(open(f"/proc/{{pid}}/stat").read().rsplit(")", 1)[1].split()[1])
+    except (OSError, ValueError, IndexError):
+        break
+n = 0
+for p in filter(str.isdigit, os.listdir("/proc")):
+    try:
+        env = open(f"/proc/{{p}}/environ", "rb").read().split(b"\\0")
+        cmd = open(f"/proc/{{p}}/cmdline", "rb").read().replace(b"\\0", b" ").decode(errors="replace")
+    except OSError:
+        continue
+    if int(p) in skip or f"BOTWRITER_SESSION={{sid}}".encode() not in env:
+        continue
+    if any(re.search(x, cmd if full else cmd.split(" ")[0]) for x in pats):
+        try:
+            os.kill(int(p), sig)
+            n += 1
+        except OSError:
+            pass
+print(f"signalled {{n}} of this session's processes")
+sys.exit(0 if n else 1)
+'''
 
 
 def _api_key() -> str:
@@ -111,7 +156,7 @@ def _kill_marked(session_id: str) -> int:
 
 
 CONTINUE = "{left:.0f} minutes are left. Keep improving bot.py (practice, inspect, iterate) until the time is up."
-MAX_QUICK_EXITS = 3  # the CLI returning within seconds this many times in a row is a broken session, not an agent
+MAX_QUICK_EXITS = 3  # the CLI failing within seconds this many times in a row is a broken session, not an agent
 
 
 def _cli_cmd(harness: str, model: str, prompt: str, sandbox: Path, budget_usd: float | None, effort: str | None,
@@ -211,7 +256,8 @@ def run_session(harness: str, model: str, minutes: float, name: str, iso: str | 
             # the agent ended its turn early: nudge it to keep going (claude only; codex exec has no resume here)
             if meta["exit"] == "deadline" or harness != "claude" or left_min < 1:
                 break
-            quick = quick + 1 if time.time() - t_call < 10 else 0
+            # a short reply ("nothing left to do") is not a failure: only a CLI that errors out at once is
+            quick = quick + 1 if time.time() - t_call < 10 and meta["exit"] != "code 0" else 0
             if quick >= MAX_QUICK_EXITS:
                 meta["exit"] = "cli_keeps_exiting"
                 break
