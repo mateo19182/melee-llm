@@ -78,14 +78,68 @@ function card(r) {
           { yFmt: (v) => `${v.toFixed(0)}%`, xMax: r.steps }))));
 }
 
+const POOL_COLORS = { teacher: "var(--warn)", self: "var(--hi)", other: "var(--p2)" };
+const HOURS = 60 * 60 * 60;  // frames per hour of game time
+
+// Rolling sums over the last `k` iterations: win rate per pool group and mean of a per-iteration value.
+function rolling(points, k, f) {
+  const out = [];
+  for (let i = 0; i < points.length; i++) {
+    const w = points.slice(Math.max(0, i - k + 1), i + 1);
+    const y = f(w);
+    if (y !== null) out.push([points[i].frames / HOURS, y]);
+  }
+  return out;
+}
+
+function rlCard(r) {
+  const a = r.args || {};
+  const last = r.train.at(-1) || {};
+  const k = 50;
+  const pool = r.pool || [];
+  const winRate = (g) => (w) => {
+    const n = w.reduce((s, p) => s + ((p.played || {})[g] || 0), 0);
+    return n ? 100 * w.reduce((s, p) => s + ((p.won || {})[g] || 0), 0) / n : null;
+  };
+  const mean = (key, scale = 1) => (w) => w.length ? scale * w.reduce((s, p) => s + (p[key] || 0), 0) / w.length : null;
+  const recent = r.train.slice(-k);
+  const init = (r.init || "").split("/").at(-2) || "?";
+  return h("div.card", {},
+    h("h2", {}, r.name, badge(r.state, STATE[r.state]),
+      h("span.dim", {}, [`self-play RL from ${init}`, `${a.envs} matches at once`, `delay ${a.delay}`,
+        `opponents: ${pool.join(", ")}`].join(" · "))),
+    h("div.row", { style: { gap: "14px", margin: "6px 0 14px", alignItems: "center" } },
+      h("span.mono", {}, `iteration ${fmt.num(r.step)}`),
+      h("span.dim", {}, `${((last.frames || 0) / HOURS).toFixed(1)} h of game time`),
+      r.frames_per_s ? h("span.dim", {}, `${fmt.k(r.frames_per_s)} frames/s`) : null,
+      h("span.faint", {}, `updated ${fmt.ago(r.updated)}`)),
+    h("div.stat-row", {},
+      pool.map((g) => {
+        const v = winRate(g)(recent);
+        return h("div.stat", {}, h("b", {}, v === null ? "–" : `${v.toFixed(0)}%`), h("span", {}, `wins vs ${g}`));
+      }),
+      h("div.stat", {}, h("b", {}, (mean("kl")(recent) ?? 0).toFixed(3)), h("span", {}, "KL to start model")),
+      h("div.stat", {}, h("b", {}, (mean("reward_per_min")(recent) ?? 0).toFixed(2)), h("span", {}, "reward / min"))),
+    h("div.grid2", {},
+      h("div", {}, h("h3", {}, "Win rate ", h("span.dim", {}, `(last ${k} iterations; x: hours of game time)`)),
+        chart(pool.map((g) => ({ label: `vs ${g}`, color: POOL_COLORS[g] || "var(--dim)", points: rolling(r.train, k, winRate(g)) })),
+          { yFmt: (v) => `${v.toFixed(0)}%` })),
+      h("div", {}, h("h3", {}, "Reward and drift ", h("span.dim", {}, "(stocks + damage per minute; KL × 10)")),
+        chart([{ label: "reward / min", color: "var(--ok)", points: rolling(r.train, k, mean("reward_per_min")) },
+          { label: "KL to start × 10", color: "var(--warn)", points: rolling(r.train, k, mean("kl", 10)) }]))),
+    r.replays.length ? h("div", {}, h("h3", {}, "Sample games ", h("span.dim", {}, `(learner on port 1; ${r.n_replays} recorded)`)),
+      h("div.row", { style: { gap: "8px", flexWrap: "wrap" } },
+        r.replays.map((p) => h("a.chip", { href: `/game/${p.id}` }, p.name)))) : null);
+}
+
 export default async function training(root, _params, signal) {
   const list = h("div.stack");
   mount(root, h("div.pagehead", {}, h("h1", {}, "Training"),
-    h("div.lede", {}, "Own-bot runs under data/train/runs/: behaviour cloning on ranked Yoshi replays. "
+    h("div.lede", {}, "Own-bot runs under data/train/runs/: behaviour cloning on replays, then self-play RL in the simulator. "
       + "Validation uses held-out games; accuracy is a sanity check, not strength: strength is measured on the Bench.")),
   list);
   every(5000, async () => {
     const { runs } = await api("/api/training");
-    mount(list, runs.length ? runs.map(card) : h("div.card", {}, emptyState("No training runs yet", "Start one with python -m meleebot.train.")));
+    mount(list, runs.length ? runs.map((r) => (r.kind === "rl" ? rlCard(r) : card(r))) : h("div.card", {}, emptyState("No training runs yet", "Start one with python -m meleebot.train.")));
   }, signal);
 }

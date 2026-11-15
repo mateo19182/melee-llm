@@ -1,8 +1,10 @@
-"""Own-bot training runs (lane B): data/train/runs/<name>/, written by train/meleebot/train.py.
+"""Own-bot training runs (lane B): data/train/runs/<name>/, written by train/meleebot/train.py (behaviour cloning)
+or train/meleebot/rl/ppo.py (self-play RL, run.json kind "rl").
 
 run.json is written once at start (args, size, total steps); train.jsonl gets a point every 100 steps
 and log.jsonl one per validation. Runs started before run.json existed have their stdout in
-runs/<name>.out, which stands in for train.jsonl.
+runs/<name>.out, which stands in for train.jsonl. RL runs log one line per iteration to rl.jsonl and
+record sample games as .slp under the replays folder named in run.json.
 """
 from __future__ import annotations
 
@@ -12,6 +14,7 @@ import time
 from pathlib import Path
 
 from melee_llm.paths import DATA
+from melee_llm.web.games import game_id
 
 RUNS = DATA / "train" / "runs"
 STALE_S = 180
@@ -43,8 +46,29 @@ def _from_stdout(p: Path) -> tuple[list[dict], dict]:
     return points, meta
 
 
+def _state(updated: float, finished: bool) -> str:
+    return "done" if finished else "stopped" if time.time() - updated > STALE_S else "running"
+
+
+def rl_run(d: Path, info: dict) -> dict:
+    points = _jsonl(d / "rl.jsonl")
+    log = d / "rl.jsonl"
+    updated = log.stat().st_mtime if log.exists() else d.stat().st_mtime
+    iters = (info.get("args") or {}).get("iters")
+    it = points[-1]["iter"] if points else 0
+    slps = sorted(Path(info["replays"]).glob("*.slp"), key=lambda p: p.stat().st_mtime) if info.get("replays") else []
+    replays = [{"name": p.stem, "id": game_id(p), "time": p.stat().st_mtime} for p in slps[-12:][::-1]]
+    last = points[-1] if points else {}
+    return {"name": d.name, "kind": "rl", "state": _state(updated, bool(iters and it >= iters)), "step": it,
+            "steps": None, "updated": updated, "frames_per_s": last.get("fps"), "params": info.get("params"),
+            "args": info.get("args"), "init": info.get("init"), "pool": info.get("pool"), "train": points,
+            "replays": replays, "n_replays": len(slps)}
+
+
 def run(d: Path) -> dict:
     info = json.loads((d / "run.json").read_text()) if (d / "run.json").exists() else {}
+    if info.get("kind") == "rl":
+        return rl_run(d, info)
     points = _jsonl(d / "train.jsonl")
     legacy = {}
     if not points:
@@ -54,12 +78,7 @@ def run(d: Path) -> dict:
     updated = max((p.stat().st_mtime for p in files), default=d.stat().st_mtime)
     step = max([p["step"] for p in points] + [e["step"] for e in evals] + [0])
     steps = info.get("steps") or (info.get("args") or {}).get("steps")
-    if info.get("finished_at") or (steps and step >= steps):
-        state = "done"
-    elif time.time() - updated > STALE_S:
-        state = "stopped"
-    else:
-        state = "running"
+    state = _state(updated, bool(info.get("finished_at") or (steps and step >= steps)))
     last = points[-1] if points else {}
     eta = None
     if state == "running" and steps and last.get("minutes") and step:
