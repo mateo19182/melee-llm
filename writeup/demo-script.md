@@ -19,9 +19,9 @@ Show the TL;DR, then scroll to the 2D replay clip under "Melee in 30 seconds".
 
 ## 2. Website tour (2 min)
 
-1. **Bench** (`/bench`): the real-time board.
+1. **Bench** (`/bench`): the board.
    - Point at the **top**: Faynt, 390 wins and 0 losses. Then Phillip, HAL: learned bots trained on human replays.
-   - Point at the **bottom**: every LLM playing live, around a level 4 CPU. "Speed beats smarts: a 2-second thought is 120 frames of getting hit."
+   - Point at the **bottom**: every LLM playing live, below a level 1 CPU and level with a player that uses no model. "Speed beats smarts: a 2-second thought is 120 frames of getting hit."
    - Point at **"Reyn holding 'Don't die.'"**, third from the top. "Four frontier LLMs took turns coaching this bot. It did best with no coach at all, just the words 'Don't die.'"
    - Click an entrant (e.g. GPT-6.1 Sol live) to show its record, games and sample decisions.
 2. **Games** (`/games`), one replay page: the Slippi Lab 2D replay with the AI's decision timeline. Click a decision and the replay jumps to what the model saw.
