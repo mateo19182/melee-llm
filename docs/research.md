@@ -1,6 +1,6 @@
 # Melee AI research notes
 
-Background for this repo: the game, the Melee bots and how each works, the tooling, the community and the people. Compiled from web research on 2026-11-14. Each claim has a link; **[unverified]** means no primary source was found. How we wrap each bot is in [bots.md](bots.md).
+Background for this repo: the game, the Melee bots and how each works, the tooling, the community and the people. Compiled from web research on 2026-11-14, extended on 2026-11-15 with the game's and the scene's history. Each claim has a link; **[unverified]** means no primary source was found. How we wrap each bot is in [bots.md](bots.md).
 
 ## 1. The game, briefly
 
@@ -14,6 +14,17 @@ Background for this repo: the game, the Melee bots and how each works, the tooli
   - Cancelled Smash World Tour in late 2022 ([SmashWiki](https://www.ssbwiki.com/Cancellation_of_Smash_World_Tour_2022)).
   - Published Community Tournament Guidelines in Oct 2023: caps of 200 in-person or 300 online entrants and about $5k in prizes, and no modified game versions ([SmashWiki](https://www.ssbwiki.com/Community_Tournament_Guidelines)).
 - **Why it survives:** Slippi's rollback netplay (June 2020) kept the game alive through COVID ([SmashWiki](https://ssbwiki.com/Project_Slippi)). Its ranked replays are now the training data for every modern bot.
+
+### How the game and the scene got here
+
+- **Made in a hurry.** HAL Laboratory built Melee in about 13 months for the GameCube launch. Sakurai worked "without a single Sunday or holiday off", sometimes 40 hours straight, and was hospitalised once; Satoru Iwata came in to debug and review code, his last job as a programmer ([Engadget](https://www.engadget.com/2010-12-08-sakurai-describes-grueling-development-of-smash-bros-melee.html), [Source Gaming](https://sourcegaming.info/2015/08/10/sakuraimelee/)). Sakurai later called it "the sharpest game in the series".
+- **Release and sales.** Japan 21 Nov 2001, North America 3 Dec 2001, Europe 24 May 2002. The GameCube's best-selling game, over 7 million copies by 2008, with an estimated 70% of GameCube owners owning it ([Wikipedia](https://en.wikipedia.org/wiki/Super_Smash_Bros._Melee)).
+- **Wavedashing was found within weeks.** The first recorded mention is a Smashboards thread from 24 Jan 2002 ("mad dashing"), and its author said he found it in December 2001. Early pros such as Azen and Recipherus showed what it was for, and within a year nearly every top player used it. Sakurai said he had noticed it during development and left it in, thinking it wouldn't matter; Brawl (2008) removed it, along with L-cancelling ([SmashWiki](https://www.ssbwiki.com/Wavedash), [GameFAQs timeline](https://gamefaqs.gamespot.com/boards/516492-super-smash-bros-melee/42199054)). L-cancelling and short hops were already known from Smash 64; "dash dancing" was named by May 2002, DI studied from Aug 2002, the moonwalk found in 2006.
+- **Grassroots scene.** Matt Deezie's Tournament Go series (NorCal, from Apr 2002) set the first common ruleset; MLG ran Melee from 2004 to 2008 ([SmashWiki](https://www.ssbwiki.com/Super_Smash_Bros._Melee_in_competitive_play)). After Brawl came out in 2008 the scene shrank, until the "Five Gods" era (Armada, Mango, Mew2King, Hungrybox, PPMD) ([Metagame](https://www.metagamedoc.com/smash-history)).
+- **Wombo Combo (6 Dec 2008).** Doubles losers' semis at SCSA West Coast Circuit: SilentSpectre (Falcon) and Tang (Fox) take Zhu from 0% to 77% and KO him in seven seconds, ending in shine, up smash, knee. Commentary by HomeMadeWaffles, Phil and Mango ("Happy feet! WOMBO COMBO! That ain't Falco! Where you at?!"). The name comes from a Round Table Pizza menu item, and the combo was rehearsed ahead of time for another opponent. The [original upload](https://www.youtube.com/watch?v=pD_imYhNoQ4) has over 21M views ([SmashWiki](https://www.ssbwiki.com/Wombo_Combo)).
+- **2013, the comeback.** Melee won Evo's charity drive for an eighth game with $94,557 for breast cancer research, beating Skullgirls in the final hours. Three days before the event Nintendo blocked the stream, then reversed within hours after the backlash. Evo 2013 drew 696 Melee entrants, more than twice the previous record ([Melee It On Me](https://meleeitonme.wordpress.com/2013/12/31/melee-in-2013-year-in-review/), [Polygon](https://www.polygon.com/2013/7/9/4508826/super-smash-bros-melee-pulled-from-evo-livestream-nintendo/)). *The Smash Brothers* documentary premiered at The Big House 3 in Oct 2013, crowdfunded with $8,910 ([Wikipedia](https://en.wikipedia.org/wiki/The_Smash_Brothers)).
+- **2020, #FreeMelee.** Nintendo sent The Big House Online a cease and desist in Nov 2020 because it relied on Slippi, cancelling it ([Esportz Network](https://www.esportznetwork.com/nintendos-controversial-relationship-with-smash-and-freemelee/)).
+- **How many inputs?** Rarely measured. A hand count of Isai (Falcon) at MOAST3 in 2005 found 446 actions in 2:33, about 175 APM or 3 per second ([GameFAQs](https://gamefaqs.gamespot.com/boards/516492-super-smash-bros-melee/49551497?page=2)); later write-ups claim 5–8 inputs per second for technical players without a measurement ([Medium](https://medium.com/@jchung.bsd/a-thorough-investigation-of-the-physical-ramifications-of-ssbm-feat-hax-sfat-and-fatgoku-53daa4144fcc)) **[unverified]**. Bursts go much higher, and there is a lot of dead time between them. slippi-js now computes inputs per minute from any replay, so this could be measured properly.
 
 ### Mechanics a bot author needs
 
@@ -76,6 +87,7 @@ Still a good design reference for a rule-based or LLM-written bot, which is what
 - **Design:** hand-written, with a Goals → Strategies → Tactics → Chains hierarchy. A Chain is an input sequence such as a wavedash or a jump-cancelled upsmash. Exact frame data tells it when the opponent is actionable.
 - **First scope:** Fox vs Marth only, on FD or Stadium.
 - **Timeline** ([repo](https://github.com/altf4/SmashBot) tags and commits):
+  - 1 Nov 2015: repo created (as `cpu-level-11`); altf4 had worked on it in secret for about a year before DEF CON, on a dare from a friend ([Bishop Fox](https://bishopfox.com/blog/reversing-video-games-to-create-smashbot-ai)).
   - Jan 2016: announced on Smashboards as ["Level 11 CPU"](https://smashboards.com/threads/level-11-cpu-the-ai-that-beats-you-at-melee.428232/).
   - 2016: tournament builds for Genesis 3, Battlefield VII and SPC VII, then v1.0 in Sep 2016.
   - Aug 2016: presented at DEF CON 24 ([talk](https://www.youtube.com/watch?v=_0Z_oN_CZyA), [Bishop Fox write-up](https://bishopfox.com/blog/reversing-video-games-to-create-smashbot-ai)).
@@ -94,7 +106,8 @@ Paper: "Beating the World's Best at Super Smash Bros. Melee with Deep Reinforcem
 - Input was RAM features. There were no projectiles, so it played Captain Falcon.
 - It acts at 30 Hz with 54 discrete actions: 9 stick positions × 5 single buttons, or none.
 - Reward is ±1 per KO plus a small weight on damage.
-- Training: actor-critic with an entropy bonus (n-step SARSA was also tried), two 128-unit layers, 50+ parallel Dolphins on the MGHPCC cluster with K20 and TITAN X GPUs ([NVIDIA](https://developer.nvidia.com/blog/self-taught-ai-bot-beat-professional-players-at-super-smash-bros/)).
+- One network per character: training one network on several characters failed (it used only the moves good for all of them), so the paper trained six (Fox, Falco, Sheik, Marth, Peach, Falcon) against each other. Starting a new character from an already-trained one was faster; Fox and Falco transferred best.
+- Training: actor-critic with an entropy bonus and TRPO-style steps bounded by KL divergence (Q-learning was also tried, and against the CPU it learned to trick it into suiciding), two 128-unit layers, 50+ parallel Dolphins on the MGHPCC cluster with K20 and TITAN X GPUs ([NVIDIA](https://developer.nvidia.com/blog/self-taught-ai-bot-beat-professional-players-at-super-smash-bros/)).
 - New Scientist reports the team built on SmashBot's groundwork ([article](https://www.newscientist.com/article/2122452-ai-beats-professional-players-at-super-smash-bros-video-game/)).
 
 **How it got strong:**
@@ -249,6 +262,7 @@ The original site is gone; these are Wayback copies: [overview](https://web.arch
 - **Key finding:** "each additional frame of reaction delay hurts performance twice as much as each additional frame of open-loop action execution."
 - **Results:** about 2200 Elo on the Slippi ladder (top ~1%) with 3 frames of observation delay. Win rates: 97.4% vs level 9 CPU, 94.8% vs Phillip with behaviour cloning only, 25% vs Phillip with RL.
 - He writes: "I do not condone running bots on Slippi without permission."
+- **Public play:** [20xx.xyz](https://20xx.xyz/) queues you for a Slippi direct-connect set against a HAL policy, streamed on [twitch.tv/hal_20xx](https://www.twitch.tv/hal_20xx).
 - Part 3 (self-play RL) is planned. Compute was sponsored by Modal. Gu now works on VLAs at 1X, and is a co-author of Frisson's Sep 2026 post "Decoder-Only Transformer Optimization 101" ([Frisson blog](https://www.frisson-labs.com/blog)).
 
 ### MIMIC (erickfm, 2025–2026)
@@ -315,12 +329,16 @@ The closest published work to this repo's coach track, an LLM above a learned po
   - Bots get the raw `.slp` event stream over WebSocket and must answer within 11 ms per frame.
   - Rules: vanilla 1.02 with no UCF, wobbling legal, frozen Stadium; ratings use OpenSkill. It streams on the "stompedlive" Twitch channel.
   - Launch: around 19 Oct 2026, the date of the domain's first TLS certificate.
-  - On 14 Nov 2026 the ladder leader was 67–3, and the most active bot had played over 600 games.
+  - On 14 Nov 2026 the ladder leader was 67–3, and the most active bot had played over 600 games. By developer on 13 Nov: kai 258–86, nescio 35–3, kcho 352–97.
 - **Simulators:**
   - [melee-sim-light](https://github.com/kyhavlov/melee-sim-light): Melee's gameplay code from the decompilation as a batched C library, with a Python API. It matched 287 of 300 of our Dolphin replays frame for frame (the other 13 were unfinished files) and runs about 100× faster than our headless Dolphin. slippi-ai's `sim_env` is built on it. See [simulator.md](simulator.md).
   - Enzyme's decomp-based simulator, used for slippi-ai training.
 - **[melee-unlocked](https://github.com/hero88go/melee-unlocked)** (Sep 2026): a native Windows source port compiled from the decompilation, with Slippi rollback. Its training mode has "Fight a pro": play Phillip as Zain's Marth, Cody's Fox or aMSa's Yoshi, with an 18–21 frame reaction delay. Offline only.
 - **[No Johns](https://github.com/ScavieFae/nojohns):** agents wagering on bot-vs-bot matches, using Phillip or SmashBot as fighters.
+- **The same problems in other real-time games:**
+  - [FightingICE](https://www.ice.ci.ritsumei.ac.jp/~ftgaic/) (Ritsumeikan, competition since 2013, now at IEEE CoG): a 2D fighter built for AI research, with 56 actions, 16.67 ms per decision and a built-in 15-frame observation delay to mimic human reaction.
+  - [GT Sophy](https://www.theverge.com/2022/2/9/22925420/sony-ai-gran-turismo-driving-gt-sophy-nature-paper) (Sony, Gran Turismo, 2022): pure RL, inputs capped at 10 Hz, and still superhuman when trained with 100–250 ms of added reaction delay.
+  - AlphaStar (StarCraft II, 2019): the recipe the Melee bots converged on, supervised learning on 971k human replays, then multi-agent RL with a KL loss toward the supervised policy; Faynt cites it.
 - **Adjacent LLM game benchmarks:**
   - [LLM Colosseum](https://github.com/OpenGenerativeAI/llm-colosseum): Street Fighter III from text state. GPT-3.5 beat GPT-4 there, because speed won.
   - [VideoGameBench](https://arxiv.org/abs/2505.18134): its "Lite" mode pauses the game while the model thinks, the same idea as our `paused` mode.
@@ -339,7 +357,14 @@ The closest published work to this repo's coach track, an LLM above a learned po
 
 ### Slippi (Fizzi / Jas Laferriere)
 
-- **Netplay:** rollback shipped June 2020; Ranked opened Dec 2022. The in-game parts are PowerPC ASM Gecko codes ([slippi-ssbm-asm](https://github.com/project-slippi/slippi-ssbm-asm)).
+- **Timeline** ([SmashWiki](https://www.ssbwiki.com/Project_Slippi), [launch post](https://medium.com/project-slippi/project-public-release-4080c81d7205)):
+  - Feb 2018 private beta; public release 18 Jun 2018 with replays and stats, as a modified Faster Melee build. Fizzi's pitch: "to date we have lost nearly 17 years of Melee competition data".
+  - Sep 2018: SmashLadder makes it the main Dolphin build.
+  - Mar 2019: console-to-Dolphin mirroring for tournament streams; slippi.gg launches with tournament replays.
+  - Nov 2019: Fizzi leaves his job at smash.gg to work on it full time.
+  - 22 Jun 2020: rollback netcode and matchmaking, three months into COVID lockdowns.
+  - 12 Dec 2022: Ranked in early access for subscribers (Slippi 3.0.0), later free on some days, with $5/month for unlimited ([Upcomer](https://upcomer.com/what-is-slippi-ranked-how-to-use-the-online-super-smash-bros-melee-tool/)).
+- **Netplay:** The in-game parts are PowerPC ASM Gecko codes ([slippi-ssbm-asm](https://github.com/project-slippi/slippi-ssbm-asm)).
 - **`.slp` format** ([SPEC.md](https://github.com/project-slippi/slippi-wiki/blob/master/SPEC.md)):
   - The file is UBJSON with two parts: `raw`, a big-endian event stream, and `metadata`.
   - Event 0x35 declares the size of every other event. Fields are only appended, so parsers stay forward-compatible.
@@ -380,7 +405,7 @@ The closest published work to this repo's coach track, an LLM above a learned po
 
 ### Game internals and frame data
 
-- **[doldecomp/melee](https://github.com/doldecomp/melee):** targets NTSC 1.02. [decomp.dev](https://decomp.dev/doldecomp/melee) reports it 100% decompiled and linked; current work is naming. It is the authoritative source for player structs, action-state logic and physics.
+- **[doldecomp/melee](https://github.com/doldecomp/melee):** targets NTSC 1.02. [decomp.dev](https://decomp.dev/doldecomp/melee) reports it 100% decompiled and linked (19,828 functions); current work is naming. The repo dates from Jun 2020; it went from 47% in Nov 2025 to 84% in Aug 2026, then closed the rest in 37 days, reaching 100% on 7 Sep 2026 (PR #3409). Some contributors credit AI help (Claude, and Codex on at least two late PRs), which caused some argument when it was announced ([xenospectrum](https://xenospectrum.com/en/decompilation-match-rate-melee/), [EGamers](https://egamers.io/six-years-later-super-smash-bros-melee-has-been-fully-decompiled-and-it-plays-on-pc/)). It is the authoritative source for player structs, action-state logic and physics.
 - **Action states:** IDs 0x000–0x154 are shared by all characters; higher IDs are character-specific. libmelee's `enums.Action` is the practical lookup table; cross-check it against the [ssbm-data](https://docs.rs/ssbm-data/) crate.
 - **Frame data** (inputs the bot-writer and LLM prompts could cite):
   - [IKneeData](https://ikneedata.com): hitboxes and a knockback calculator.
@@ -389,6 +414,8 @@ The closest published work to this repo's coach track, an LLM above a learned po
   - [SRK SSBM Technical Data](https://srk.shib.live/w/SSBM/Technical_Data).
   - The Smashboards [hitbox and frame data thread](https://smashboards.com/threads/complete-hitbox-frame-data-for-every-character-now-with-ko-percents.383550/).
   - [The Melee Library](https://www.meleelibrary.com) (guides).
+- **How modding got here** ([melee-gci-compiler](https://github.com/dansalvato/melee-gci-compiler)): a save-file buffer overflow giving arbitrary code execution was found by wParam in 2008. Training-focused Gecko codes appeared around 2013 (the 20XX Training Hack Pack, Achilles1515), and 20XX Tournament Edition (2014) was the first memory-card mod aimed at tournaments. Dan Salvato's [Universal Controller Fix](https://www.ssbwiki.com/Universal_Controller_Fix) (8 Aug 2017) widened the dashback window from one frame to two and eased shield drops, so that any controller could do what a lucky one could. Mod authors used to keep their tools private for fear of cheating at majors.
+- **TAS:** the first Melee TASes (2005) used an Action Replay to enable the game's hidden debug mode; later, the 20XX pack's display of exact positions and speeds helped. The [Target Test TAS](https://tasvideos.org/7174S) (PracticalTAS, Mario 64 Master, ajp_anton, tauKhan, 2021) is a catalogue of physics exploits such as Samus's super wavedash. PracticalTAS's videos explain mechanics at the frame level.
 - **Mods:**
   - [UnclePunch Training Mode](https://github.com/UnclePunch/Training-Mode), continued as [TrainingMode Community Edition](https://github.com/AlexanderHarrison/TrainingMode-CommunityEdition): scripted drills for ledge, tech chase and SDI.
   - [20XXTE](https://20xx.me).
