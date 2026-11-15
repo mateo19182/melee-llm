@@ -75,6 +75,30 @@ def norm_stats(frames, rng, features, n=200_000):
     return num.mean(0), np.maximum(num.std(0), 1e-3), f["me_pad"]
 
 
+def lr_scale(step, steps, warmup, schedule, cooldown):
+    """Learning-rate multiplier. cosine: down to 0.1 at the end. wsd: flat at 1, then linear to 0 over the
+    last `cooldown` share, so a run can be extended or cut early by moving only the cool-down."""
+    w = min(1, (step + 1) / warmup)
+    if schedule == "wsd":
+        return w * min(1, (steps - step) / (cooldown * steps))
+    return w * (0.1 + 0.9 * 0.5 * (1 + math.cos(math.pi * min(1, step / steps))))
+
+
+def make_optimizers(model, kind, lr):
+    """AdamW everywhere, or Muon on the blocks' 2-D weight matrices (attention and MLP) with AdamW on
+    embeddings, input, heads, norms and biases. Muon's update is rescaled to AdamW's size
+    (adjust_lr_fn="match_rms_adamw"), so the same --lr works for both."""
+    muon = [p for n, p in model.named_parameters() if kind == "muon" and n.startswith("blocks.") and p.dim() == 2]
+    rest = [(n, p) for n, p in model.named_parameters() if all(p is not q for q in muon)]
+    decay = [p for n, p in rest if p.dim() >= 2 and "weight" in n and "ln" not in n]
+    other = [p for n, p in rest if p.dim() < 2 or "weight" not in n or "ln" in n]
+    opts = [torch.optim.AdamW([dict(params=decay, weight_decay=0.05), dict(params=other, weight_decay=0)],
+                              lr=lr, betas=(0.9, 0.95), fused=True)]
+    if muon:
+        opts.append(torch.optim.Muon(muon, lr=lr, weight_decay=0.05, adjust_lr_fn="match_rms_adamw"))
+    return opts
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("data_dir"); ap.add_argument("run_dir")
@@ -89,6 +113,13 @@ def main():
     ap.add_argument("--pos", choices=["rope", "learned"], default="rope")
     ap.add_argument("--compile", action="store_true")
     ap.add_argument("--init", help="checkpoint to fine-tune instead of training from scratch")
+    ap.add_argument("--optim", choices=["adamw", "muon"], default="adamw",
+                    help="muon: Muon on the transformer blocks' weight matrices, AdamW on the rest")
+    ap.add_argument("--schedule", choices=["cosine", "wsd"], default="cosine",
+                    help="wsd: warmup, constant, then a linear cool-down over the last --cooldown share of steps")
+    ap.add_argument("--cooldown", type=float, default=0.2)
+    ap.add_argument("--dropout", type=float, default=0.1)
+    ap.add_argument("--compile-mode", help="torch.compile mode, e.g. max-autotune-no-cudagraphs")
     a = ap.parse_args()
 
     os.makedirs(a.run_dir, exist_ok=True)
@@ -109,7 +140,7 @@ def main():
         train_g = val_g = subset(games, np.arange(len(games["length"])) == a.overfit_game)
         dropout = 0.0
     else:
-        train_g, val_g, dropout = subset(games, games["val"] == 0), subset(games, games["val"] == 1), 0.1
+        train_g, val_g, dropout = subset(games, games["val"] == 0), subset(games, games["val"] == 1), a.dropout
 
     if init:
         c = model.config
@@ -123,18 +154,16 @@ def main():
         model.stick_centers.copy_(torch.from_numpy(centers))
     dev = "cuda"
     model.to(dev)
-    fwd = torch.compile(model) if a.compile else model   # `model` stays uncompiled for saving
+    torch.set_float32_matmul_precision("high")
+    fwd = torch.compile(model, mode=a.compile_mode) if a.compile else model   # `model` stays uncompiled for saving
     n_params = sum(p.numel() for p in model.parameters())
     print(f"{n_params / 1e6:.1f}M params, train {train_g['length'].sum() / 1e6:.0f}M frames "
           f"in {len(train_g['length'])} games, val {len(val_g['length'])} games", flush=True)
 
-    decay = [p for n, p in model.named_parameters() if p.dim() >= 2 and "weight" in n and "ln" not in n]
-    other = [p for p in model.parameters() if all(p is not q for q in decay)]
-    opt = torch.optim.AdamW([dict(params=decay, weight_decay=0.05), dict(params=other, weight_decay=0)],
-                            lr=a.lr, betas=(0.9, 0.95), fused=True)
+    opts = make_optimizers(model, a.optim, a.lr)
     warmup = min(1000, a.steps // 10)
-    sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda s: min(1, (s + 1) / warmup) * (
-        0.1 + 0.9 * 0.5 * (1 + math.cos(math.pi * min(1, s / a.steps)))))
+    scheds = [torch.optim.lr_scheduler.LambdaLR(o, lambda s: lr_scale(s, a.steps, warmup, a.schedule, a.cooldown))
+              for o in opts]
 
     loader = torch.utils.data.DataLoader(Windows(a.data_dir, train_g, centers, a.batch, c.context, 1, features),
                                          batch_size=None, num_workers=a.workers, pin_memory=True,
@@ -178,17 +207,19 @@ def main():
         b = {k: v.to(dev, non_blocking=True) for k, v in b.items()}
         with torch.autocast("cuda", torch.bfloat16):
             loss, parts, _ = loss_fn(fwd(b), b)
-        opt.zero_grad(set_to_none=True)
+        for o in opts:
+            o.zero_grad(set_to_none=True)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        opt.step(); sched.step()
+        for o, sc in zip(opts, scheds):
+            o.step(); sc.step()
         seen += a.batch * c.context
         running = loss.item() if running is None else 0.98 * running + 0.02 * loss.item()
         if step % 100 == 0:
             el = time.time() - t0
-            print(f"step {step} loss {running:.3f} lr {sched.get_last_lr()[0]:.2e} "
+            print(f"step {step} loss {running:.3f} lr {scheds[0].get_last_lr()[0]:.2e} "
                   f"{seen / el / 1e3:.0f}k frames/s, {el / 60:.1f} min", flush=True)
-            curve.write(json.dumps(dict(step=step, loss=round(running, 4), lr=sched.get_last_lr()[0],
+            curve.write(json.dumps(dict(step=step, loss=round(running, 4), lr=scheds[0].get_last_lr()[0],
                                         frames_per_s=round(seen / el), minutes=round(el / 60, 2))) + "\n")
             curve.flush()
         if step % a.eval_every == 0 or step == a.steps:
