@@ -8,9 +8,8 @@ running at all times.
 
 - 1v1, **Fox vs Fox**, 4 stocks, 8 minutes, on **Final Destination** and **Battlefield**. You play
   both port 1 and port 2.
-- Opponents get harder in tiers: in-game CPUs (levels 1-9), scripted bots, then stronger bots you
-  cannot practice against. You can practice against the CPUs, the scripted bots in `opponents/`,
-  and older copies of your own bot.
+- Opponents get harder in tiers: in-game CPUs (levels 1-9), then stronger bots you cannot
+  practice against. You can practice against the CPUs and older copies of your own bot.
 - Score: your average win rate over the evaluation roster, with each opponent weighted equally
   (a draw counts as half a win). Beating stronger opponents counts as much as beating weak ones,
   so don't stop once you beat CPU level 9.
@@ -48,7 +47,7 @@ class Bot:
   scratch directory during evaluation, and no reading the emulator's memory or the replay being
   recorded. The evaluator enforces this and logs every attempt. A bot that tries is disqualified.
 - Don't try to find or read the evaluation harness, the hidden opponents or other entries. Work
-  inside this directory.
+  inside this directory, and keep scratch files and scripts here too, not in `/tmp`.
 - Write your own bot. Don't port or copy SmashBot or other public Melee bots, from memory or
   otherwise. Entries are checked for near-copies of SmashBot.
 
@@ -57,9 +56,8 @@ class Bot:
 | Command | What it does |
 | --- | --- |
 | `tools/practice --opponent cpu:7 --games 4 [--stage fd\|bf] [--bot bot.py]` | Plays real games headless and unthrottled. Prints one compact block per game: result, stocks, damage dealt and taken, hits, your deaths (kill or self-destruct, percent, blast zone), % time offstage, your most frequent actions, frame-budget stats. Ends with a JSON line. Replays and `bot-port{1,2}.log` go to `runs/<timestamp>/`. |
-| `tools/practice --opponent baseline:rusher` | Scripted opponents. Their source is in `opponents/`. |
 | `tools/practice --opponent bot:old/bot_v2.py` / `--opponent self` | Plays against a saved version of your bot, or a copy of the current one. |
-| `tools/practice --opponent baseline:rusher --games 10 --sim` | Plays in a simulator that runs Melee's own game code without the emulator: several times faster, same per-game summary. No CPU opponents and no replay files. |
+| `tools/practice --opponent bot:old/bot_v2.py --games 10 --sim` | Plays in a simulator that runs Melee's own game code without the emulator: several times faster, same per-game summary. No CPU opponents and no replay files. |
 | `tools/inspect-replay runs/.../Game_x.slp --port 1 [--timeline]` | Summary of one replay from a port's point of view. Without `--port`, prints full JSON for both players. |
 | `tools/check-bot [--bot bot.py]` | **Offline, needs no game.** Runs your bot over recorded replays and reports exceptions, crashes, policy violations and frame times. Run it after every edit. |
 | `tools/time-left` | Time remaining in this session. |
@@ -71,7 +69,7 @@ timeout, or run it in the background and read its output later. Several practice
 run at once. Games are noisy, so play several before you trust a change. Save versions you like with
 `cp bot.py old/bot_vN.py`, then check new versions against them.
 
-`--sim` is for quick iteration against scripted bots and your own versions. Evaluation runs in the
+`--sim` is for quick iteration against your own versions. Evaluation runs in the
 emulator, so confirm a change there before you trust it. Two deterministic bots tend to play the
 same game every time in the simulator, so repeats of one matchup are not new evidence: vary the
 opponent and the stage instead.
@@ -83,4 +81,3 @@ If `tools/practice` says no ISO is configured, you can't play games in this sess
 
 - `docs/libmelee.md`: condensed libmelee API (GameState, PlayerState, Action, stages, FrameData).
 - `docs/framedata.md`: where the frame data lives and how to use it.
-- `opponents/`: the scripted baseline bots, which also show the bot contract working.

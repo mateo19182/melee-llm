@@ -23,7 +23,7 @@ import time
 import uuid
 from pathlib import Path
 
-from melee_llm.botwriter import toolloop
+from melee_llm.botwriter import keyproxy, toolloop
 from melee_llm.botwriter.similarity import similarity
 from melee_llm.paths import ROOT
 
@@ -46,11 +46,10 @@ def _script(path: Path, body: str) -> None:
 
 def make_sandbox(dest: Path, iso: str | None, deadline: float | None, session_id: str = "manual",
                  slippi_ports: str | None = None) -> Path:
-    """Copy the template plus scripted opponents and sample replays; write tool wrappers."""
+    """Copy the template and sample replays; write tool wrappers."""
     if dest.exists():
         raise SystemExit(f"{dest} already exists")
     shutil.copytree(HERE / "template", dest, ignore=shutil.ignore_patterns("__pycache__"))
-    shutil.copytree(HERE / "baselines", dest / "opponents", ignore=shutil.ignore_patterns("__pycache__"))
     for d in ("old", "runs", "replays"):
         (dest / d).mkdir(exist_ok=True)
     for name in SAMPLE_REPLAYS:
@@ -112,7 +111,7 @@ def _kill_marked(session_id: str) -> int:
 
 
 CONTINUE = "{left:.0f} minutes are left. Keep improving bot.py (practice, inspect, iterate) until the time is up."
-MAX_CONTINUATIONS = 30
+MAX_QUICK_EXITS = 3  # the CLI returning within seconds this many times in a row is a broken session, not an agent
 
 
 def _cli_cmd(harness: str, model: str, prompt: str, sandbox: Path, budget_usd: float | None, effort: str | None,
@@ -174,7 +173,8 @@ def _invoke(cmd: list[str], cwd: Path, env: dict, transcript: Path, stderr: Path
 
 
 def run_session(harness: str, model: str, minutes: float, name: str, iso: str | None, budget_usd: float | None,
-                effort: str | None, base_url: str, max_tokens: int, slippi_ports: str | None = None) -> dict:
+                effort: str | None, base_url: str, max_tokens: int, slippi_ports: str | None = None,
+                cliproxy: bool = False) -> dict:
     sid = time.strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(3)
     sdir = HOME / "sessions" / sid
     sandbox = HOME / "sandboxes" / secrets.token_hex(8)  # not under the session record, unguessable sibling
@@ -185,7 +185,7 @@ def run_session(harness: str, model: str, minutes: float, name: str, iso: str | 
     prompt = PROMPT.format(minutes=minutes, no_iso="" if iso else NO_ISO)
     env = _agent_env(sandbox, sid)
     meta = {"id": sid, "name": name, "harness": harness, "model": model, "effort": effort, "minutes": minutes,
-            "budget_usd": budget_usd, "iso": bool(iso), "slippi_ports": slippi_ports, "sandbox": str(sandbox), "started": t0, "prompt": prompt}
+            "budget_usd": budget_usd, "cliproxy": cliproxy, "iso": bool(iso), "slippi_ports": slippi_ports, "sandbox": str(sandbox), "started": t0, "prompt": prompt}
     (sdir / "meta.json").write_text(json.dumps(meta, indent=1))
     transcript = sdir / "transcript.jsonl"
     if harness == "openai":
@@ -194,8 +194,12 @@ def run_session(harness: str, model: str, minutes: float, name: str, iso: str | 
     else:
         claude_session = str(uuid.uuid4()) if harness == "claude" else None
         meta["claude_session"] = claude_session
-        msg, resume = prompt, False
-        for _ in range(MAX_CONTINUATIONS + 1):
+        if cliproxy and harness == "claude":  # the agent talks to CLIProxy through a proxy that holds the key
+            _, url = keyproxy.start(base_url.removesuffix("/v1"), _api_key())
+            env.update(ANTHROPIC_BASE_URL=url, ANTHROPIC_AUTH_TOKEN="botwriter")
+        msg, resume, quick = prompt, False, 0
+        while True:
+            t_call = time.time()
             spent = _cost_from_transcript(harness, transcript).get("cost_usd") or 0
             left_usd = None if budget_usd is None else budget_usd - spent
             if left_usd is not None and left_usd <= 0.01:
@@ -206,6 +210,10 @@ def run_session(harness: str, model: str, minutes: float, name: str, iso: str | 
             left_min = (deadline - time.time()) / 60
             # the agent ended its turn early: nudge it to keep going (claude only; codex exec has no resume here)
             if meta["exit"] == "deadline" or harness != "claude" or left_min < 1:
+                break
+            quick = quick + 1 if time.time() - t_call < 10 else 0
+            if quick >= MAX_QUICK_EXITS:
+                meta["exit"] = "cli_keeps_exiting"
                 break
             msg, resume = CONTINUE.format(left=left_min), True
         meta.update(_cost_from_transcript(harness, transcript))
@@ -255,7 +263,8 @@ def main() -> None:
     r.add_argument("--iso", default=os.environ.get("MELEE_ISO"))
     r.add_argument("--budget-usd", type=float, help="claude only: --max-budget-usd")
     r.add_argument("--effort", help="reasoning effort passed to the CLI")
-    r.add_argument("--base-url", default="http://127.0.0.1:8317/v1", help="openai harness endpoint")
+    r.add_argument("--base-url", default="http://127.0.0.1:8317/v1", help="openai harness endpoint (and CLIProxy for --cliproxy)")
+    r.add_argument("--cliproxy", action="store_true", help="claude harness: bill CLIProxy at --base-url, not the CLI's own sign-in")
     r.add_argument("--max-tokens", type=int, default=5_000_000, help="openai harness total token budget")
     r.add_argument("--slippi-ports", default="51590-51593",
                    help="Slippi port range for this session's practice Dolphins (its size caps concurrent games)")
@@ -265,7 +274,7 @@ def main() -> None:
         print(make_sandbox(Path(a.dest).resolve(), a.iso, dl))
         return
     meta = run_session(a.harness, a.model, a.minutes, a.name or f"{a.model}/{int(time.time())}", a.iso,
-                       a.budget_usd, a.effort, a.base_url, a.max_tokens, a.slippi_ports)
+                       a.budget_usd, a.effort, a.base_url, a.max_tokens, a.slippi_ports, a.cliproxy)
     print(json.dumps({k: meta.get(k) for k in ("id", "name", "exit", "wall_s", "cost_usd", "num_turns", "usage", "bot_lines", "validation", "smashbot_similarity")}, indent=1, default=str))
 
 

@@ -1,4 +1,4 @@
-"""Starter bot: recovers to the stage, walks at the opponent and jabs. Replace it with something good.
+"""Starter bot: recovers to the stage, runs at the opponent and up-smashes. Replace it with something good.
 
 Contract (see README.md): a class named Bot with a `character` attribute and
 `step(gamestate, controller, port, opp_port)`, called once per frame (60 fps, 16 ms budget).
@@ -20,11 +20,13 @@ class Bot:
             return
         dx = opp.position.x - me.position.x
         ctrl.release_button(Button.BUTTON_B)
-        if abs(dx) < 12 and abs(opp.position.y - me.position.y) < 10 and me.on_ground:
+        ctrl.release_button(Button.BUTTON_Y)
+        if abs(dx) < 10 and abs(opp.position.y - me.position.y) < 15 and me.on_ground:
+            # up-smash: flick the C-stick for one frame, then let it return, or it will not smash again
             ctrl.tilt_analog(Button.BUTTON_MAIN, 0.5, 0.5)
-            self.tap(ctrl, Button.BUTTON_A)
+            ctrl.tilt_analog(Button.BUTTON_C, 0.5, 1.0 if gs.frame % 6 == 0 else 0.5)
         else:
-            ctrl.release_button(Button.BUTTON_A)
+            ctrl.tilt_analog(Button.BUTTON_C, 0.5, 0.5)
             ctrl.tilt_analog(Button.BUTTON_MAIN, 1.0 if dx > 0 else 0.0, 0.5)
 
     def recover(self, gs, me, ctrl) -> bool:
