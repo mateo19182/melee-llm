@@ -15,8 +15,8 @@ before the update, so PPO's ratio compares like with like. Loss: clipped policy 
 Reward per frame: stocks taken - stocks lost + --damage * (damage dealt - taken).
 
 Writes RUN_DIR/rl.jsonl (one line per iteration), last.pt (a normal meleebot checkpoint, playable by the
-league and bots), value.pt, snap-NNNNN.pt every --save-every iterations, and replays/*.slp: one game per pool
-group every --replay-minutes (the learner is port 1).
+league and bots), value.pt, snap-NNNNN.pt every --save-every iterations, run.json, and .slp replays (--replay-dir): one game per
+pool group every --replay-minutes, the learner on port 1.
 """
 import argparse
 import copy
@@ -131,6 +131,7 @@ def main():
     ap.add_argument("--damage", type=float, default=0.01)
     ap.add_argument("--max-frame", type=int, default=8 * 3600)
     ap.add_argument("--replay-minutes", type=float, default=10, help="record one game per pool group this often")
+    ap.add_argument("--replay-dir", help="default: the live repo's replays/rl/<run name>, which the web UI lists")
     ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args()
     os.makedirs(a.run_dir, exist_ok=True)
@@ -170,7 +171,8 @@ def main():
         if len(idx):
             opponents.append((name, Actor(nets[name], ck, idx, 1, delay=a.delay)))
 
-    recorder = Recorder(env, os.path.join(a.run_dir, "replays"))
+    replay_dir = a.replay_dir or os.path.expanduser(f"~/projects/ai/melee-llm/replays/rl/{os.path.basename(os.path.abspath(a.run_dir))}")
+    recorder = Recorder(env, replay_dir)
     first = {g: int(np.flatnonzero(group == g)[0]) for g in range(len(pool)) if (group == g).any()}
     last_armed = -1e9
     U, n = a.unroll, a.envs
@@ -180,6 +182,9 @@ def main():
     prev = None  # previous unroll's records: context for this one's windows
     stats = dict(games=0, wins=np.zeros(len(pool)), played=np.zeros(len(pool)))
     log = open(os.path.join(a.run_dir, "rl.jsonl"), "a")
+    with open(os.path.join(a.run_dir, "run.json"), "w") as f:
+        json.dump(dict(kind="rl", args=vars(a), params=sum(p.numel() for p in model.parameters()), replays=replay_dir,
+                       init=os.path.abspath(a.init), pool=[name for name, _ in pool], started_at=time.time()), f, indent=1)
     meta = {k: v for k, v in ck.items() if k not in ("config", "state")} | dict(rl=vars(a), init=os.path.abspath(a.init))
     t_start, frames_total = time.time(), 0
     keys = ("num", "actions", "me_char", "opp_char", "stage", "delay", "rank", "win")
@@ -295,8 +300,8 @@ def main():
                     reward_per_min=round(float(cur["reward"].sum() / max(cur["active"].sum(), 1) * 3600), 4),
                     **{k: round(v / steps, 5) for k, v in agg.items()},
                     games=int(stats["played"].sum()),
-                    win_rate={pool[g][0]: round(stats["wins"][g] / stats["played"][g], 3)
-                              for g in range(len(pool)) if stats["played"][g]})
+                    played={pool[g][0]: int(stats["played"][g]) for g in range(len(pool))},
+                    won={pool[g][0]: float(stats["wins"][g]) for g in range(len(pool))})
         stats["wins"][:], stats["played"][:] = 0, 0
         print(json.dumps(line), flush=True)
         log.write(json.dumps(line) + "\n"); log.flush()
