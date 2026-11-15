@@ -106,7 +106,7 @@ Every entrant plays the same game: Fox vs Fox, Battlefield or Final Destination,
 
 There is one board with two clocks, because "LLM plays" means two things: in **real time** the game never waits, and **untimed** it waits for every decision. CPUs and bots act on every frame and play the same either way, so they tie the two together.
 
-Nobody picked the games by hand. A scheduler chooses the next game every few seconds, favouring games that would tighten the widest intervals for the fewest tokens. Cheap bot games get played a lot; expensive LLM games go where they teach the most. With older games that met the same rules, the board holds 3,782 games.
+Nobody picked the games by hand. A scheduler chooses the next game every few seconds, favouring games that would tighten the widest intervals for the fewest tokens. Cheap bot games get played a lot; expensive LLM games go where they teach the most. With older games that met the same rules, the board holds 4,082 games.
 
 ---
 
@@ -116,9 +116,9 @@ Nobody picked the games by hand. A scheduler chooses the next game every few sec
 
 From the top:
 
-- **Faynt never lost**: 370–0, most of it against Phillip gm. With a perfect record the fit can only say "much better than everyone", so its 3400 is really a floor. Then Phillip gm (2546) and HAL (2297).
+- **Faynt never lost**: 370–0, most of it against Phillip gm. With a perfect record the fit can only say "much better than everyone", so its 3403 is really a floor. Then Phillip gm (2549) and HAL (2300).
 - **Reyn being coached** sits around HAL, whoever the coach is. And right near the top, **Reyn with no coach, holding "Don't die."** More on that below.
-- **The bots LLMs wrote** run from 936 to 1945: 20 of 27 beat the level 9 CPU, and the best is level with MIMIC.
+- **The bots LLMs wrote** run from 936 to 1944: 20 of 27 beat the level 9 CPU, and the best is level with MIMIC.
 - **The CPU levels rise in order**, from 976 for level 1 to 1447 for level 8 and 1500 for level 9. That is a 20:1 gap in odds between the weakest and the hardest, small next to the 1,000 points between level 9 and Phillip gm.
 - **At the bottom: every LLM playing live**, 762 to 878, below even the level 1 CPU, together with live Jev and two players that use no model at all.
 
@@ -136,12 +136,12 @@ Live, all of that disappears. Every model loses 492 to 851 points, and they end 
 
 ![Reyn's rating with no command, with random commands, with each LLM and Jev as coach, and holding "Don't die." all game](figures/coaching.svg)
 
-Reyn with no orders rates 1844. With any coach it jumps by about 300 points, to HAL's level. But the obvious control, a "coach" that picks a random command every 5 seconds without looking at the game, gets most of that jump (2116). The four LLM coaches land +74 to +197 above random, and each of their intervals overlaps the random coach's. Only Jev is clearly better (2398).
+Reyn with no orders rates 1846. With any coach it jumps by about 300 points, to HAL's level. But the obvious control, a "coach" that picks a random command every 5 seconds without looking at the game, gets most of that jump (2141). On ratings alone the LLM coaches' intervals overlap the random coach's, so I had the five of them play each other directly: 300 more games, the same bot on both sides, only the coach differing. Three of the four LLM coaches do beat the random one. Sonnet 5.5 won 29 of its 36 games against it, Haiku 4.5 28 of 37 and GPT-6 Luna 30 of 45, and the three are level with each other, about 170 points above random. GPT-6.1 Sol is not: 15 of 35, and it loses to the other three. It is also the slowest, at 3 seconds a reply. Jev is still the best coach (2403).
 
 So I dug in, with about 25 extra games per variant:
 
-- **Reyn mostly needs *any* command.** One random command held for the whole game already gets it to 2067. Changing it every 5 seconds adds little on top.
-- **Holding "Don't die." all game, with no coach at all, rates 2448**: level with the Jev coach, above every LLM coach, and about 330 above the random one.
+- **Reyn mostly needs *any* command.** One random command held for the whole game already gets it to 2075. Changing it every 5 seconds adds little on top.
+- **Holding "Don't die." all game, with no coach at all, rates 2452**: level with the Jev coach, above every LLM coach, and about 310 above the random one.
 - **Jev wins by accident.** Its favourite pick is "kill now", and Reyn's language layer maps that, every single time, to "Don't die." Counting that, Jev holds "Don't die." 41% of the time. The LLMs pick sensible-sounding plans (edgeguard, play aggressively) that turn out to be worth less.
 - How often the coach speaks (every 1, 5 or 15 seconds) and giving it extra computed features made no measurable difference.
 
@@ -153,11 +153,11 @@ The lesson is less about LLMs than about the bot: the instruction that matters m
 
 A coding agent gets a folder with a starter bot, docs and a practice tool, and 30 minutes. I ran 27 sessions with Claude Opus, Sonnet and Haiku, in three batches:
 
-- **First try, one run each.** Sonnet's 135-line bot (shine, grab, lasers) rates 1753, Haiku 4.5's 108 lines 1599, and Opus's 303 lines, the most engineered, 1527.
-- **Three runs each at medium effort.** Opus was clearly ahead: 1685 to 1858, all above the level 9 CPU. Sonnet (936 to 1233) and Haiku (1060 to 1444) stayed below it.
+- **First try, one run each.** Sonnet's 135-line bot (shine, grab, lasers) rates 1752, Haiku 4.5's 108 lines 1599, and Opus's 303 lines, the most engineered, 1527.
+- **Three runs each at medium effort.** Opus was clearly ahead: 1684 to 1858, all above the level 9 CPU. Sonnet (936 to 1233) and Haiku (1060 to 1444) stayed below it.
 - **Five runs each at high effort, with a better starter bot.** The three models came out level: Opus 1699 on average, Haiku 1686, Sonnet 1660.
 
-That tie says more about the starter than about the models. The new starter was 60 lines that run at the opponent and up-smash, and I had not checked how strong it was before the batch. One Haiku session handed it in unchanged, and it rates 1685: above the level 9 CPU. Haiku only ever edited it. Opus and Sonnet mostly rewrote it, into as many as 450 lines, and on average ended where they started. Two sessions clearly improved on it (the best reached 1945), and two made it clearly worse.
+That tie says more about the starter than about the models. The new starter was 60 lines that run at the opponent and up-smash, and I had not checked how strong it was before the batch. One Haiku session handed it in unchanged, and it rates 1685: above the level 9 CPU. Haiku only ever edited it. Opus and Sonnet mostly rewrote it, into as many as 450 lines, and on average ended where they started. Two sessions clearly improved on it (the best reached 1944), and two made it clearly worse.
 
 So: runs of one model differ by hundreds of points, a few lines of input timing decide more than the model does, and 60 lines of the right idea beat most of what 30 minutes of a strong model adds.
 

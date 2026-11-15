@@ -6,7 +6,9 @@ Ratings on this page are from the joint fit of the main bench's games and the ab
 
 ## Answer
 
-**Reyn needs a command, and the best one is "Don't die."; the coach barely matters beyond that.**
+**Reyn needs a command, and the best one is "Don't die."; the coach matters less than that.**
+
+**Follow-up, 2026-11-15.** The numbers below are from the deep-dive's own games. Afterwards the four LLM coaches and the random coach played 300 direct games against each other (24.6M CLIProxy tokens, all rated). Against the random coach, Sonnet 5.5 went 29-7, Haiku 4.5 28-9 and GPT-6 Luna 30-15 (all games between each pair, older ones included; the 95% intervals on those win rates exclude 50%), and GPT-6.1 Sol 15-20. On the board the first three are at 2303-2324, level with each other, the random coach at 2141 ±100 and Sol at 2130. So three LLM coaches do beat random, by about 170 Elo; Sol, the slowest at 3.1 s a call, does not. The order matches the "implied value per window" below (Haiku and Sonnet above Luna, Sol at random's level).
 
 1. **Most of the gain is having any command at all.** Reyn with no command rates 1746. One random command held all game reaches 2018, and a random coach switching every 5 s only 2068, within noise of it. So the gain is not the perturbation of changing commands.
 2. **Holding "Don't die." all game, with no coach, rates 2398**: level with the Jev coach (2346) and above every LLM coach (2132-2259).

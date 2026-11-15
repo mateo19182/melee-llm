@@ -136,12 +136,12 @@ Live, all of that disappears. Every model loses {{tax_min}} to {{tax_max}} point
 
 ![Reyn's rating with no command, with random commands, with each LLM and Jev as coach, and holding "Don't die." all game](figures/coaching.svg)
 
-Reyn with no orders rates {{elo rt reyn}}. With any coach it jumps by about 300 points, to HAL's level. But the obvious control, a "coach" that picks a random command every 5 seconds without looking at the game, gets most of that jump ({{elo rt coach:random}}). The four LLM coaches land {{coach_delta_min}} to {{coach_delta_max}} above random, and each of their intervals overlaps the random coach's. Only Jev is clearly better ({{elo rt coach_jev}}).
+Reyn with no orders rates {{elo rt reyn}}. With any coach it jumps by about 300 points, to HAL's level. But the obvious control, a "coach" that picks a random command every 5 seconds without looking at the game, gets most of that jump ({{elo rt coach:random}}). On ratings alone the LLM coaches' intervals overlap the random coach's, so I had the five of them play each other directly: 300 more games, the same bot on both sides, only the coach differing. Three of the four LLM coaches do beat the random one. Sonnet 5.5 won 29 of its 36 games against it, Haiku 4.5 28 of 37 and GPT-6 Luna 30 of 45, and the three are level with each other, about 170 points above random. GPT-6.1 Sol is not: 15 of 35, and it loses to the other three. It is also the slowest, at 3 seconds a reply. Jev is still the best coach ({{elo rt coach_jev}}).
 
 So I dug in, with about 25 extra games per variant:
 
 - **Reyn mostly needs *any* command.** One random command held for the whole game already gets it to {{elo rt coach:random,fixed}}. Changing it every 5 seconds adds little on top.
-- **Holding "Don't die." all game, with no coach at all, rates {{elo rt reyn:stock_protection}}**: level with the Jev coach, above every LLM coach, and about 330 above the random one.
+- **Holding "Don't die." all game, with no coach at all, rates {{elo rt reyn:stock_protection}}**: level with the Jev coach, above every LLM coach, and about 310 above the random one.
 - **Jev wins by accident.** Its favourite pick is "kill now", and Reyn's language layer maps that, every single time, to "Don't die." Counting that, Jev holds "Don't die." 41% of the time. The LLMs pick sensible-sounding plans (edgeguard, play aggressively) that turn out to be worth less.
 - How often the coach speaks (every 1, 5 or 15 seconds) and giving it extra computed features made no measurable difference.
 
