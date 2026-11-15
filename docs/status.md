@@ -27,14 +27,15 @@ Where do LLMs land on one Elo scale for real Super Smash Bros. Melee? The scale 
 | Local play | `play.py`: play any bot on the laptop with a controller. | [local-play](local-play.md) |
 | Write-up | "Melee bots are getting really good": history and why now, how the best bots work, findings, on one page at `/writeup/`. | `writeup/` |
 
-## What we learned (bench as of 2026-11-15 evening: one board, 3,782 rated games)
+## What we learned (bench as of 2026-11-15 evening: one board, 4,082 rated games)
 
 Elo is relative to CPU 9 = 1500, ± the 95% half-width.
 
 - **Learned bots are far ahead.** Faynt above 3300 (it has never lost), Phillip gm 2546, HAL 2297, MIMIC 2007, Reyn 1844.
 - **Coaching Reyn works because Reyn needs a command, and "Don't die." is the best one** ([coach-deepdive](coach-deepdive.md)).
-  - Reyn with no command: 1844. Any single random command held all game: about 2050. A random coach switching every 5 s: 2116.
-  - Reyn holding "Don't die." all game, with no coach: **2448**, level with the Jev coach (2398) and above every LLM coach (2190-2313).
+  - Reyn with no command: 1844. Any single random command held all game: about 2050. A random coach switching every 5 s: 2141 ±100.
+  - Reyn holding "Don't die." all game, with no coach: **2452**, level with the Jev coach (2403) and above every LLM coach by point estimate (2130-2324; its own interval is ±162 on 32 games).
+  - **Three of four LLM coaches beat the random coach** in 300 direct coach-vs-coach games (2026-11-15, 24.6M tokens): Sonnet 5.5 won 29 of 36 against it, Haiku 4.5 28 of 37, GPT-6 Luna 30 of 45; they rate 2303-2324, level with each other. GPT-6.1 Sol does not (15 of 35, 2130); it is the slowest coach at 3.1 s a call.
   - Jev coaches best because it ends up holding "Don't die." 41% of the time, mostly via a router accident.
 - **LLMs playing directly in real time are below CPU 1** (762-878, CPU 1 is 976) **and no better than never asking the model**: the live player's fallback alone scores 824 ±105, random macros 700 ±111. The earlier "about CPU 4" came from wins over scripted bots that stalled, now retired.
 - **Given unlimited thinking time, GPT-6.1 Sol beats CPU 9** (1729 ±140). The other paused LLMs land between CPU 7 and CPU 9 (1254-1474, on 19 to 33 games each). Random macros untimed score 732, so here the model does matter.
