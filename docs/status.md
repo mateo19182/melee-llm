@@ -1,6 +1,6 @@
 # Status: what we built, what we learned, what's left
 
-As of 2026-11-14. This page is the map; each track's details are in its own doc.
+As of 2026-11-15. This page is the map; each track's details are in its own doc.
 
 ## The question
 
@@ -18,7 +18,7 @@ Where do LLMs land on one Elo scale for real Super Smash Bros. Melee? The scale 
 | Bot-writer | A coding agent gets 30 minutes to write a Python bot, which is then laddered. | [bot-writer](bot-writer.md) |
 | Perception test | Screenshots vs text state. | [perception](perception.md) |
 | LLM vs LLM arena | Paused LLMs play each other. | [llm-arena](llm-arena.md) |
-| **Melee Bench** | One rating per track for every entrant, anchored to CPU 9 = 1500. Fox ditto on Battlefield and Final Destination. | [bench](bench.md) |
+| **Melee Bench** | One rating for every entrant, anchored to CPU 9 = 1500. Fox ditto on Battlefield and Final Destination. | [bench](bench.md) |
 | Web UI | https://melee.m19182.dev, public since 2026-11-14 and styled after Melee's menus: Bench, Live, All matches, Launch, Games, Arena, Docs, Write-up. Visitors browse and queue limited matches; Mateo signs in at `/login`. | [web-ui](web-ui.md) |
 | Netplay | You vs any bot over Slippi Direct Connect. Built, not yet played. | [netplay](netplay.md) |
 | Live commentary | Play-by-play ticker on the Live page, plus an optional two-caster LLM booth with ElevenLabs voices (only while someone listens). | [web-ui](web-ui.md) |
@@ -27,20 +27,20 @@ Where do LLMs land on one Elo scale for real Super Smash Bros. Melee? The scale 
 | Local play | `play.py`: play any bot on the laptop with a controller. | [local-play](local-play.md) |
 | Write-up | "Melee bots are getting really good": history and why now, how the best bots work, findings, on one page at `/writeup/`. | `writeup/` |
 
-## What we learned (final bench: 2,325 real-time games, 1,993 untimed)
+## What we learned (bench as of 2026-11-15: one board, 3,089 rated games)
 
 Elo is relative to CPU 9 = 1500, ± the 95% half-width.
 
-- **Learned bots are far ahead.** Faynt 3349 ±237, Phillip gm 2489, HAL 2244, MIMIC 1931, Reyn 1765.
+- **Learned bots are far ahead.** Faynt above 3267 (it has never lost), Phillip gm 2490, HAL 2240, MIMIC 1943, Reyn 1781.
 - **Coaching Reyn works because Reyn needs a command, and "Don't die." is the best one** ([coach-deepdive](coach-deepdive.md)).
   - Reyn with no command: 1765. Any single random command held all game: ~2020. A random coach switching every 5 s: ~2070-2100.
   - Reyn holding "Don't die." all game, with no coach: **2398**, level with the Jev coach (2346-2371) and above every LLM coach (2132-2275).
   - Jev coaches best because it ends up holding "Don't die." 41% of the time, mostly via a router accident.
-- **LLMs playing directly in real time are about CPU 4 strength** (1042-1102).
-- **Given unlimited thinking time, GPT-6.1 Sol beats CPU 9** (1691). The other paused LLMs land around CPU 8 (1325-1436).
-- **30 minutes of LLM coding gives a CPU-9-class bot.** Sonnet's scored 1664, Haiku's 1605 and Opus's 1536, one run each.
+- **LLMs playing directly in real time are below CPU 1** (741-859, CPU 1 is 958) **and no better than never asking the model**: the live player's fallback alone scores 805 ±107, random macros 682 ±113. The earlier "about CPU 4" came from wins over scripted bots that stalled, now retired.
+- **Given unlimited thinking time, GPT-6.1 Sol beats CPU 9** (1725 ±152). The other paused LLMs land between CPU 7 and CPU 9 (1246-1469, on 19 to 31 games each). Random macros untimed score 713, so here the model does matter.
+- **30 minutes of LLM coding gives anything from a CPU 2 to a bot above Reyn.** Twelve bots: Opus at medium effort 1825, 1689, 1680; first wave Sonnet 1756, Haiku 4.5 1579, Opus 1502; Haiku 5.5 1400, 1169, 1042; Sonnet 5.5 at medium 1227, 1210, 918 ([bot-writer](bot-writer.md)).
 - **Screenshots don't help.** Image-only play is worse than text; text plus image is no better than text.
-- **CPU levels aren't monotonic** in Fox ditto (levels 1, 3 and 7 are about equal). This looks like a real Melee quirk.
+- **CPU levels rise as expected** once they play each other: 958, 965, 1048, 1086, 1171, 1167, 1272, 1423, 1500 for levels 1 to 9 (±86 to ±98). The earlier "not monotonic" was too few games.
 - **Caveats:**
   - Live GPT-6.1 Sol discards ~95% of its replies because they arrive more than 2 s late, so its live rating is mostly the fallback behaviour.
   - The overnight run counted 100.1M CLIProxy tokens, but discarded replies weren't counted then: real spend was **115.1M** (recounted from the logs; `spent_recounted` in `data/bench/status.json`). Fixed: every call's tokens now count ([bench](bench.md#scheduler-active-sampling-no-token-cap)).

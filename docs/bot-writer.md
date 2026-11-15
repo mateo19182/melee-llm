@@ -142,17 +142,19 @@ Notes on the table:
 
 | model | run | vs CPU 7 | vs CPU 8 | vs CPU 9 | vs MIMIC | bench Elo | cost | LoC |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Opus 5.5 | 3 | 100% | 100% | 100% | 1 / 4 | 1931 | $3.95 | 467 |
-| Opus 5.5 | 1 | 100% | 100% | 100% | 0 / 4 | 1864 | $3.30 | 400 |
-| Opus 5.5 | 2 | 88% | 100% | 50% | 1 / 4 | 1668 | $2.10 | 381 |
-| Haiku 5.5 | 3 | 50% | 75% | 38% | 0 / 4 | 1441 | $0.06 | 75 |
-| Sonnet 5.5 | 3 | 50% | 0% | 50% | 0 / 4 | 1292 | $0.68 | 145 |
-| Sonnet 5.5 | 2 | 38% | 13% | 13% | 0 / 4 | 1185 | $0.67 | 130 |
-| Sonnet 5.5 | 1 | 25% | 13% | 13% | 0 / 4 | 1142 | $0.37 | 68 |
-| Haiku 5.5 | 1 | 25% | 13% | 13% | 0 / 4 | 1142 | $0.11 | 180 |
-| Haiku 5.5 | 2 | 0% | 0% | 0% | 0 / 4 | < 1160 | $0.12 | 74 |
+| Opus 5.5 | 3 | 100% | 100% | 100% | 1 / 4 | 1689 ±98 | $3.95 | 467 |
+| Opus 5.5 | 1 | 100% | 100% | 100% | 0 / 4 | 1825 ±99 | $3.30 | 400 |
+| Opus 5.5 | 2 | 88% | 100% | 50% | 1 / 4 | 1680 ±91 | $2.10 | 381 |
+| Haiku 5.5 | 3 | 50% | 75% | 38% | 0 / 4 | 1400 ±89 | $0.06 | 75 |
+| Sonnet 5.5 | 3 | 50% | 0% | 50% | 0 / 4 | 1227 ±87 | $0.68 | 145 |
+| Sonnet 5.5 | 2 | 38% | 13% | 13% | 0 / 4 | 918 ±92 | $0.67 | 130 |
+| Sonnet 5.5 | 1 | 25% | 13% | 13% | 0 / 4 | 1210 ±96 | $0.37 | 68 |
+| Haiku 5.5 | 1 | 25% | 13% | 13% | 0 / 4 | 1169 ±96 | $0.11 | 180 |
+| Haiku 5.5 | 2 | 0% | 0% | 0% | 0 / 4 | 1042 ±96 | $0.12 | 74 |
 
-- **Opus is clearly ahead** here, the opposite of the first wave. Two of its bots won all 24 CPU games and two took a game off MIMIC. With 28 games a bot the intervals are about ±200, so only the gap between Opus and the other two is reliable.
+- **Bench Elo** is from the board after the bench run of 2026-11-15 (76 to 203 games per bot, CPU 9 = 1500); the win rates are the 28 ladder games. The first wave on the same board: Sonnet 5.5 1756 ±80, Haiku 4.5 1579 ±90, Opus 5.5 1502 ±91.
+- **Opus is clearly ahead** here, the opposite of the first wave: its three bots (mean 1731) are all above CPU 9 and every Sonnet and Haiku bot of this wave is below CPU 8 (1423). Sonnet's mean is 1118 and Haiku's 1204, with runs of one model up to 360 apart.
+- **The 28-game ladder misled on single bots:** Opus run 3 fell from 1931 to 1689 with more opponents, and Haiku run 2, which lost all 28, is level with CPU 3.
 - **Not separable from the first wave:** effort (medium against the default) and load (nine sessions at once against three) both changed.
 - **No session used its 30 minutes.** They ended after 24 to 29 minutes; eight hit the cap of 30 "keep improving" nudges.
 - **Practice games stalled.** 227 of 329 simulator practice games ran to the 8-minute timer, because `rusher` stops attacking after its first up-smash and the starter bot jabs out of range. Seven of the nine sessions mention stalls. The scripted baselines are retired from the ladder and the bench for this reason; they are still in the sandbox as `opponents/` until round 2 replaces them.
