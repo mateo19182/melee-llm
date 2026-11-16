@@ -27,7 +27,7 @@ def _jsonl(p: Path) -> list[dict]:
     out = []
     for ln in p.read_text().splitlines():
         try:
-            out.append(json.loads(ln))
+            out.append(json.loads(ln, parse_constant=lambda _: None))  # NaN/Infinity (a diverged run) aren't valid JSON out
         except ValueError:
             pass
     return out
