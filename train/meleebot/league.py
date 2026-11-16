@@ -29,6 +29,7 @@ ROSTER = {  # name -> (match spec, character); see docs/bots.md
     "mimic-marth": ("mimic:marth", "MARTH"),
     "hal-master-fox": ("hal:MASTER", "FOX"),
     "hal-master-yoshi": ("hal:MASTER", "YOSHI"),
+    "hal-amsa-yoshi": ("hal:AMSA#0", "YOSHI"),   # imitating aMSa, the one pro Yoshi in its training data
     "faynt-10m-fox": ("faynt:10M-Arena", "FOX"),
 }
 ANCHOR = "cpu9-fox"
