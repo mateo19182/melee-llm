@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.12"
 
 [[package]]
@@ -582,6 +582,14 @@ wheels = [
 ]
 
 [[package]]
+name = "melee-brute"
+version = "0.0.0"
+source = { git = "https://github.com/mateo19182/melee-brute?rev=1d7157817907555c7aea7ce61ac644c16058336a#1d7157817907555c7aea7ce61ac644c16058336a" }
+dependencies = [
+    { name = "numpy" },
+]
+
+[[package]]
 name = "melee-llm"
 version = "0.1.0"
 source = { virtual = "." }
@@ -590,7 +598,7 @@ dependencies = [
     { name = "httpx" },
     { name = "markdown-it-py" },
     { name = "melee" },
-    { name = "melee-sim-light" },
+    { name = "melee-brute" },
     { name = "openai" },
     { name = "pillow" },
     { name = "starlette" },
@@ -611,7 +619,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "markdown-it-py", specifier = ">=4.3.0" },
     { name = "melee", specifier = ">=0.47.6" },
-    { name = "melee-sim-light", git = "https://github.com/kyhavlov/melee-sim-light?rev=eea7b5fbcd0243baf4c1956d52f3e1d0f536edc4" },
+    { name = "melee-brute", git = "https://github.com/mateo19182/melee-brute?rev=1d7157817907555c7aea7ce61ac644c16058336a" },
     { name = "openai", specifier = ">=3.50.0" },
     { name = "pillow", specifier = ">=13.0.0" },
     { name = "starlette", specifier = ">=1.10.0" },
@@ -624,14 +632,6 @@ dev = [
     { name = "peppi-py", specifier = ">=0.8.6" },
     { name = "pytest", specifier = ">=8" },
     { name = "ruff", specifier = ">=0.8" },
-]
-
-[[package]]
-name = "melee-sim-light"
-version = "0.0.0"
-source = { git = "https://github.com/kyhavlov/melee-sim-light?rev=eea7b5fbcd0243baf4c1956d52f3e1d0f536edc4#eea7b5fbcd0243baf4c1956d52f3e1d0f536edc4" }
-dependencies = [
-    { name = "numpy" },
 ]
 
 [[package]]

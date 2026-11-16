@@ -65,9 +65,9 @@ def test_force_menus_follow_the_fighter_state():
 
 
 def test_rollback_reproduces_the_game_exactly():
-    """Needs the patched simulator (scripts/patch_sim.sh) and its game data."""
-    from melee_llm.sim import rollback
-    if not world.available() or not rollback.available():
+    """Needs the simulator's game data."""
+    from melee_brute import rollback
+    if not world.available():
         pytest.skip("patched melee-sim-light with game data not installed")
     from melee_llm.solver import force
     from melee_llm.solver.game import Sim
