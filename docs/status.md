@@ -23,7 +23,7 @@ Where do LLMs land on one Elo scale for real Super Smash Bros. Melee? The scale 
 | Netplay | You vs any bot over Slippi Direct Connect. Built, not yet played. | [netplay](netplay.md) |
 | Live commentary | Play-by-play ticker on the Live page, plus an optional two-caster LLM booth with ElevenLabs voices (only while someone listens). | [web-ui](web-ui.md) |
 | Simulator | `--mode sim`: games in melee-sim-light (Melee's decompiled gameplay code), no Dolphin. Checked frame for frame against Dolphin replays. Learned bots run in it through Slippi events; no CPUs. | [simulator](simulator.md) |
-| m19182-yoshi | Our Yoshi (`train/`). Our own behaviour-cloned models reach −66 league Elo; the best Yoshi is HAL's 247M model imitating aMSa. | [experiments](experiments.md) |
+| m19182-yoshi | Our own behaviour-cloned Yoshi (`train/`). `bc-6m-v1` lost 12 of 12 to CPU 9; `bc-20m-v2` won 1 of 12. | `train/` |
 | Local play | `play.py`: play any bot on the laptop with a controller. | [local-play](local-play.md) |
 | Write-up | "Melee bots are getting really good": history and why now, how the best bots work, findings, on one page at `/writeup/`. | `writeup/` |
 
