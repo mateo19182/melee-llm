@@ -15,16 +15,16 @@ def prog(d, default=N): return lambda f: d.get(f, default)
 EXITS = {
  "hold shield":   lambda f: SH,
  "drop shield":   lambda f: N,
- "jump":          prog({0: (X, 0, 0, 0)}),
- "jump>shine f3": prog({0: (X, 0, 0, 0), 3: (B, 0, -80, 0)}),
- "jump>shine f4": prog({0: (X, 0, 0, 0), 4: (B, 0, -80, 0)}),
- "jump>nair":     prog({0: (X, 0, 0, 0), 3: (A, 0, 0, 0), 4: (A, 0, 0, 0)}),
- "wavedash back": prog({0: (X, 0, 0, 0), 3: (R, 70, -40, 255), 4: (R, 70, -40, 255)}),
+ "jump":          prog({0: (R | X, 0, 0, 255)}),
+ "jump>shine f3": prog({0: (R | X, 0, 0, 255), 3: (B, 0, -80, 0)}),
+ "jump>shine f4": prog({0: (R | X, 0, 0, 255), 4: (B, 0, -80, 0)}),
+ "jump>nair":     prog({0: (R | X, 0, 0, 255), 3: (A, 0, 0, 0), 4: (A, 0, 0, 0)}),
+ "wavedash back": prog({0: (R | X, 0, 0, 255), 3: (R, 70, -40, 255), 4: (R, 70, -40, 255)}),
  "roll away":     prog({0: (R, 80, 0, 255)}, SH),
  "roll in":       prog({0: (R, -80, 0, 255)}, SH),
  "spotdodge":     prog({0: (R, 0, -80, 255)}, SH),
  "shield grab":   prog({0: (R | A, 0, 0, 255)}),
- "usmash OoS":    prog({0: (X, 0, 0, 0), 1: (A, 0, 80, 0)}),
+ "usmash OoS":    prog({0: (R | X, 0, 0, 255), 1: (A, 0, 80, 0)}),
 }
 def chase(stand):
     a, b = sim.players(); dx = float(b["pos_x"] - a["pos_x"])

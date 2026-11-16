@@ -45,15 +45,17 @@ MOVES = {
     "shield2": _m(2, (R, 0, 0, 255), (R, 0, 0, 255)), "hold_shield": _m(2, (R, 0, 0, 255), (R, 0, 0, 255)),
     "roll_in": _m(1, (R, 80, 0, 255)), "roll_out": _m(1, (R, -80, 0, 255)), "spotdodge": _m(1, (R, 0, -80, 255)),
     "shield_grab": _m(1, (R | A, 0, 0, 255)), "jump": _m(1, (X, 0, 0, 0)), "nair": _m(1, (A, 0, 0, 0)),
+    # out of shield the jump needs the shield button still held: X alone only drops the shield
+    "jump_oos": _m(1, (R | X, 0, 0, 255)),
 }
 NAMES = list(MOVES)
 LEN = np.array([MOVES[n][0] for n in NAMES])
 MENUS = {
     "ground": ("wait2", "in2", "out2", "shine", "jab", "hop", "hop_in", "fullhop", "shield2", "grab", "usmash"),
     "air": ("wait2", "in2", "out2", "shine", "jump", "nair"),
-    "squat": ("wait", "in", "out"),
+    "squat": ("wait", "in", "out", "shine"),  # B on the last squat frame is a shine on the first airborne one
     "shine": ("wait", "hold_b", "jump"),
-    "shield": ("hold_shield", "wait", "jump", "roll_in", "roll_out", "spotdodge", "shield_grab"),
+    "shield": ("hold_shield", "wait", "jump_oos", "roll_in", "roll_out", "spotdodge", "shield_grab"),
     "locked": ("wait",),
 }
 MENU_IDS = {k: tuple(NAMES.index(n) for n in v) for k, v in MENUS.items()}
@@ -380,7 +382,7 @@ def _task(job):
 
 
 def solve(gap: float, ledge: float, frames: int, workers: int = 28, trap: bool = False, mode: str = "win",
-          hop: int = 0, shield: int = 0, tt_mb: int = 400, out: str | None = None) -> dict:
+          hop: int = 0, shield: int = 0, tt_mb: int = 400, out: str | None = None, must_exit: bool = False) -> dict:
     """`mode` "win": can the attacker force the first hit against a defender who sees his inputs? "safe": can the
     defender hold against an attacker who sees his? Jobs are split two decisions deep, one per (root joint move,
     first picker's next move), so the workers stay evenly loaded. Each finished job is appended to `out`; jobs already
@@ -392,7 +394,7 @@ def solve(gap: float, ledge: float, frames: int, workers: int = 28, trap: bool =
     s = sim.players()
     info = {"p1_y": round(float(s[0]["pos_y"]), 1), "gap": round(sim.gap(), 2), "p2_x": round(float(s[1]["pos_x"]), 2), "p2_facing": int(s[1]["facing"]),
             "frames": frames, "mode": mode, "workers": workers}
-    ask = {"gap": gap, "ledge": ledge, "frames": frames, "trap": trap, "mode": mode, "hop": hop, "shield": shield}
+    ask = {"gap": gap, "ledge": ledge, "frames": frames, "trap": trap, "mode": mode, "hop": hop, "shield": shield, "must_exit": must_exit}
     done_jobs: dict[str, tuple[bool, int]] = {}
     if out and os.path.exists(out):
         with open(out) as f:
@@ -402,7 +404,7 @@ def solve(gap: float, ledge: float, frames: int, workers: int = 28, trap: bool =
     log = open(out, "a") if out else None
     toward = 1 if float(s[1]["pos_x"]) >= float(s[0]["pos_x"]) else -1
     att = [(m, 0, toward) for m in menu(s[0])]
-    dfn = [(m, 0, -toward) for m in menu(s[1])]
+    dfn = [(m, 0, -toward) for m in menu(s[1]) if not (must_exit and NAMES[m] == "hold_shield")]
     sim.world.close()
     result: dict[tuple, bool] = {}
     total = 0
@@ -449,12 +451,13 @@ def main() -> None:
                     help="ask instead whether the defender has a defence that needs no guessing")
     ap.add_argument("--trap", action="store_true", help="count the measured shield trap as a win for the attacker")
     ap.add_argument("--shield", type=int, default=0, help="start with the defender this many frames into his shield")
+    ap.add_argument("--must-exit", action="store_true", help="the defender may not keep holding his shield at the start")
     ap.add_argument("--tt-mb", type=int, default=400, help="memory for remembered positions, per process")
     ap.add_argument("--out", help="file that collects finished jobs; a rerun continues from it")
     args = ap.parse_args()
     for g in args.gap:
         r = solve(g, args.ledge, args.frames, args.workers, args.trap, "safe" if args.safe else "win", args.hop,
-                  args.shield, args.tt_mb, args.out)
+                  args.shield, args.tt_mb, args.out, args.must_exit)
         where = (f"gap {r['gap']}, P1 height {r['p1_y']} (P2 at x={r['p2_x']}, facing {'left' if not r['p2_facing'] else 'right'}), "
                  f"{r['frames']} frames: ")
         if args.safe:

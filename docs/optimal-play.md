@@ -329,6 +329,37 @@ a hard memory limit, so the search is what gets killed. The simulator library is
 `python-release` profile instead of the unoptimised default: identical play over 60,000 frames, 1.47 times the
 search speed (14,000 positions a second per process).
 
+### 13. The real game: both pick at once, one frame late [sim]
+
+`melee_llm/solver/nash.py` solves the game without giving anyone the other's input: every frame both players
+pick at the same time, knowing everything up to the previous frame. Each position is a matrix game solved exactly
+(`matrix.py`); pure strategies that hold even when read settle a position without a matrix. All moves last one
+frame. The payoff is the chance that the attacker lands a clean first hit.
+
+**Two menu bugs found on the way, which weaken sections 9 to 12 for the defender.** (1) The "jump" out of shield
+in `force.py` and in the shield-trap probe was X alone, which only drops the shield; a jump out of shield needs
+the shield button held. (2) Nobody could shine on the first airborne frame out of a jumpsquat. Both are fixed
+(`jump_oos`, `shine` in the jumpsquat menu); the earlier tables were not rerun.
+
+| Position (defender cornered 12 units from the ledge) | Horizon | Attacker's chance of a clean first hit | Optimal play |
+| --- | --- | --- | --- |
+| Both standing, 12.59 apart | 8 frames | **0** | both wait; the defender needs no shield |
+| Same, defender never shields | 8 | **0** | both wait |
+| Defender in shield and must leave it; attacker standing 7.8 or 10.2 away | 10 | **1** | every exit is hit |
+| Same, 12.59 away | 10 | 1 for release, jump, both rolls, shield grab; the spotdodge outlasts 10 frames and is hit for 18% on frame 16 to 20 of its 22 (direct check) | attacker waits, then shines the exit on its third frame |
+| Same, 18 away | 10 | 0 within the horizon for jump, rolls, spotdodge | |
+| **Attacker 9 frames into a short hop, 7.8 away and 9.2 up; defender never shields** | 8 | **0.5** | attacker: wait or shine, half each. Defender: step back or shine, half each |
+| Same, defender may shield | 8 | 0 | defender shields |
+
+- **The cycle of section 12 was an artefact.** One frame late, the defender simply waits and answers what he sees:
+  the standoff holds at 12.59, with or without shield.
+- **Shield is a one-way door.** Within 12.6 units of a standing Fox, a shielding Fox cannot leave: the attacker
+  waits, sees the exit a frame late and shines it. The shine reaches a Fox in jumpsquat or starting a roll from
+  12.6, further than it reaches one standing (10.7).
+- **Against an airborne attacker the corner is a coin flip unless the defender shields**, and the shield is the
+  one-way door once the attacker has landed. Whether the defender can get out while the attacker is still landing
+  is the open question (`nash --hop 9 --trap --frames 16`, running).
+
 ## What this says about Petro's claim
 
 - **"Two perfect Foxes walk in and shine on the same frame":** not optimal. Walking into shine range loses to a jab from 12 or more, and on the ground the same-frame shines clank rather than whiff.
