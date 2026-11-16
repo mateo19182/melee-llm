@@ -62,3 +62,28 @@ def test_force_menus_follow_the_fighter_state():
     assert names(melee.Action.DOWN_B_GROUND.value) == {"wait", "hold_b", "jump"}
     assert names(melee.Action.GRABBED.value) == {"wait"}
     assert all(len(rows) == frames for frames, rows in force.MOVES.values())
+
+
+def test_rollback_reproduces_the_game_exactly():
+    """Needs the patched simulator (scripts/patch_sim.sh) and its game data."""
+    from melee_llm.sim import rollback
+    if not world.available() or not rollback.available():
+        pytest.skip("patched melee-sim-light with game data not installed")
+    from melee_llm.solver import force
+    from melee_llm.solver.game import Sim
+    sim = Sim()
+    s = force.Search(force.corner(sim, 12, 12))
+    sim.world.close()
+    rng = np.random.default_rng(3)
+    for _ in range(20):
+        s.rb.checkpoint(0)
+        seq = [tuple(rng.integers(len(force._WARMUP), size=2)) for _ in range(6)]
+        for i, j in seq:
+            s.step(force._WARMUP[i], force._WARMUP[j])
+        first = s.env.save(0)
+        s.back(0)
+        for i, j in seq:
+            s.step(force._WARMUP[i], force._WARMUP[j])
+        assert s.env.save(0) == first
+        s.back(0)
+    assert len(s.rb.verify()) == 0

@@ -276,7 +276,29 @@ Probes: `scripts/solver_probes/` (run with `PYTHONPATH=. python scripts/solver_p
 | save or restore a state (the equilibrium trees) | 2,400–2,600 µs |
 | copy a state between lanes of one batch (this search) | about 300 µs |
 
-  Profiled, the lane copy is 60% of the time, the step 30% and Python about 5%. One process searches about 2,700 positions/s; 8, 16 and 28 processes all reach about 10,500/s in total, because the copies saturate memory bandwidth. A faster search needs a smaller state copy inside the simulator, not a faster language around it.
+  Profiled, the lane copy is 60% of the time, the step 30% and Python about 5%. One process searches about 2,700 positions/s; 8, 16 and 28 processes all reach about 10,500/s in total, because the copies saturate memory bandwidth. A faster search needs a smaller state copy inside the simulator, not a faster language around it. Section 11 does that.
+
+### 11. A patched simulator, and the first position where the defender has to guess [sim]
+
+**The patch.** `scripts/patch_sim.sh` applies `patches/melee-sim-light-checkpoint.patch` to melee-sim-light, builds it and installs the library into the venv. It adds an in-place checkpoint and rollback of one match (`melee_llm/sim/rollback.py`).
+- A frame changes about 3 KB of the match's 3.2 MB of memory, in a few dozen 4 KiB pages, always the same ones (71 pages after 3,000 frames of random inputs). The library's own lane copy moves everything and re-links every pointer; a rollback copies back only those pages.
+- **Rollback 8.7 µs and checkpoint 8.3 µs, against about 300 µs for the lane copy.** A rollback followed by the same inputs reproduced the same savestate byte for byte in 200 of 200 random trials.
+- Exactness is checked on every run: a rollback never restores the other pages, so a page that changed unexpectedly stays changed, and a final comparison with the starting state finds it. No run below reported one.
+- The search of section 10 now plays on one match per process and takes moves back. It no longer saturates memory, so it scales with cores: **67,000–113,000 positions/s on 28 processes, against a ceiling of 10,500 before.** 14 frames from the corner take 3.4 minutes (13.8 million positions).
+
+**Two questions bracket the truth.** `force` asks whether the attacker can force the first hit against a defender who sees his inputs. `force --safe` asks the mirror: does the defender have a defence that holds against an attacker who sees *his* inputs? If the first is yes the attacker wins outright; if the second is yes the position is a draw; if both are no, the defender has to guess and the equilibrium is mixed.
+
+| Position (defender cornered about 10 units from the ledge) | Attacker can force a hit | Defender has a safe defence |
+| --- | --- | --- |
+| Both standing, 7.8 units apart, 14 frames | no | yes: shine, or shield (12 frames) |
+| Both standing, 10.2 units apart, 12 frames | not run | yes: shine, or shield |
+| **Attacker 9 frames into a short hop, 7.8 units away and 9.2 up**, 16 frames | not run | **only shield** |
+| Attacker 11 frames into the hop, 6.9 away and 10.4 up, 10 frames | not run | only shield |
+
+- **Standing at close range is a proven draw at this depth**: neither side needs to guess. This is Petro's deadlock, now with both bounds.
+- **With the attacker in the air, the defender's shine stops being safe.** It is beaten by the attacker simply drifting or waiting: the shine misses upward and is punished. Every other move except shield also loses to some attacker reply. 22 million positions, 16 frames.
+- **Shield is the trap of section 9.** [inferred] Once the hopper lands next to a shielding, cornered Fox, every exit measured there loses 5–18%. The 16-frame search ends about when the attacker lands, so it doesn't yet show the trap closing; that needs about 22 frames and is the next run.
+- **What is still missing for "the attacker wins":** these air positions were set up with the defender standing still during the first 9 frames of the hop. Whether a cornered defender can stop the attacker from getting there (by hitting the jumpsquat, or by jumping himself) is a search from a standing start outside shine range, 25 or more frames deep.
 
 ## What this says about Petro's claim
 
