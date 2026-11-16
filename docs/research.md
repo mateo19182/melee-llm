@@ -57,6 +57,7 @@ The game runs at 60 fps, so one frame is 16.7 ms. Every mechanic below has a Sma
 | 2025–26 | HAL | Eric Gu | Behaviour-cloning transformer, 20M then 247M parameters |
 | 2025–26 | MIMIC | erickfm | Behaviour cloning, one transformer per character, plus RLVR |
 | Sep 2026 | Jev ("System One") | TypeSafe AI | General decision API, not Melee-specific |
+| 2026 | ExPhil | blasphemetheus (Bradley) | Elixir: behaviour cloning, scripted drills, then PPO in melee-sim-light; on stomped.dev |
 | Oct 2026 | Faynt | Frisson Labs | Behaviour cloning, winner curriculum, then PPO, all 26 characters |
 | Oct 2026 | Humans vs Phillip crew battles | Zain, Cody and other top players | Organised top-player exhibitions on stream |
 | Nov 2026 | Reyn | Frisson Labs | Faynt-based policy steered by language commands |
@@ -311,6 +312,26 @@ The closest published work to this repo's coach track, an LLM above a learned po
 - **Melee demos:** all community-built. One person self-reports beating the level 9 CPU after 13 games. **TypeSafe itself has published nothing on Melee**: none of its nine blog posts or its site pages mention it (checked 2026-11-14).
 - **Related:** Google followed with "Gemini Decisions" in Nov 2026 ([codelab](https://codelabs.developers.google.com/codelabs/discriminative-models)).
 
+### ExPhil (blasphemetheus, 2026)
+
+[repo](https://github.com/blasphemetheus/exphil) (MIT, created Jan 2026, about 2,000 commits by Nov 2026). Author Bradley, Discord "dleie". The only other open-source bot on the stomped.dev ladder we know of. Read on 2026-11-16 at the repo's head.
+
+- **Stack:** all Elixir on the BEAM: Nx/Axon with EXLA on the GPU, replays parsed by peppi through a Rust NIF, and two companion repos: [edifice](https://github.com/blasphemetheus/edifice) (about 90 architectures in Elixir) and [libmelee_ex](https://github.com/blasphemetheus/libmelee_ex) (a libmelee port). Much of the development is done by Claude and Codex agents working from dated handoff files in `docs/planning/`.
+- **Goal:** low-tier bots (Mewtwo, Ganondorf, Link, Zelda, Ice Climbers, Game & Watch); Fox is where the recipes get worked out because its data is best.
+- **Model:** a learned 288-dim state embedding (action, character and stage embeddings instead of one-hots), a swappable temporal backbone (30+: MLP, GRU, LSTM, Mamba, attention, RWKV, xLSTM…), and a 6-part autoregressive controller head: 8 buttons → main stick x → y → c-stick x → y → shoulder. The deployed Fox is a GRU 512×2 trained with BPTT. Early benchmarks put Mamba as the best speed/accuracy trade-off, but the repo now calls that table historical; a Fox Mamba run hit CUDA illegal-address crashes in Sep 2026.
+- **How the strategy evolved** (from `docs/planning/model_lineage_*.json` and the handoffs):
+  1. Mar 2026: architecture bake-offs on Mewtwo; a poisoned embedding cache invalidated the comparisons.
+  2. Jul 2026: **scripted-expert drills with DAgger** (multishine, Mewtwo fair, Fox recovery). Their verdict: it "taught the button SEQUENCE not the DECISION".
+  3. Jul–Aug 2026: exposure bias and a **reaction-delay campaign**: random 0–18 frame delay augmentation, the action queue fed back as an input, one checkpoint served at several delays.
+  4. Sep 2026: causal labels (state at F paired with the controller at F+1+k; the earlier labels leaked), then **RL on the imitation prior in melee-sim-light** through a Rust NIF over its C batch API. PPO trains only the autoregressive head on a frozen GRU trunk, with a value MLP on the trunk features and a KL penalty toward the imitation head; reward is stock difference plus 0.01 × damage difference.
+  5. "Search as teacher": random-shooting input sequences from sim savestates, scored by conversion detectors, kept as BC labels.
+- **Guarding against reward hacking:** a "style fingerprint" (rolls, spot dodges, jumps, aerials per minute) compared with the imitation prior's own fingerprint, and a "degenerate zoo" of strategies RL found. Entry 1: Mewtwo PPO at iteration 300 rolled to the ledge and grab–back-threw 13× more than the prior; it beat a static sim opponent and nothing else.
+- **On stomped.dev** as `latency_testing_exphil` (owner `exphil`): Fox, presumably the PPO GRU that its README serves as the example (`0923_ppo`). 3–31 on 16 Nov 2026, rating −9.8, 14th of 14 and just under our `m19182-yoshi` (8–69). Most losses are forfeits from server restarts; its three wins are over `entropy` and `hello-melee`.
+- **Their stomped timing findings** (README, measured 15–16 Nov 2026), which apply to our bot too:
+  - From a home connection through cloudflared, 52–65 ms round trip, so they serve lead 7 and train at that delay. Per-frame compute 0.6 ms on CPU for the GRU.
+  - **The arena polls one frame late in regular stretches:** every 1,000 frames, for about 530 frames, every pad field lands one frame after the frame it names, whatever the lead. 1,000 frames is the beat between 59.94 Hz and a 60.00 Hz clock, so it is on the arena's side. The arena reuses the previous pad, so its `missed` count stays under 1% and hides it. A probe needs to last past frame ~1,100 to see it.
+  - The server pins the lead to the delay the checkpoint was trained at and counts frames where they disagree; a lead that grows mid-match silently changes the policy's task.
+
 ### Other attempts worth knowing
 
 - **Qwen plays Smash** ([post](https://hgali.sh/reflex), 2026): the closest LLM-in-the-loop prior work.
@@ -320,19 +341,24 @@ The closest published work to this repo's coach track, an LLM above a learned po
 - **Academic and hobby projects:**
   - [Stanford CS224R 2025](https://cs224r.stanford.edu/spring_2025/projects/pdfs/cs224rfinalprojectreport.pdf): behaviour cloning plus IQL or PPO. It couldn't recover or beat the level 9 CPU.
   - [Leiden MSc thesis](https://theses.liacs.nl/pdf/2025-2026-HamelinkJJosef.pdf): fine-tunes HAL's architecture on Fox mirrors.
-  - [ExPhil](https://github.com/blasphemetheus/exphil): Mamba, attention or LSTM backbones.
+  - [ExPhil](https://github.com/blasphemetheus/exphil): see [its section](#exphil-blasphemetheus-2026).
   - [BaiShiXi Fox bots](https://baishixi.blog/posts/melee-fox-bots/).
   - [boxxfish smash-RL blog](https://boxxfish.github.io/blog/smash-rl-1).
   - [Athena](https://github.com/Sciguymjm/athena): a 2016 keras-rl stub.
+  - [daboy](https://github.com/villinvic/daboy) (villinvic, 2020–21): RL bots, an indirect fork of spxtr's p3; demo videos only.
+  - [Melee RL on OpenEnv](https://github.com/mathewrolf1/OpenENV-Hackathon) (Mar 2026 hackathon): PPO in a hand-written physics approximation, then fine-tuned in Dolphin through Meta's OpenEnv.
+  - [melee-bot](https://github.com/wong-justin/melee-bot) (2021): a thin framework over libmelee for writing scripted bots.
   - [Sharma & Friedman 2017](https://www.yash-sharma.com/files/learning-play-super%20(3).pdf).
 - **[stomped.dev](https://stomped.dev/) ([FAQ](https://stomped.dev/faq)):** a ranked arena for Melee bots only, and a ready-made benchmark venue for this repo.
   - Bots get the raw `.slp` event stream over WebSocket and must answer within 11 ms per frame.
   - Rules: vanilla 1.02 with no UCF, wobbling legal, frozen Stadium; ratings use OpenSkill. It streams on the "stompedlive" Twitch channel.
   - Launch: around 19 Oct 2026, the date of the domain's first TLS certificate.
   - On 14 Nov 2026 the ladder leader was 67–3, and the most active bot had played over 600 games. By developer on 13 Nov: kai 258–86, nescio 35–3, kcho 352–97.
+  - 16 Nov 2026 (`GET https://api.stomped.dev/leaderboard`, 14 bots): nescio holds 1, 2, 4 and 8 with one bot per character (`nescio-fox1` 353–5, `-falco1`, `-marth1`, `-falcon1`); then kai's `ligma` 766–165, kcho's `filbot` 830–263, kai's `swaggy c`, procyon's `Lotor-1.5`. None of these publishes code that we found. Ours (`m19182-yoshi`) is 13th and ExPhil's 14th.
 - **Simulators:**
   - [melee-sim-light](https://github.com/kyhavlov/melee-sim-light): Melee's gameplay code from the decompilation as a batched C library, with a Python API. It matched 287 of 300 of our Dolphin replays frame for frame (the other 13 were unfinished files) and runs about 100× faster than our headless Dolphin. slippi-ai's `sim_env` is built on it. See [simulator.md](simulator.md).
   - Enzyme's decomp-based simulator, used for slippi-ai training.
+  - Others now train on melee-sim-light too: HAL has a native rollout adapter (`docs/native-simulator.md`, `hal.sim.native`), MIMIC's RLVR has `rlvr/sim/` (vectorised envs, batched GPU policy with KV-cache streaming), and ExPhil drives its C batch API from Elixir. [melee-replay-components](https://github.com/briandle00/melee-replay-components) hosts a prebuilt build plus a Training Mode patch.
 - **[melee-unlocked](https://github.com/hero88go/melee-unlocked)** (Sep 2026): a native Windows source port compiled from the decompilation, with Slippi rollback. Its training mode has "Fight a pro": play Phillip as Zain's Marth, Cody's Fox or aMSa's Yoshi, with an 18–21 frame reaction delay. Offline only.
 - **[No Johns](https://github.com/ScavieFae/nojohns):** agents wagering on bot-vs-bot matches, using Phillip or SmashBot as fighters.
 - **The same problems in other real-time games:**
@@ -452,6 +478,7 @@ No tournament has run an official AI exhibition since Genesis 4 in 2017 **[unver
 | Bryan Chen | bycn | Project Nabla |
 | Erick FM | erickfm | MIMIC and the HF ranked-replay dataset |
 | Ali Janati, Nikita Kuzmin (with Tongke Xue; CEO Charles Niu, CTO Rohit Swamy) | Na00s, frisson-labs | Faynt and Reyn |
+| Bradley | blasphemetheus, dleie | ExPhil, edifice, libmelee_ex; the `exphil` bot on stomped.dev |
 | Diogo Almeida | TypeSafe AI | Jev and System One models |
 | Hareesh Gali | hgali.sh | Qwen plays Smash |
 | hohav (now maintained by NickCondron) | hohav | peppi, py-slippi |
@@ -548,6 +575,7 @@ We found no public talks by Vlad Firoiu or Eric Gu, no podcasts and no documenta
 - [hal](https://github.com/ericyuegu/hal): clean transformer behaviour cloning.
 - [MIMIC](https://github.com/erickfm/MIMIC): HAL with a fixed action head, and evaluation against Phillip.
 - [vladfi1/libmelee](https://github.com/vladfi1/libmelee): the bot API.
+- [ExPhil `lib/exphil/stomped/`](https://github.com/blasphemetheus/exphil/tree/main/lib/exphil/stomped) and its README's stomped section: another stomped.dev client, with measured arena timing.
 - [peppi](https://github.com/hohav/peppi): replay parsing.
 - [SPEC.md](https://github.com/project-slippi/slippi-wiki/blob/master/SPEC.md): the replay format.
 - [doldecomp/melee](https://github.com/doldecomp/melee): ground truth for game mechanics.
