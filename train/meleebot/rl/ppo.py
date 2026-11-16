@@ -10,8 +10,10 @@ each match slot keeps its opponent group:
 
 Each iteration plays --unroll frames in every match, then updates on windows of the previous and current
 unroll (the previous one is context only). Old log-probabilities and values are recomputed on those windows
-before the update, so PPO's ratio compares like with like. Loss: clipped policy loss + KL(learner || teacher)
-* --kl, which keeps it near human-like play; a separate value head reads the trunk without training it.
+before the update, so PPO's ratio compares like with like. Loss: dual-clipped policy loss + KL(learner || teacher)
+* --kl, which keeps it near human-like play, - an entropy bonus that only switches on while entropy is below
+--entropy-target (the first run collapsed to a near-deterministic policy and then diverged); a separate value
+head reads the trunk without training it. Steps with a non-finite loss or gradient are skipped and counted.
 Reward per frame: stocks taken - stocks lost + --damage * (damage dealt - taken).
 
 Writes RUN_DIR/rl.jsonl (one line per iteration), last.pt (a normal meleebot checkpoint, playable by the
@@ -125,7 +127,9 @@ def main():
     ap.add_argument("--minibatch", type=int, default=32, help="windows per gradient step")
     ap.add_argument("--clip", type=float, default=0.2)
     ap.add_argument("--kl", type=float, default=0.1)
-    ap.add_argument("--entropy", type=float, default=0.0)
+    ap.add_argument("--dual-clip", type=float, default=3.0, help="bound on the loss of negative-advantage tokens whose ratio blew up")
+    ap.add_argument("--entropy-target", type=float, default=0.3,
+                    help="summed over heads; an entropy bonus grows while the policy is below it (0: off)")
     ap.add_argument("--gamma", type=float, default=0.997)
     ap.add_argument("--lam", type=float, default=0.95)
     ap.add_argument("--damage", type=float, default=0.01)
@@ -187,6 +191,7 @@ def main():
                        init=os.path.abspath(a.init), pool=[name for name, _ in pool], started_at=time.time()), f, indent=1)
     meta = {k: v for k, v in ck.items() if k not in ("config", "state")} | dict(rl=vars(a), init=os.path.abspath(a.init))
     t_start, frames_total = time.time(), 0
+    ent_coef = 0.0
     keys = ("num", "actions", "me_char", "opp_char", "stage", "delay", "rank", "win")
 
     for it in range(1, a.iters + 1):
@@ -255,7 +260,7 @@ def main():
 
         pol = it > a.value_warmup
         model.eval()   # no dropout: the policy that acted is the one we score
-        agg = dict(pg=0.0, vf=0.0, kl=0.0, ent=0.0, clip=0.0, steps=0)
+        agg = dict(pg=0.0, vf=0.0, kl=0.0, ent=0.0, clip=0.0, steps=0, pol_steps=0, skipped=0)
         for _ in range(a.epochs):
             for s in np.random.permutation(range(0, n, a.minibatch)):
                 ix = np.arange(s, min(n, s + a.minibatch))
@@ -276,17 +281,23 @@ def main():
                             tlg, _ = logits_for(teacher, b, mask, pos)
                         lg_new = [x[:, C:-1] for x in lg]
                         lp = logprob(lg_new, {k: b[k][:, C:-1] for k in HEADS})
-                        ratio = (lp - olp).exp()
-                        pg = -(torch.min(ratio * A, ratio.clamp(1 - a.clip, 1 + a.clip) * A) * m).sum() / m.sum()
+                        ratio = (lp - olp).clamp(max=20).exp()   # bounded so a rare action's huge ratio can't overflow
+                        surr = torch.min(ratio * A, ratio.clamp(1 - a.clip, 1 + a.clip) * A)
+                        surr = torch.where(A < 0, torch.max(surr, a.dual_clip * A), surr)
+                        pg = -(surr * m).sum() / m.sum()
                         k_l = (kl(lg_new, [x[:, C:-1] for x in tlg]) * m).sum() / m.sum()
                         ent = (entropy(lg_new) * m).sum() / m.sum()
-                        loss = pg + a.kl * k_l - a.entropy * ent
+                        loss = pg + a.kl * k_l - ent_coef * ent
                         opt.zero_grad(set_to_none=True)
                         loss.backward()
-                        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                        opt.step()
-                        agg["pg"] += pg.item(); agg["kl"] += k_l.item(); agg["ent"] += ent.item()
-                        agg["clip"] += (((ratio - 1).abs() > a.clip).float() * m).sum().item() / m.sum().item()
+                        gn = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                        if torch.isfinite(loss) and torch.isfinite(gn):
+                            opt.step()
+                            agg["pg"] += pg.item(); agg["kl"] += k_l.item(); agg["ent"] += ent.item()
+                            agg["clip"] += (((ratio - 1).abs() > a.clip).float() * m).sum().item() / m.sum().item()
+                            agg["pol_steps"] += 1
+                        else:
+                            agg["skipped"] += 1
                 vopt.zero_grad(set_to_none=True)
                 vf.backward()
                 vopt.step()
@@ -294,11 +305,16 @@ def main():
         if pol and it % a.snapshot_every == 0:
             snapshot.load_state_dict(model.state_dict())
 
-        steps = max(agg.pop("steps"), 1)
+        n_pol, skipped = agg.pop("pol_steps"), agg.pop("skipped")
+        steps, pol_steps = max(agg.pop("steps"), 1), max(n_pol, 1)
+        if n_pol and a.entropy_target > 0:   # multiplicative controller on the bonus, like SAC's temperature
+            ent_coef = min(max(ent_coef, 1e-4) * (1.5 if agg["ent"] / pol_steps < a.entropy_target else 1 / 1.5), 0.1)
+            ent_coef = 0.0 if ent_coef < 1e-4 else ent_coef
         line = dict(iter=it, frames=frames_total, minutes=round((time.time() - t_start) / 60, 2),
                     fps=round(U * n / (time.time() - t0)), rollout_s=round(t_roll, 2),
                     reward_per_min=round(float(cur["reward"].sum() / max(cur["active"].sum(), 1) * 3600), 4),
-                    **{k: round(v / steps, 5) for k, v in agg.items()},
+                    vf=round(agg.pop("vf") / steps, 5), **{k: round(v / pol_steps, 5) for k, v in agg.items()},
+                    ent_coef=round(ent_coef, 5), skipped=skipped,
                     games=int(stats["played"].sum()),
                     played={pool[g][0]: int(stats["played"][g]) for g in range(len(pool))},
                     won={pool[g][0]: float(stats["wins"][g]) for g in range(len(pool))})
