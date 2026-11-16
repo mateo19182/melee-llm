@@ -54,7 +54,8 @@ class Snapshot:
 
 class World:
     def __init__(self, characters: dict[int, melee.Character], stage: melee.Stage = melee.Stage.BATTLEFIELD,
-                 seed: int = 0, costumes: dict[int, int] | None = None, max_frame: int = TIMER_FRAMES):
+                 seed: int = 0, costumes: dict[int, int] | None = None, max_frame: int = TIMER_FRAMES,
+                 percents: dict[int, int] | None = None):
         import melee_sim as msl
 
         if stage not in SIM_STAGE:
@@ -65,8 +66,8 @@ class World:
         self.tap, self.encoder = SlippiTap(), None
         for c in self.controllers.values():
             c.slippi_tap = self.tap
-        self._players = tuple(msl.PlayerConfig(characters[p].value, controller_port=p - 1, costume=self.costumes[p])
-                              for p in self.ports)
+        self._players = tuple(msl.PlayerConfig(characters[p].value, controller_port=p - 1, costume=self.costumes[p],
+                                               start_percent=(percents or {}).get(p, 0)) for p in self.ports)
         self.env = msl.EnvBatch(batch_size=1, length=_RING, action_format="raw", data_dir=str(DATA_DIR))
         self.reset(seed)
 
@@ -114,6 +115,7 @@ class World:
     def restore(self, snap: Snapshot) -> melee.GameState:
         """Back to `snap`. Controllers are released: the next step reads only what is pressed after this."""
         self.env.restore(0, snap.state)
+        self.env.reset_cursor()  # observe() writes at the cursor, which may sit at the ring's end
         self.env.observe()
         self.gs, self.done = copy.deepcopy(snap.gs), False
         self.builder.prev = self.gs
