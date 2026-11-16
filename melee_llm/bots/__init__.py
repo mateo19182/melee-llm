@@ -12,7 +12,8 @@ from melee_llm.paths import DATA, ROOT
 
 class HAL(BotAgent):
     """ericyuegu/hal 250M. arg: imitated identity (connect code in the vocab, or PLATINUM/DIAMOND/MASTER),
-    optionally followed by initial steer values, e.g. `AMSA#0,return_target=60,temperature=0.9`.
+    optionally followed by initial steer values and `delay=N` (0-10 frames of input delay), e.g.
+    `AMSA#0,return_target=60,temperature=0.9,delay=3`.
 
     steer: identity (next game), return_target ('p90', float in [-20, 140] or None), temperature [0.8, 1.1].
     """
@@ -25,7 +26,10 @@ class HAL(BotAgent):
             self.steer["identity"] = identity
         for o in opts:
             k, _, v = o.partition("=")
-            self.steer[k] = None if v == "None" else v if v == "p90" else float(v)
+            if k == "delay":  # fixed for the process, so it is config, not steer
+                self.config["delay"] = int(v)
+            else:
+                self.steer[k] = None if v == "None" else v if v == "p90" else float(v)
 
 
 class Phillip(BotAgent):

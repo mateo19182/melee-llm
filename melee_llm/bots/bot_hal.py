@@ -5,6 +5,7 @@ delay, replan every 2 frames with a 4-frame horizon, observed-action alignment.
 """
 from __future__ import annotations
 
+import dataclasses
 import sys
 from pathlib import Path
 
@@ -27,6 +28,7 @@ from hal.wire import BUTTON_BITS
 WEIGHTS = Path("weights/hal-250m.hal")
 BUTTON_NAMES = {bit: f"BUTTON_{name.upper()}" for name, bit in BUTTON_BITS.items() if bit & POLICY_BUTTON_MASK}
 B = melee.enums.Button
+MAX_DELAY = 10
 
 
 class _Adapter(PolicyBatchAdapter):
@@ -45,7 +47,8 @@ class _Adapter(PolicyBatchAdapter):
         fields = self.policy.spec.required_observation_fields
         rows = {slot: ObservationRow(int(frame["id"]),
                                      project_observation_columns(flatten_canonical_frame(frame), fields),
-                                     controller_to_action_vec(applied_action_from_frame(frame, slot.port)))
+                                     controller_to_action_vec(applied_action_from_frame(frame, slot.port)),
+                                     reset=frame.get("_reset", False))
                 for slot, frame in obs.items()}
         return self._step(rows)
 
@@ -69,13 +72,25 @@ class Bot:
         self.port = init["port"]
         if {init["port"], init["opponent_port"]} != {1, 2}:
             raise ValueError("HAL's observation schema is fixed to ports 1 and 2")
-        timing = FrameTiming(0, 0, 0, 2, 4)
+        # delay: frames between choosing an action and the game reading it, beyond the usual one. The
+        # actions already on their way are the fixed prefix; the model's contiguous heads reach 12 frames
+        # ahead, so 10 is the most that still leaves a 2-frame replan.
+        delay = int(cfg.get("delay", 0))
+        if not 0 <= delay <= MAX_DELAY:
+            raise ValueError(f"delay must be 0..{MAX_DELAY}")
+        timing = FrameTiming(delay, 0, delay, 2, min(delay + 4, 12))
         self.policy = load_action_sequence_policy(
             cfg.get("weights", WEIGHTS), device="cuda", seed=cfg.get("seed"), compiled=cfg.get("compile", True),
             history_mode="kv_cache", kv_update_frames=2)
-        runtime = RuntimeConfig(1, (0,), replan_interval_frames=timing.replan_interval_frames)
+        if delay not in self.policy.spec.supported_transport_delays:  # the bundle declares only the delays it was qualified at
+            self.policy.spec = dataclasses.replace(self.policy.spec, supported_transport_delays=tuple(
+                sorted({*self.policy.spec.supported_transport_delays, delay})))
+        runtime = RuntimeConfig(1, (delay,), replan_interval_frames=timing.replan_interval_frames)
         self.policy.prepare_prediction(runtime, timing.prediction_horizon_frames, timing.fixed_prefix_frames)
         self.adapter = _Adapter(self.policy, runtime, timing, desired_return=self.policy.return_p90)
+        # ahead (train/meleebot/stomped.py): return the action just chosen, for frame + 1 + delay, instead of
+        # the one due now. The caller delivers it to the game itself, `delay` frames early.
+        self.ahead = bool(cfg.get("ahead")) and delay > 0
         self.slot = Slot(0, self.port)
         self.steer = {"identity": "IBDW#0", "return_target": "p90", "temperature": 1.0}
         self.active_identity = self.steer["identity"]
@@ -114,12 +129,17 @@ class Bot:
         if new_game and self.active_identity != self.steer["identity"]:
             self.active_identity = self.steer["identity"]
             self.adapter.default_settings = self._settings(self.steer, self.active_identity)
+        # a stream that skips frames (a reconnect replay) starts a new history instead of failing forever
+        gap = self.last_frame is not None and gs.frame > self.last_frame + 1
         self.last_frame = gs.frame
         frame = canonical_frame(gs)
+        frame["_reset"] = gap
         ports = frame["ports"]
         frame["_matchup"] = {"stage": frame["stage"],
                              "character": {p: int(ports[p]["leader"]["post"]["character"]) for p in (1, 2)}}
         action = self.adapter(0, {self.slot: frame})[self.slot]
+        if self.ahead:
+            action = self.adapter._states[self.slot].transport.pending[-1]
         # HAL sticks are signed [-1, 1]; the parent's libmelee Controller applies the same wire fix HAL does.
         controller.tilt_analog(B.BUTTON_MAIN, (action.main_x + 1) / 2, (action.main_y + 1) / 2)
         controller.tilt_analog(B.BUTTON_C, (action.c_x + 1) / 2, (action.c_y + 1) / 2)
