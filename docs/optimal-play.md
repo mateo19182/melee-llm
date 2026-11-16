@@ -360,6 +360,13 @@ the shield button held. (2) Nobody could shine on the first airborne frame out o
   one-way door once the attacker has landed. Whether the defender can get out while the attacker is still landing
   is the open question (`nash --hop 9 --trap --frames 16`, running).
 
+**The standoff needs a one-frame reaction.** `nash --grain 2` makes every input last two frames, so an answer
+comes up to two frames late. Standing 12.59 apart without shield, the value jumps from 0 to **0.382** (8 and 12
+frames, cornered or mid-stage): the attacker plays wait 38%, shine 38%, jab 24%, the defender wait 38%, jab 38%,
+shine 24%. So the draw of section 1 belongs to a player who answers on the very next frame; one frame slower and
+neutral is rock-paper-scissors. With shield allowed the two-frame game is 0 again over 12 frames, but only
+because the shield's cost (the one-way door) lies beyond the horizon.
+
 ## What this says about Petro's claim
 
 - **"Two perfect Foxes walk in and shine on the same frame":** not optimal. Walking into shine range loses to a jab from 12 or more, and on the ground the same-frame shines clank rather than whiff.

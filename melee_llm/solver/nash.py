@@ -59,10 +59,11 @@ def kind(slot) -> str:
 
 class Nash(force.Search):
     def __init__(self, root: bytes, frames: int, payoff: str = "hit", shield_cost: float = 0.0, tt_mb: int = 400,
-                 no_shield: bool = False, trap: bool = False):
+                 no_shield: bool = False, trap: bool = False, grain: int = 1):
         super().__init__(root, max_depth=frames + 4, tt_mb=tt_mb)
         self.payoff, self.shield_cost, self.no_shield, self.door = payoff, shield_cost, no_shield, trap
         self.values: dict[int, float] = {}
+        self.grain = grain  # frames each chosen input is held: 2 halves the depth, and reactions come up to 2 late
         self.cap = tt_mb * 1_000_000 // force.TT_BYTES
         s = self.slots()
         self.shield0 = (float(s[0]["shield_hp"]), float(s[1]["shield_hp"]))
@@ -97,6 +98,13 @@ class Nash(force.Search):
         return self.shield_cost * (lost2 - lost1) / SHIELD_FULL
 
     def joint(self, a: str, d: str) -> None:
+        """Both hold their chosen input for `grain` frames, or until a frame decides the game."""
+        for i in range(self.grain):
+            self._frame(a, d)
+            if i + 1 < self.grain and self.leaf() is not None:
+                return
+
+    def _frame(self, a: str, d: str) -> None:
         s = self.slots()
         toward = 1 if float(s[1]["pos_x"]) >= float(s[0]["pos_x"]) else -1
         b, x, y, r = MOVES[a]
@@ -113,7 +121,7 @@ class Nash(force.Search):
             for j, d in enumerate(dfn):
                 self.joint(a, d)
                 v = self.leaf()
-                m[i, j] = self.value(depth + 1, frames - 1) if v is None else v
+                m[i, j] = self.value(depth + 1, frames - self.grain) if v is None else v
                 self.back(depth)
         return att, dfn, m
 
@@ -139,7 +147,7 @@ class Nash(force.Search):
             for y in theirs:
                 self.joint(*((x, y) if attacking else (y, x)))
                 v = self.leaf()
-                ok = self.forced(depth + 1, frames - 1, attacking) if v is None else v == want
+                ok = self.forced(depth + 1, frames - self.grain, attacking) if v is None else v == want
                 self.back(depth)
                 if not ok:
                     break
@@ -175,9 +183,9 @@ _S: Nash | None = None
 _FRAMES = 0
 
 
-def _init(root: bytes, frames: int, payoff: str, shield_cost: float, tt_mb: int, no_shield: bool, trap: bool) -> None:
+def _init(root: bytes, frames: int, payoff: str, shield_cost: float, tt_mb: int, no_shield: bool, trap: bool, grain: int) -> None:
     global _S, _FRAMES
-    _S, _FRAMES = Nash(root, frames, payoff, shield_cost, tt_mb, no_shield, trap), frames
+    _S, _FRAMES = Nash(root, frames, payoff, shield_cost, tt_mb, no_shield, trap, grain), frames
 
 
 def _clean(run):
@@ -214,7 +222,7 @@ def _task(job):
         _S.joint(*second)
         v = _S.leaf()
         if v is None:
-            v = _S.value(2, _FRAMES - 2)
+            v = _S.value(2, _FRAMES - 2 * _S.grain)
         _S.back(0)
         n, _S.expansions = _S.expansions, 0
         return first, second, v, n
@@ -223,7 +231,7 @@ def _task(job):
 
 def solve(gap: float, ledge: float, frames: int, payoff: str = "hit", shield_cost: float = 0.0, hop: int = 0,
           shield: int = 0, workers: int = 28, tt_mb: int = 400, out: str | None = None, must_exit: bool = False,
-          no_shield: bool = False, trap: bool = False) -> dict:
+          no_shield: bool = False, trap: bool = False, grain: int = 1, first: str | None = None) -> dict:
     t0 = time.time()
     workers = force.fit_workers(workers, tt_mb)
     sim = force.Sim()
@@ -234,11 +242,13 @@ def solve(gap: float, ledge: float, frames: int, payoff: str = "hit", shield_cos
     att, dfn = MENUS[kind(s[0])], MENUS[kind(s[1])]
     if no_shield and kind(s[1]) == "ground":
         dfn = NO_SHIELD
+    if first:  # P1's first input is given: the value of one plan, not of the position
+        att = (first,)
     if must_exit:  # P2 starts in shield and may not keep holding it
         dfn = tuple(d for d in dfn if d != "shield")
     sim.world.close()
     ask = {"gap": gap, "ledge": ledge, "frames": frames, "payoff": payoff, "shield_cost": shield_cost, "hop": hop,
-           "shield": shield, "must_exit": must_exit, "no_shield": no_shield, "trap": trap}
+           "shield": shield, "must_exit": must_exit, "no_shield": no_shield, "trap": trap, "grain": grain, "first": first, "ledge2": ledge}
     old: dict[str, tuple[float, int]] = {}
     if out and os.path.exists(out):
         with open(out) as f:
@@ -250,7 +260,7 @@ def solve(gap: float, ledge: float, frames: int, payoff: str = "hit", shield_cos
     second: dict[tuple, tuple] = {}  # root pair -> (menus, matrix) of the position it leads to
     total = 0
     with mp.get_context("spawn").Pool(workers, initializer=_init,
-                                      initargs=(root, frames, payoff, shield_cost, tt_mb, no_shield, trap)) as pool:
+                                      initargs=(root, frames, payoff, shield_cost, tt_mb, no_shield, trap, grain)) as pool:
         jobs = []
         for pair, v, nxt in pool.imap_unordered(_open, [(a, d) for a in att for d in dfn]):
             if v is not None:
@@ -299,12 +309,14 @@ def main() -> None:
     ap.add_argument("--must-exit", action="store_true", help="P2 may not keep holding his shield at the start")
     ap.add_argument("--no-shield", action="store_true", help="P2 never starts a shield from the ground")
     ap.add_argument("--trap", action="store_true", help="count P2 in shield next to a free P1 as P1's first hit")
+    ap.add_argument("--grain", type=int, default=1, help="frames each input is held (2: half the depth, coarser reactions)")
+    ap.add_argument("--first", help="fix P1's first input, to value one plan (for example hop)")
     ap.add_argument("--workers", type=int, default=28)
     ap.add_argument("--tt-mb", type=int, default=400)
     ap.add_argument("--out")
     args = ap.parse_args()
     r = solve(args.gap, args.ledge, args.frames, args.payoff, args.shield_cost, args.hop, args.shield, args.workers,
-              args.tt_mb, args.out, args.must_exit, args.no_shield, args.trap)
+              args.tt_mb, args.out, args.must_exit, args.no_shield, args.trap, args.grain, args.first)
     unit = "chance of a clean first hit for P1" if args.payoff == "hit" else "percent for P1"
     print(f"gap {r['gap']}, P1 height {r['p1_y']}, {r['frames']} frames: value {r['value']:+.4f} ({unit})  "
           f"[{r['positions']:,} positions, {r['seconds']}s, {r['workers']} processes, "
