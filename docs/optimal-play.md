@@ -302,22 +302,7 @@ Probes: `scripts/solver_probes/` (run with `PYTHONPATH=. python scripts/solver_p
 - **Shield is the trap of section 9.** [inferred] Once the hopper lands next to a shielding, cornered Fox, every exit measured there loses 5–18%. The 16-frame search ends about when the attacker lands, so it doesn't yet show the trap closing; that needs about 22 frames and is the next run.
 - **What is still missing for "the attacker wins":** these air positions were set up with the defender standing still during the first 9 frames of the hop. Whether a cornered defender can stop the attacker from getting there (by hitting the jumpsquat, or by jumping himself) is a search from a standing start outside shine range, 25 or more frames deep.
 
-## What this says about Petro's claim
-
-- **"Two perfect Foxes walk in and shine on the same frame":** not optimal. Walking into shine range loses to a jab from 12 or more, and on the ground the same-frame shines clank rather than whiff.
-- **"Deadlock":** yes, in a stronger form. Outside shine range, no committed move from either side gets through a frame-1 reaction, so neither side can move first.
-- **"Fox is the best":** weakly supported. The frame-1 shine gives Fox a 10–16-unit disc no opponent can stand in, and nobody has the equivalent against him. The short-horizon equilibrium values lean his way at close range, but only by up to 2%. Neutral at range is a standoff for everyone we tested.
-
-## Open next steps
-
-- The cornering game: can a Fox walk the other to the ledge and use the hop or the shield trap there? This is the most likely way out of the standoff.
-- Deeper trees with a better leaf: a small matrix game over continuation policies instead of a fixed idle or shield play-out.
-- Wavedash, crouch cancel and DI in the menus.
-- Yoshi's armored double jump and a frame-picked Judge as tree options.
-- The powershield and reflector ping-pong for lasers.
-- A ledge-stall cycle measured in the simulator.
-
-## 12. Standing just outside shine range: a cycle with no safe move but shield
+### 12. Standing just outside shine range: a cycle with no safe move but shield [sim]
 
 `force --gap 14 --frames 14 --trap --safe` (the defender cornered 12 units from the ledge, the attacker standing
 12.59 away, 72 million positions). Against an attacker who sees his input, the defender's moves fare like this:
@@ -343,3 +328,18 @@ jobs are appended to `--out` and skipped on a rerun; and `scripts/search.sh` sta
 a hard memory limit, so the search is what gets killed. The simulator library is now built with upstream's
 `python-release` profile instead of the unoptimised default: identical play over 60,000 frames, 1.47 times the
 search speed (14,000 positions a second per process).
+
+## What this says about Petro's claim
+
+- **"Two perfect Foxes walk in and shine on the same frame":** not optimal. Walking into shine range loses to a jab from 12 or more, and on the ground the same-frame shines clank rather than whiff.
+- **"Deadlock":** yes, in a stronger form. Outside shine range, no committed move from either side gets through a frame-1 reaction, so neither side can move first.
+- **"Fox is the best":** weakly supported. The frame-1 shine gives Fox a 10–16-unit disc no opponent can stand in, and nobody has the equivalent against him. The short-horizon equilibrium values lean his way at close range, but only by up to 2%. Neutral at range is a standoff for everyone we tested.
+
+## Open next steps
+
+- The cornering game: can a Fox walk the other to the ledge and use the hop or the shield trap there? This is the most likely way out of the standoff.
+- Deeper trees with a better leaf: a small matrix game over continuation policies instead of a fixed idle or shield play-out.
+- Wavedash, crouch cancel and DI in the menus.
+- Yoshi's armored double jump and a frame-picked Judge as tree options.
+- The powershield and reflector ping-pong for lasers.
+- A ledge-stall cycle measured in the simulator.
