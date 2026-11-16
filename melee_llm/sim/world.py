@@ -114,6 +114,7 @@ class World:
     def restore(self, snap: Snapshot) -> melee.GameState:
         """Back to `snap`. Controllers are released: the next step reads only what is pressed after this."""
         self.env.restore(0, snap.state)
+        self.env.reset_cursor()  # observe() writes at the cursor, which may sit at the ring's end
         self.env.observe()
         self.gs, self.done = copy.deepcopy(snap.gs), False
         self.builder.prev = self.gs
