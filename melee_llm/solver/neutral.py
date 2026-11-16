@@ -1,16 +1,19 @@
 """Game-theoretic optimal play for short Melee exchanges, computed on the real game code (melee-sim-light).
 
-Two players stand facing each other. Every `move_frames` frames both pick one of a few macro-actions at the same
-time (wait, dash in, dash away, shine, short hop, shield, grab, jab, laser). The tree runs `depth` such joint picks deep;
-an exchange ends early when someone takes damage. Each leaf lets the hit play out (`rollout` frames of nothing)
-and scores damage dealt minus damage taken by P1. Backward induction solves the zero-sum matrix game at every node
-exactly (`matrix.solve`), so the root gives the value and the equilibrium (often mixed) strategies.
+P1 (any character) faces Fox on Final Destination, standing `gap` apart. Every `move_frames` frames both pick one
+move from their menus (names from `solver.game.MOVES`) at the same time. The tree runs `depth` such joint picks deep;
+an exchange ends early when someone takes damage. Each leaf lets what was started play out for `rollout` frames,
+with both fighters idle (or shielding, `--leaf shield`), and scores damage dealt minus damage taken by P1. Backward
+induction solves the zero-sum matrix game at every node exactly (`matrix.solve`), so the root gives the value and the
+equilibrium (often mixed) strategies. Clanks and hitlag come from the game itself: two grounded shines on the same
+frame clank (both lose 4 frames), they don't whiff.
 
 Alongside the equilibrium the same tree scores the plan Dan Petro gave at DEF CON 24 for perfect SmashBot play,
-"walk in until in range, then shine": how much a best-responding opponent wins against it, and what it scores
-against itself.
+"walk in until in range, then shine", played by Fox: how much a best-responding P1 wins against it, and what it
+scores against itself in the ditto. docs/optimal-play.md has the results.
 
     uv run python -m melee_llm.solver.neutral --gaps 8 12 16 20 --depth 2
+    uv run python -m melee_llm.solver.neutral --char MARTH --moves wait in away shield jab ftilt fsmash --gaps 20
 """
 from __future__ import annotations
 
@@ -25,34 +28,17 @@ import melee
 import numpy as np
 
 from melee_llm.solver import matrix
+from melee_llm.solver.game import Sim, move
 
-A, B, X, Z, R = 0x0100, 0x0200, 0x0400, 0x0010, 0x0020
-ACTIONS = ("wait", "in", "away", "shine", "hop", "shield", "grab", "jab", "laser")
-WAIT, IN, SHINE = 0, 1, 3
+FOX_MOVES = ("wait", "in", "away", "shine", "hop", "shield", "grab", "jab", "laser")
 SHINE_REACH = 11.0  # largest gap (x distance, standing Foxes) at which a standing shine hits; measured by reach()
-
-
-def _input(action: int, f: int, toward: int) -> tuple[int, int, int, int]:
-    """(buttons, main_x, main_y, r) on frame `f` of a macro-action; `toward` is +1 when the opponent is right."""
-    name = ACTIONS[action]
-    if name == "in":
-        return 0, 80 * toward, 0, 0
-    if name == "away":
-        return 0, -80 * toward, 0, 0
-    if name == "shield":
-        return R, 0, 0, 255
-    if f == 0:
-        return {"shine": (B, 0, -80, 0), "hop": (X, 0, 0, 0), "grab": (Z, 0, 0, 0), "jab": (A, 0, 0, 0),
-                "laser": (B, 0, 0, 0)}.get(
-            name, (0, 0, 0, 0))
-    return 0, 0, 0, 0
 
 
 @dataclass
 class Totals:
     nash: float
-    petro_worst: float  # P1 plays Petro's plan, P2 best-responds
-    petro_mirror: float  # both play Petro's plan
+    petro_worst: float  # Fox (P2) plays Petro's plan, P1 best-responds: P1's gain, so > 0 means the plan loses
+    petro_mirror: float  # both play Petro's plan (P1 without a shine waits instead)
 
 
 @dataclass
@@ -67,58 +53,9 @@ class Root:
     matrix: list[list[float]]
     nodes: int
     seconds: float
-    best_vs_petro: str = ""  # P2's best answer to Petro's first move
+    p1_char: str = "FOX"
+    best_vs_petro: str = ""  # P1's best answer to Fox's first Petro move
     notes: list[str] = field(default_factory=list)
-
-
-class Sim:
-    """One raw melee-sim-light match: restore, step with raw inputs, read both players."""
-
-    def __init__(self):
-        from melee_llm.sim.world import World
-        self.world = World({1: melee.Character.FOX, 2: melee.Character.FOX}, stage=melee.Stage.FINAL_DESTINATION)
-        self.env = self.world.env
-
-    def players(self):
-        s = self.env.current_frame[0]["slots"]
-        return s[0], s[1]
-
-    def step(self, inputs) -> None:
-        env = self.env
-        if env.t >= env.length:
-            env.reset_cursor()
-        row = env.raw_action_view[env.t, 0]["players"]
-        for i, (b, mx, my, r) in enumerate(inputs):
-            row[i]["buttons"], row[i]["main_x"], row[i]["main_y"] = b, mx, my
-            row[i]["c_x"], row[i]["c_y"], row[i]["l"], row[i]["r"] = 0, 0, 0, r
-        env.step()
-
-    def save(self) -> bytes:
-        return self.env.save(0)
-
-    def restore(self, state: bytes) -> None:
-        self.env.restore(0, state)
-        self.env.reset_cursor()  # observe() writes at the cursor, which may sit at the ring's end
-        self.env.observe()
-
-    def setup(self, gap: float) -> bytes:
-        """Both Foxes walk in from their spawns at the same speed and come to a stop, standing, about `gap` apart
-        (the closest reachable gap at or above it: walking stops in steps of about 1.2)."""
-        w = self.world
-        gs = w.reset(0)
-        while gs.frame < 0 or gs.players[1].action != melee.Action.STANDING:
-            gs = w.step()
-        start = self.save()
-        for frames in range(400, -1, -1):  # walk less and less until the gap after stopping reaches `gap`
-            self.restore(start)
-            for _ in range(frames):
-                self.step([(0, 30, 0, 0), (0, -30, 0, 0)])
-            for _ in range(30):
-                self.step([(0, 0, 0, 0), (0, 0, 0, 0)])
-            a, b = self.players()
-            if b["pos_x"] - a["pos_x"] >= gap:
-                return self.save()
-        return start
 
 
 def _key(p, q) -> tuple:
@@ -131,8 +68,12 @@ def _key(p, q) -> tuple:
 
 
 class Solver:
-    def __init__(self, sim: Sim, depth: int, move_frames: int, rollout: int):
+    def __init__(self, sim: Sim, depth: int, move_frames: int, rollout: int, moves1=FOX_MOVES, moves2=FOX_MOVES,
+                 leaf: str = "wait"):
         self.sim, self.depth, self.k, self.rollout = sim, depth, move_frames, rollout
+        self.leaf = move(leaf)
+        self.moves = (tuple(moves1), tuple(moves2))
+        self.fns = tuple(tuple(move(m) for m in ms) for ms in self.moves)
         self.cache: dict[tuple, tuple[Totals, int]] = {}
         self.nodes = 0
 
@@ -145,11 +86,13 @@ class Solver:
         a, b = self.sim.players()
         return float(a["percent"]), float(b["percent"]), int(a["stocks"]), int(b["stocks"])
 
-    def petro(self) -> tuple[int, int]:
-        """Each player's move under "walk in until in range, then shine"."""
+    def petro(self, side: int = 1) -> int:
+        """A player's move under "walk in until in range, then shine" (wait, for a menu without a shine)."""
+        if "shine" not in self.moves[side]:
+            return self.moves[side].index("wait")
         a, b = self.sim.players()
         close = abs(float(b["pos_x"]) - float(a["pos_x"])) <= SHINE_REACH
-        return (SHINE, SHINE) if close else (IN, IN)
+        return self.moves[side].index("shine" if close else "in")
 
     def play(self, i: int, j: int) -> bool:
         """Play joint macro (i, j) from the current state; True if someone was hit (the exchange is decided)."""
@@ -157,15 +100,19 @@ class Solver:
         toward = 1 if b["pos_x"] >= a["pos_x"] else -1
         hit = False
         p0 = (float(a["percent"]), float(b["percent"]))
+        f1, f2 = self.fns[0][i], self.fns[1][j]
         for f in range(self.k):
-            self.sim.step([_input(i, f, toward), _input(j, f, -toward)])
+            self.sim.step([f1(f, toward, a), f2(f, -toward, b)])
             a, b = self.sim.players()
             hit = hit or (float(a["percent"]), float(b["percent"])) != p0 or int(a["stocks"]) + int(b["stocks"]) == 0
         return hit
 
     def finish(self, base) -> float:
-        for _ in range(self.rollout):
-            self.sim.step([(0, 0, 0, 0), (0, 0, 0, 0)])
+        """Both play the leaf move (idle by default, or e.g. shield) while whatever was started plays out."""
+        for f in range(self.rollout):
+            a, b = self.sim.players()
+            toward = 1 if b["pos_x"] >= a["pos_x"] else -1
+            self.sim.step([self.leaf(f, toward, a), self.leaf(f, -toward, b)])
         return self._score(base)
 
     def child(self, state: bytes, i: int, j: int, depth: int, base) -> Totals:
@@ -180,15 +127,15 @@ class Solver:
         key = _key(*self.sim.players()) + (depth,)
         if key in self.cache:
             return self.cache[key][0]
-        pi, pj = self.petro()
-        n = len(ACTIONS)
-        nash, worst, mirror = np.zeros((n, n)), np.zeros((n, n)), np.zeros((n, n))
+        pj = self.petro()
+        n, m = len(self.moves[0]), len(self.moves[1])
+        nash, worst, mirror = np.zeros((n, m)), np.zeros((n, m)), np.zeros((n, m))
         for i in range(n):
-            for j in range(n):
+            for j in range(m):
                 t = self.child(state, i, j, depth, base)
                 nash[i, j], worst[i, j], mirror[i, j] = t.nash, t.petro_worst, t.petro_mirror
         self.nodes += 1
-        out = Totals(matrix.solve(nash).value, float(worst[pi].min()), float(mirror[pi, pj]))
+        out = Totals(matrix.solve(nash).value, float(worst[:, pj].max()), float(mirror[self.petro(0), pj]))
         self.cache[key] = (out, self.nodes)
         return out
 
@@ -196,58 +143,44 @@ class Solver:
 _SIM: Sim | None = None
 
 
-def _init() -> None:
+def _init(p1: melee.Character) -> None:
     global _SIM
-    _SIM = Sim()
+    _SIM = Sim(p1, melee.Character.FOX)
 
 
-def _subtree(args) -> tuple[int, int, Totals, int, tuple[int, int]]:
+def _subtree(args) -> tuple[int, int, Totals, int]:
     """One root joint action, solved below it in a worker process."""
-    state, i, j, depth, k, rollout, base = args
-    solver = Solver(_SIM, depth, k, rollout)
+    state, i, j, depth, k, rollout, base, moves1, moves2, leaf = args
+    solver = Solver(_SIM, depth, k, rollout, moves1, moves2, leaf)
     t = solver.child(state, i, j, depth, base)
-    _SIM.restore(state)
-    return i, j, t, solver.nodes, solver.petro()
+    return i, j, t, solver.nodes
 
 
-def solve_root(gap: float, depth: int = 2, move_frames: int = 3, rollout: int = 25, workers: int = 8) -> Root:
+def solve_root(gap: float, depth: int = 2, move_frames: int = 3, rollout: int = 25, workers: int = 8,
+               p1: melee.Character = melee.Character.FOX, moves1=FOX_MOVES, moves2=FOX_MOVES,
+               leaf: str = "wait") -> Root:
+    """P1 (`p1`, menu `moves1`) against Fox (menu `moves2`), standing `gap` apart."""
     t0 = time.time()
-    sim = Sim()
+    sim = Sim(p1, melee.Character.FOX)
     state = sim.setup(gap)
-    a, b = sim.players()
-    real_gap = float(b["pos_x"] - a["pos_x"])
-    root = Solver(sim, depth, move_frames, rollout)
-    base, (pi, pj) = root._base(), root.petro()
-    n = len(ACTIONS)
-    jobs = [(state, i, j, depth, move_frames, rollout, base) for i in range(n) for j in range(n)]
-    nash, worst, mirror = np.zeros((n, n)), np.zeros((n, n)), np.zeros((n, n))
+    real_gap = sim.gap()
+    root = Solver(sim, depth, move_frames, rollout, moves1, moves2, leaf)
+    base, pi, pj = root._base(), root.petro(0), root.petro(1)
+    n, m = len(moves1), len(moves2)
+    jobs = [(state, i, j, depth, move_frames, rollout, base, moves1, moves2, leaf) for i in range(n) for j in range(m)]
+    nash, worst, mirror = np.zeros((n, m)), np.zeros((n, m)), np.zeros((n, m))
     nodes = 1
-    with mp.get_context("spawn").Pool(workers, initializer=_init) as pool:
-        for i, j, t, k, _ in pool.imap_unordered(_subtree, jobs):
+    with mp.get_context("spawn").Pool(workers, initializer=_init, initargs=(p1,)) as pool:
+        for i, j, t, k in pool.imap_unordered(_subtree, jobs):
             nash[i, j], worst[i, j], mirror[i, j] = t.nash, t.petro_worst, t.petro_mirror
             nodes += k
     sim.world.close()
     sol = matrix.solve(nash)
-    mix = lambda v: {ACTIONS[k]: round(float(p), 4) for k, p in enumerate(v) if p > 1e-4}
+    mix = lambda names, v: {names[k]: round(float(p), 4) for k, p in enumerate(v) if p > 1e-4}
     return Root(gap=round(real_gap, 2), depth=depth, move_frames=move_frames, rollout=rollout,
-                totals=Totals(round(float(sol.value), 3), float(worst[pi].min()), float(mirror[pi, pj])),
-                p1=mix(sol.row), p2=mix(sol.col), matrix=nash.round(2).tolist(), nodes=nodes,
-                seconds=round(time.time() - t0, 1), best_vs_petro=ACTIONS[int(np.argmin(worst[pi]))])
-
-
-def reach(gaps=np.arange(6.0, 20.0, 0.5)) -> list[tuple[float, bool]]:
-    """Does a standing shine hit a standing opponent at each gap? Calibrates SHINE_REACH."""
-    sim, out = Sim(), []
-    for g in gaps:
-        sim.restore(sim.setup(float(g)))
-        a, b = sim.players()
-        gap, p = float(b["pos_x"] - a["pos_x"]), float(b["percent"])
-        sim.step([(B, 0, -80, 0), (0, 0, 0, 0)])
-        for _ in range(5):
-            sim.step([(0, 0, 0, 0), (0, 0, 0, 0)])
-        out.append((round(gap, 2), float(sim.players()[1]["percent"]) > p))
-    sim.world.close()
-    return out
+                totals=Totals(round(float(sol.value), 3), float(worst[:, pj].max()), float(mirror[pi, pj])),
+                p1=mix(moves1, sol.row), p2=mix(moves2, sol.col), matrix=nash.round(2).tolist(), nodes=nodes,
+                seconds=round(time.time() - t0, 1), p1_char=p1.name, best_vs_petro=moves1[int(np.argmax(worst[:, pj]))])
 
 
 def main() -> None:
@@ -257,19 +190,21 @@ def main() -> None:
     ap.add_argument("--move-frames", type=int, default=3)
     ap.add_argument("--rollout", type=int, default=25)
     ap.add_argument("--workers", type=int, default=8)
-    ap.add_argument("--reach", action="store_true", help="only measure the shine's reach")
+    ap.add_argument("--char", default="FOX", help="P1's character; P2 is always Fox")
+    ap.add_argument("--moves", nargs="+", help="P1's menu (names from solver.game.MOVES); default Fox's")
+    ap.add_argument("--fox-moves", nargs="+", default=list(FOX_MOVES))
+    ap.add_argument("--leaf", default="wait", help="what both do while a leaf plays out: wait (default) or shield")
     ap.add_argument("--out", type=Path)
     args = ap.parse_args()
-    if args.reach:
-        for gap, hit in reach():
-            print(f"gap {gap:6.2f}  {'hit' if hit else '-'}")
-        return
+    p1 = melee.Character[args.char.upper()]
+    moves1 = tuple(args.moves or FOX_MOVES)
     results = []
     for g in args.gaps:
-        r = solve_root(g, args.depth, args.move_frames, args.rollout, args.workers)
+        r = solve_root(g, args.depth, args.move_frames, args.rollout, args.workers, p1, moves1, tuple(args.fox_moves),
+                       args.leaf)
         results.append(asdict(r))
-        print(f"gap {r.gap:6.2f}  value {r.totals.nash:+.2f}  P1 {r.p1}  P2 {r.p2}  "
-              f"Petro worst {r.totals.petro_worst:+.1f} (answer: {r.best_vs_petro})  "
+        print(f"{r.p1_char} gap {r.gap:6.2f}  value {r.totals.nash:+.2f}  P1 {r.p1}  P2 {r.p2}  "
+              f"vs Fox's Petro plan {r.totals.petro_worst:+.1f} (answer: {r.best_vs_petro})  "
               f"Petro mirror {r.totals.petro_mirror:+.1f}  [{r.nodes} nodes, {r.seconds}s]", flush=True)
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
