@@ -31,6 +31,25 @@ ROSTER = {  # name -> (match spec, character); see docs/bots.md
     "hal-master-yoshi": ("hal:MASTER", "YOSHI"),
     "hal-amsa-yoshi": ("hal:AMSA#0", "YOSHI"),   # imitating aMSa, the one pro Yoshi in its training data
     "faynt-10m-fox": ("faynt:10M-Arena", "FOX"),
+    "faynt-75m-fox": ("faynt:75M-Arena", "FOX"),
+    "phillip-super-gm-fox": ("phillip:super-gm", "FOX"),
+    "phillip-fox-v6.2": ("phillip:fox_d21_v6.2", "FOX"),       # per-character RL agents, 21 frames of delay
+    "phillip-marth-v6.2": ("phillip:marth_d21_v6.2", "MARTH"),
+    "phillip-falco-v6.2": ("phillip:falco_d21_v6.2", "FALCO"),
+    # Phillip's RL agents trained against Yoshi (18 frames of delay)
+    "phillip-fox-vs-yoshi": ("phillip:fox_d18_vs_yoshi_v3", "FOX"),
+    "phillip-marth-vs-yoshi": ("phillip:marth_d18_vs_yoshi_v3", "MARTH"),
+    "phillip-falco-vs-yoshi": ("phillip:falco_d18_vs_yoshi", "FALCO"),
+    "phillip-sheik-vs-yoshi": ("phillip:sheik_d18_vs_yoshi", "SHEIK"),
+    "phillip-peach-vs-yoshi": ("phillip:peach_d18_vs_yoshi_v3", "PEACH"),
+    # Phillip's own Yoshi agents: rivals for ours. Each RL one was trained for one matchup.
+    "phillip-yoshi-imitation": ("phillip:yoshi_d18_imitation_v3", "YOSHI"),
+    "phillip-yoshi-ditto": ("phillip:yoshi_d18_ditto", "YOSHI"),
+    "phillip-yoshi-vs-fox": ("phillip:yoshi_d18_vs_fox_v3", "YOSHI"),
+    "phillip-yoshi-vs-marth": ("phillip:yoshi_d18_vs_marth_v3", "YOSHI"),
+    "phillip-yoshi-vs-falco": ("phillip:yoshi_d18_vs_falco", "YOSHI"),
+    "phillip-yoshi-vs-sheik": ("phillip:yoshi_d18_vs_sheik_v4", "YOSHI"),
+    "phillip-yoshi-vs-peach": ("phillip:yoshi_d18_vs_peach_v3", "YOSHI"),
 }
 ANCHOR = "cpu9-fox"
 DIR = LIVE / "data/train/league"
