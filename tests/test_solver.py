@@ -51,3 +51,14 @@ def test_yoshis_double_jump_armor_takes_the_shine_without_knockback():
     assert float(a["percent"]) == 65.0 and int(a["hitstun"]) == 0
     assert melee.Action(int(a["action_id"])).name.startswith("JUMPING_ARIAL")
     sim.world.close()
+
+
+def test_force_menus_follow_the_fighter_state():
+    from melee_llm.solver import force
+    names = lambda action: {force.NAMES[i] for i in force.menu({"action_id": action})}
+    assert {"shine", "hop_in", "shield2"} <= names(melee.Action.STANDING.value)
+    assert names(melee.Action.KNEE_BEND.value) == {"wait", "in", "out"}
+    assert "roll_out" in names(melee.Action.SHIELD.value) and "shine" not in names(melee.Action.SHIELD.value)
+    assert names(melee.Action.DOWN_B_GROUND.value) == {"wait", "hold_b", "jump"}
+    assert names(melee.Action.GRABBED.value) == {"wait"}
+    assert all(len(rows) == frames for frames, rows in force.MOVES.values())
