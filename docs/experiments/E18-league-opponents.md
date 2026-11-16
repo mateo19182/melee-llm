@@ -52,7 +52,7 @@ Running. So far, `hal:AMSA#0,return_target=40` with no delay (wins of finished g
 | Faynt 75M | 0 of 1 | 0 |
 
 - **The yardstick exists.** Phillip's agents trained against Yoshi beat our best Yoshi 24 games to 2, with 18 frames of delay against our none.
-- **Errors.** 18 games died with a Dolphin disconnect (`EnetDisconnected`), the same fault as in E16. They came while training jobs were loading the machine; whether load is the cause is not established.
+- **Errors.** 16 games died with a Dolphin disconnect (`EnetDisconnected`), the same fault as in E16. They came while training jobs were loading the machine; whether load is the cause is not established.
 - **Faynt 75M** runs on the CPU at about 5 cores a game. Four at once stalled for 30 minutes, so its games now run last, two at a time.
 - **Phillip's imitation-only Yoshi** cannot play as set up: its model needs a player name. It is out of the roster until that is added.
 
