@@ -23,7 +23,7 @@ Where do LLMs land on one Elo scale for real Super Smash Bros. Melee? The scale 
 | Netplay | You vs any bot over Slippi Direct Connect. Built, not yet played. | [netplay](netplay.md) |
 | Live commentary | Play-by-play ticker on the Live page, plus an optional two-caster LLM booth with ElevenLabs voices (only while someone listens). | [web-ui](web-ui.md) |
 | Simulator | `--mode sim`: games in melee-sim-light (Melee's decompiled gameplay code), no Dolphin. Checked frame for frame against Dolphin replays. Learned bots run in it through Slippi events; no CPUs. | [simulator](simulator.md) |
-| m19182-yoshi | Our own behaviour-cloned Yoshi (`train/`). `bc-6m-v1` lost 12 of 12 to CPU 9; `bc-20m-v2` won 1 of 12. | `train/` |
+| m19182-yoshi | Our Yoshi (`train/`). Our own behaviour-cloned models reach −66 league Elo; the best Yoshi is HAL's 247M model imitating aMSa. | [experiments](experiments.md) |
 | Local play | `play.py`: play any bot on the laptop with a controller. | [local-play](local-play.md) |
 | Write-up | "Melee bots are getting really good": history and why now, how the best bots work, findings, on one page at `/writeup/`. | `writeup/` |
 
@@ -57,7 +57,7 @@ Mateo gives the project one or two more weeks (decided 2026-11-14). LLMs are no 
 | Thread | Covers | Now / next |
 |---|---|---|
 | **Melee hub** (server) | The map, bench, deploys, coordination, write-up, docs | Write-up restyled and reframed; docs tightened. Later: rate m19182-yoshi and Mateo (`human:mateo`) on the bench, cheap entrants (Jev with named features, MIMIC on Mateo's replays) |
-| **Melee B · Own bot** (server) | `train/`, `meleebot`, `data/train/` | Best so far: `bc-20m-ft` (Muon pretrain on 1.4B frames of pro + Master play, fine-tuned on Yoshi at netplay delay 2-4): 5 of 6 vs CPU 9, first wins off MIMIC Marth and HAL Yoshi, still loses to Phillip, HAL Fox, Faynt. League (`python -m meleebot.league`) rates our runs against that roster. Self-play PPO in the simulator (`meleebot.rl.ppo`) running as `rl-yoshi-1`; the training page shows it with sample replays. stomped.dev bot off since 2026-11-15. Next: league speed-up, RL evaluation in the league |
+| **Melee B · Own bot** (server) | `train/`, `meleebot`, `data/train/`, [experiment log](experiments.md) | Our own cloning pipeline is stopped: a Fox trained with it won 2 of 24 against CPU 9 where HAL's equivalent wins 95%, because the model holds its inputs once it is the one playing. Best Yoshi is now HAL's 247M model imitating aMSa with return target 40 (`hal:AMSA#0,return_target=40`), top of our league at 561 Elo with no delay. It is live on stomped.dev since 2026-11-16, acting 11 frames ahead. Next: stronger league opponents, finer steering, then a training loop for HAL's model as the base for RL. Every experiment is in the [log](experiments.md) |
 | **Melee D · Play** (laptop) | Local play (`play.py`), [netplay](netplay.md), m19182-yoshi speed on the laptop | Both demo bots hold 60 fps. Open: a full game with the GameCube controller against each |
 | **Melee F · Web** (server) | `melee_llm/web/static`, the public site | Melee menu look and the public site are live (PR #30) |
 | **Melee I · Bot-writer** (server) | `melee_llm/botwriter/`, bench rules | Round 2 done and on the bench; Mateo stopped it there. Open: a rerun from a weak starter, a round robin among the written bots, a written bot on stomped.dev |
