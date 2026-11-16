@@ -12,6 +12,7 @@ Measured on 2026-11-16 on Final Destination, everyone at 0% unless stated, UCF o
 - **The exception is Fox's own shine.** [sim] Its hitbox is out on frame 1, so it can't be answered. Depending on the opponent's hurtbox it reaches 10 (Peach) to 16 (Yoshi) units, and inside that disc it gets through every reaction. Everything else Fox does is answered on reaction, like everyone else's moves. This frame-1 disc is the measured part of "Fox is best".
 - **The shine is not what wins.** [sim] Its reach is short, about 9–11 units between the two fighters' centres. Ordinary moves out-range it: Fox's own jab hits at 21, Marth's jab at 30, and most of the cast lands a jab at 12 on frame 2. What saves Fox is the shine's **frame 1**: it is intangible, and on the ground its hitbox **clanks** with the attacker's grounded hitbox.
 - **Same-frame shines:** [sim] on the ground they **clank** (0% to both, 4 frames of hitlag each, both stay in the shine). In the air they truly whiff: no hitlag, because the intangible hurtboxes skip the hit check. Shining one frame earlier deals 5%, on the ground or in the air.
+- **Yoshi's armor and Game & Watch's Judge 9 beat the shine itself, but not Fox.** [sim] Yoshi's double-jump armor absorbs the shine at every percent. A frame-picked Judge 9 lands for 32% through a shine just out of its range. Fox jabs, shields or punishes both on reaction.
 - **Equilibrium values are about 0 against every character tested**, from the solver below: within ±2.2% damage per exchange over a short horizon, leaning slightly to Fox at close range. Petro's own plan, "walk in, then shine", loses to a best response in every matchup, by 2–38%.
 - **Running out the clock:** a timeout goes to the lower percent ([rules](https://www.ssbwiki.com/Tournament_rulesets_(SSBM))). With no ledge-grab limit, Fox, Falco, Sheik, Captain Falcon and Ganondorf have **fully intangible ledge stalls** ([SmashWiki](https://www.ssbwiki.com/Ledgestall)), so a lead could be held forever. Current rules cap cliff grabs at 40–60 per game and ban the known air stalls. Since nobody can force the first hit anyway, the clock rarely gets that far: a perfect game should time out at 0–0 and go to a 1-stock tiebreak that deadlocks the same way. [inferred]
 
@@ -103,6 +104,30 @@ The armor ends when Yoshi attacks, so he still has to cross the gap and hit Fox:
 - Fox punishes all 7 on reaction: he shines Yoshi before the double jump, or after the aerial has ended the armor.
 - The armor is still the one thing we found that the shine simply cannot move. A fuller search of Yoshi's options (double jump into landing, egg throw, grab, waiting in the armor) is open.
 
+### 4b. Mr. Game & Watch's Judge 9: picked by frame, still answered on reaction [sim, code]
+
+This result comes from the parent research thread; we reran its script and got the same numbers.
+
+**The number is chosen when G&W presses the button.** `ftGw_SpecialS_Enter` calls `ftGw_SpecialS_GetRandomInt` (`ftGw_SpecialS.c:119`), which draws from the game's RNG once. It also leaves the last two results out of the draw, so a 9 can come up at most once every three Judges.
+
+A TAS sees the seed, so it knows each frame's result in advance:
+- A given result holds for windows of 10–60 frames.
+- From a neutral start, a 9 window opened within 44–105 frames, depending on what Fox was doing.
+- Fox's inputs advance the RNG too, so he moves the windows around. Petro's "RNG war" is real here, at frame resolution.
+
+**A 9 hits for 32%. Here is what Fox does, reacting one frame after the press:**
+
+| Gap | Fox does nothing | Shine | Shield | Jab | Grab | Short hop |
+| --- | --- | --- | --- | --- | --- | --- |
+| 9.2 | Fox takes 32% | G&W takes 5% | blocked | G&W takes 4% | nothing | Fox takes 32% |
+| 13.6 | Fox takes 32% | **Fox takes 32%** (shine out of range) | blocked | G&W takes 4% | nothing | Fox takes 32% |
+| 17.5 | misses | misses | blocked | G&W takes 4% | Fox takes 32% | Fox takes 32% |
+| 21.5 | misses | misses | blocked | G&W takes 4% | misses | misses |
+
+So a Judge 9 just outside shine range beats a Fox who answers with the shine. Jab one frame later interrupts it at every gap, and shield blocks it. It's tournament-legal (no rule forbids picking the number by timing), but like everything else it's answered on reaction.
+
+Peach's turnip pull and Luigi's misfire are drawn the same way, at the moment of input, so a TAS could pick them too. [inferred from the code; not measured]
+
 ### 5. Projectiles are reflected or stopped [sim, web]
 
 Fox held his reflector up from frame d, for every d before the projectile would hit an idle Fox at gap 40. The shine reflects (the shooter takes damage) or stops (nobody hit) nearly every timing for every real projectile we fired:
@@ -179,6 +204,6 @@ Every value is within ±2.2% damage per exchange.
 
 - Deeper trees with a better leaf: a small matrix game over continuation policies instead of a fixed idle or shield play-out.
 - Wavedash, crouch cancel and DI in the menus.
-- Yoshi's armored double jump as a tree option.
+- Yoshi's armored double jump and a frame-picked Judge as tree options.
 - The powershield and reflector ping-pong for lasers.
 - A ledge-stall cycle measured in the simulator.
