@@ -31,6 +31,7 @@ Code: `melee_llm/solver/`.
 | duel | `probe duel --chars MARTH --gaps 12 20 30` | the attacker starts a move; Fox answers on frame d ≥ 1 with each of 10 reactions (shine, shield, spotdodge, dash away, roll, short hop, jab, up and down smash, grab). Outcomes: through, traded, blocked or punished |
 | shine_vs | `probe shine_vs --chars JIGGLYPUFF --moves down_b [--air 8]` | Fox shines 2 frames before, on, or 2 frames after the attacker's input, grounded or with both airborne |
 | reflect | `probe reflect --gaps 40 --chars SAMUS --moves side_b` | Fox holds the reflector up from frame d, for every d before the projectile would hit |
+| force | `force --gap 9 --ledge 12 --frames 10 --trap` | whether the attacking Fox can force the first hit against every defender answer (section 10) |
 | tree | `neutral --char MARTH --moves … --fox-moves … --depth 2` | exact Nash equilibrium of 2 simultaneous 3-frame picks from a 15-move menu, then a 25-frame play-out |
 
 "Frame 1 reaction" means Fox sees the attacker's new action state on the frame it starts and inputs his answer on the next frame. A TAS can't do better without reading the opponent's inputs in advance.
@@ -260,6 +261,22 @@ Probes: `scripts/solver_probes/` (run with `PYTHONPATH=. python scripts/solver_p
 - In a symmetric position these cancel out: both Foxes have the same options, and re-shining as fast as possible is each one's best reply. Petro's ground deadlock survives.
 - In an asymmetric position they don't. A Fox who gets above and beside the other with his double jump, or who walks up to a shield, is ahead.
 - We haven't shown the attacker can force either position. The hop takes 5 or more frames to reach the one-sided zone, and the defender can back away on reaction. That turns the question into cornering: Final Destination is 171 units wide, and a Fox backed up to the ledge can no longer retreat. Solving that game needs frame-by-frame decisions over 15+ frames, which the 9-frame trees don't cover.
+
+### 10. Forced-win search: can the attacker win without guessing? [sim]
+
+`python -m melee_llm.solver.force --gap 9 --ledge 12 --frames 10 --trap` asks a stricter question than the equilibrium trees: does the attacking Fox have a line that lands the first hit whatever the defender does, even a defender who sees each input before answering? Both sides pick almost every frame from state-dependent menus (11 moves standing, 6 airborne, 7 in shield, 3 in the shine).
+
+- **Result:** with the defender cornered 10 units from the ledge and the attacker at point-blank range (7.8 units), there is **no forced win within 10 frames** (372,172 positions, 61 s), even counting the shield trap of section 9 as a win. Every attacker move has an answer; the shine is answered only by a shine or a shield.
+- **Why a forced win can't exist at close range:** [inferred] a defender who sees the attacker's shine can always shine on the same frame, and same-frame shines hit nobody. So a guaranteed hit would have to come from outside the shine exchange, and the search found none in this horizon. Any real edge for the attacker has to be a guessing edge: a mixed-strategy value above 0, which is what the equilibrium trees measure.
+- **Speed, and why the language doesn't matter:** every branch copies the simulator's 1 MB match state inside its C library.
+
+| Operation, one core | Cost |
+| --- | --- |
+| step one frame | 34 µs |
+| save or restore a state (the equilibrium trees) | 2,400–2,600 µs |
+| copy a state between lanes of one batch (this search) | about 300 µs |
+
+  Profiled, the lane copy is 60% of the time, the step 30% and Python about 5%. One process searches about 2,700 positions/s; 8, 16 and 28 processes all reach about 10,500/s in total, because the copies saturate memory bandwidth. A faster search needs a smaller state copy inside the simulator, not a faster language around it.
 
 ## What this says about Petro's claim
 
