@@ -8,7 +8,7 @@ dependencies = [
     "httpx>=0.28.1",
     "markdown-it-py>=4.3.0",
     "melee>=0.47.6",
-    "melee-sim-light",
+    "melee-brute",
     "openai>=3.50.0",
     "pillow>=13.0.0",
     "starlette>=1.10.0",
@@ -35,4 +35,4 @@ select = ["E", "F", "I", "B"]
 ignore = ["E501", "E702", "E731", "B023", "B905"]
 
 [tool.uv.sources]
-melee-sim-light = { git = "https://github.com/kyhavlov/melee-sim-light", rev = "eea7b5fbcd0243baf4c1956d52f3e1d0f536edc4" }
+melee-brute = { git = "https://github.com/mateo19182/melee-brute", rev = "1d7157817907555c7aea7ce61ac644c16058336a" }

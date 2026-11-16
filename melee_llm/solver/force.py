@@ -12,7 +12,7 @@ Memory: each process remembers decided positions in a table capped at `--tt-mb` 
 the number of processes is cut to what the free memory can hold. Finished jobs go to `--out` as they complete, and
 a rerun with the same file skips them. Launch long runs with `scripts/search.sh`, which adds a hard memory limit.
 
-Speed: the search plays on one simulator match and takes moves back with `sim/rollback.py` (our patch to
+Speed: the search plays on one simulator match and takes moves back with `melee_brute.rollback` (our patch to
 melee-sim-light: about 9 µs per rollback, against 300 µs for the library's lane copy). Each process is exact by
 check: after every root job it verifies that no memory page outside the rollback set changed.
 
@@ -98,11 +98,11 @@ _WARMUP = [N, (B, 0, -80, 0), (X, 0, 0, 0), (A, 0, 0, 0), (0, 80, 0, 0), (0, -80
 
 
 class Search:
-    """Depth-first search on one simulator match: make a move, look, take it back (`sim/rollback.py`)."""
+    """Depth-first search on one simulator match: make a move, look, take it back (`melee_brute.rollback`)."""
 
     def __init__(self, root: bytes, max_depth: int = 64, trap: bool = False, tt_mb: int = 400):
         import melee_sim as msl
-        from melee_llm.sim.rollback import Rollback
+        from melee_brute.rollback import Rollback
         from melee_llm.sim.state import SIM_STAGE
         from melee_llm.sim.world import DATA_DIR
         self.trap, self.max_depth = trap, max_depth
