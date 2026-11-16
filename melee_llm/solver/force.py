@@ -8,6 +8,10 @@ is involved. A "no" only says no forced win exists with these moves inside the h
 Moves depend on the fighter's state (standing, airborne, in shield, in the shine, jumpsquat); in every other state
 the only move is to wait a frame. Most moves last one or two frames, so both sides decide almost every frame.
 
+Memory: each process remembers decided positions in a table capped at `--tt-mb` (it is emptied when full), and
+the number of processes is cut to what the free memory can hold. Finished jobs go to `--out` as they complete, and
+a rerun with the same file skips them. Launch long runs with `scripts/search.sh`, which adds a hard memory limit.
+
 Speed: the search plays on one simulator match and takes moves back with `sim/rollback.py` (our patch to
 melee-sim-light: about 9 µs per rollback, against 300 µs for the library's lane copy). Each process is exact by
 check: after every root job it verifies that no memory page outside the rollback set changed.
@@ -17,7 +21,9 @@ check: after every root job it verifies that no memory page outside the rollback
 from __future__ import annotations
 
 import argparse
+import json
 import multiprocessing as mp
+import os
 import time
 
 import melee
@@ -75,6 +81,18 @@ def _key(s) -> tuple:
             int(s["jumps_left"]))
 
 
+TT_BYTES = 140  # measured memory per remembered position
+WORKER_MB = 600  # a search process before its table grows
+RESERVE_MB = 10_000  # memory left for everything else on the machine
+
+
+def fit_workers(workers: int, tt_mb: int) -> int:
+    """As many processes as the free memory holds with their tables full."""
+    with open("/proc/meminfo") as f:
+        avail = next(int(x.split()[1]) for x in f if x.startswith("MemAvailable")) // 1024
+    return max(1, min(workers, (avail - RESERVE_MB) // (WORKER_MB + tt_mb)))
+
+
 _WARMUP = [N, (B, 0, -80, 0), (X, 0, 0, 0), (A, 0, 0, 0), (0, 80, 0, 0), (0, -80, 0, 0), (R, 0, 0, 255), (B, 0, 0, 0),
            (A, 0, 80, 0), (X, 80, 0, 0), (Z, 0, 0, 0), (R, 80, 0, 255), (R, -80, 0, 255), (R, 0, -80, 255)]
 
@@ -82,7 +100,7 @@ _WARMUP = [N, (B, 0, -80, 0), (X, 0, 0, 0), (A, 0, 0, 0), (0, 80, 0, 0), (0, -80
 class Search:
     """Depth-first search on one simulator match: make a move, look, take it back (`sim/rollback.py`)."""
 
-    def __init__(self, root: bytes, max_depth: int = 64, trap: bool = False):
+    def __init__(self, root: bytes, max_depth: int = 64, trap: bool = False, tt_mb: int = 400):
         import melee_sim as msl
         from melee_llm.sim.rollback import Rollback
         from melee_llm.sim.state import SIM_STAGE
@@ -98,7 +116,10 @@ class Search:
         self.env.observe()
         s = self.slots()
         self.base = (float(s[0]["percent"]), float(s[1]["percent"]), int(s[0]["stocks"]), int(s[1]["stocks"]))
-        self.tt: dict[tuple, list[int]] = {}  # key -> [fewest frames proven a win, most frames proven not a win]
+        # decided positions, by hash of the position: fewest frames proven a yes, most frames proven a no
+        self.yes: dict[int, int] = {}
+        self.no: dict[int, int] = {}
+        self.cap = tt_mb * 1_000_000 // TT_BYTES
         self.expansions = 0
         self.rb = Rollback(self.env, depth=max_depth)
         rng = np.random.default_rng(0)  # learn which pages a frame can change, from 3000 frames of random inputs
@@ -166,6 +187,11 @@ class Search:
         dfn = [pd] if pd else [(m, 0, -toward) for m in menu(s[1])]
         return att, dfn
 
+    def _room(self) -> None:
+        if len(self.yes) + len(self.no) >= self.cap:
+            self.yes.clear()
+            self.no.clear()
+
     def trapped(self, s) -> bool:
         """The shield trap (docs/optimal-play.md, section 9): P2 is in shield and P1 stands next to him, free to
         act. Measured there: every exit from shield loses to a reaction, and a held shield breaks."""
@@ -181,11 +207,10 @@ class Search:
         s = self.slots()
         if self.trap and pa is None and self.trapped(s):
             return False
-        key = _key(s[0]) + _key(s[1]) + (pa, pd, "safe")
-        seen = self.tt.setdefault(key, [10 ** 6, -1])  # [fewest frames proven unsafe, most frames proven safe]
-        if frames >= seen[0]:
+        key = hash(_key(s[0]) + _key(s[1]) + (pa, pd, "safe"))  # here "yes" is: proven unsafe
+        if frames >= self.yes.get(key, 10 ** 6):
             return False
-        if frames <= seen[1]:
+        if frames <= self.no.get(key, -1):
             return True
         att, dfn = self.options(pa, pd)
         self.rb.checkpoint(depth)
@@ -208,9 +233,11 @@ class Search:
                 if not ok:
                     break
             if ok:
-                seen[1] = frames
+                self._room()
+                self.no[key] = frames
                 return True
-        seen[0] = frames
+        self._room()
+        self.yes[key] = frames
         return False
 
     def win(self, depth: int, pa, pd, frames: int) -> bool:
@@ -221,11 +248,10 @@ class Search:
         s = self.slots()
         if self.trap and pa is None and self.trapped(s):
             return True
-        key = _key(s[0]) + _key(s[1]) + (pa, pd)
-        seen = self.tt.setdefault(key, [10 ** 6, -1])
-        if frames >= seen[0]:
+        key = hash(_key(s[0]) + _key(s[1]) + (pa, pd))
+        if frames >= self.yes.get(key, 10 ** 6):
             return True
-        if frames <= seen[1]:
+        if frames <= self.no.get(key, -1):
             return False
         att, dfn = self.options(pa, pd)
         self.rb.checkpoint(depth)
@@ -248,15 +274,18 @@ class Search:
                 if not ok:
                     break
             if ok:
-                seen[0] = frames
+                self._room()
+                self.yes[key] = frames
                 return True
-        seen[1] = frames
+        self._room()
+        self.no[key] = frames
         return False
 
 
-def corner(sim: Sim, gap: float, ledge: float, hop: int = 0) -> bytes:
+def corner(sim: Sim, gap: float, ledge: float, hop: int = 0, shield: int = 0) -> bytes:
     """P2 stands `ledge` units from the right ledge of Final Destination, facing P1, who stands `gap` away.
-    With `hop`, P1 has then short-hopped toward P2 and is `hop` frames into it, P2 not having moved."""
+    With `hop`, P1 has then short-hopped toward P2 and is `hop` frames into it, P2 not having moved.
+    With `shield`, P2 has then held his shield for that many frames, P1 standing still."""
     edge = 85.57
     sim.restore(sim.start())
     for _ in range(600):  # P2 walks right
@@ -274,6 +303,8 @@ def corner(sim: Sim, gap: float, ledge: float, hop: int = 0) -> bytes:
     sim.idle(30)
     for f in range(hop):
         sim.step([(X, 40, 0, 0) if f == 0 else (0, 40, 0, 0), N])
+    for _ in range(shield):
+        sim.step([N, (R, 0, 0, 255)])
     return sim.save()
 
 
@@ -282,10 +313,10 @@ _ARGS = None
 _MODE = "win"
 
 
-def _init(root: bytes, frames: int, trap: bool, mode: str) -> None:
+def _init(root: bytes, frames: int, trap: bool, mode: str, tt_mb: int) -> None:
     global _S, _ARGS, _MODE
     _MODE = mode
-    _S, _ARGS = Search(root, max_depth=2 * frames + 8, trap=trap), frames
+    _S, _ARGS = Search(root, max_depth=2 * frames + 8, trap=trap, tt_mb=tt_mb), frames
 
 
 def _clean(run):
@@ -298,7 +329,8 @@ def _clean(run):
         _S.rb.add(missed)
         _S.rb.reset()
         _S.observe()
-        _S.tt.clear()
+        _S.yes.clear()
+        _S.no.clear()
 
 
 def _open(job):
@@ -348,31 +380,54 @@ def _task(job):
 
 
 def solve(gap: float, ledge: float, frames: int, workers: int = 28, trap: bool = False, mode: str = "win",
-          hop: int = 0) -> dict:
+          hop: int = 0, shield: int = 0, tt_mb: int = 400, out: str | None = None) -> dict:
     """`mode` "win": can the attacker force the first hit against a defender who sees his inputs? "safe": can the
     defender hold against an attacker who sees his? Jobs are split two decisions deep, one per (root joint move,
-    first picker's next move), so the workers stay evenly loaded."""
+    first picker's next move), so the workers stay evenly loaded. Each finished job is appended to `out`; jobs already
+    in that file (same question) are not run again."""
     t0 = time.time()
+    workers = fit_workers(workers, tt_mb)
     sim = Sim()
-    root = corner(sim, gap, ledge, hop)
+    root = corner(sim, gap, ledge, hop, shield)
     s = sim.players()
     info = {"p1_y": round(float(s[0]["pos_y"]), 1), "gap": round(sim.gap(), 2), "p2_x": round(float(s[1]["pos_x"]), 2), "p2_facing": int(s[1]["facing"]),
-            "frames": frames, "mode": mode}
+            "frames": frames, "mode": mode, "workers": workers}
+    ask = {"gap": gap, "ledge": ledge, "frames": frames, "trap": trap, "mode": mode, "hop": hop, "shield": shield}
+    done_jobs: dict[str, tuple[bool, int]] = {}
+    if out and os.path.exists(out):
+        with open(out) as f:
+            for row in map(json.loads, f):
+                if row["ask"] == ask:
+                    done_jobs[json.dumps(row["job"])] = (row["ok"], row["n"])
+    log = open(out, "a") if out else None
     toward = 1 if float(s[1]["pos_x"]) >= float(s[0]["pos_x"]) else -1
     att = [(m, 0, toward) for m in menu(s[0])]
     dfn = [(m, 0, -toward) for m in menu(s[1])]
     sim.world.close()
     result: dict[tuple, bool] = {}
     total = 0
-    with mp.get_context("spawn").Pool(workers, initializer=_init, initargs=(root, frames, trap, mode)) as pool:
+    with mp.get_context("spawn").Pool(workers, initializer=_init, initargs=(root, frames, trap, mode, tt_mb)) as pool:
         jobs = []
         for a, d, done, nxt in pool.imap_unordered(_open, [(a, d) for a in att for d in dfn]):
             result[(a, d)] = bool(done)
             jobs += [(a, d, m) for m in nxt] if done is None else []
         np.random.default_rng(0).shuffle(jobs)
-        for a, d, m, ok, n in pool.imap_unordered(_task, jobs):
+        todo = []
+        for a, d, m in jobs:
+            if (old := done_jobs.get(json.dumps([a, d, m]))) is None:
+                todo.append((a, d, m))
+            else:
+                result[(a, d)] = result[(a, d)] or old[0]
+                total += old[1]
+        info["resumed"] = len(jobs) - len(todo)
+        for a, d, m, ok, n in pool.imap_unordered(_task, todo):
             result[(a, d)] = result[(a, d)] or ok
             total += n
+            if log:
+                log.write(json.dumps({"ask": ask, "job": [a, d, m], "ok": ok, "n": n}) + "\n")
+                log.flush()
+    if log:
+        log.close()
     first, second = (0, 1) if mode == "win" else (1, 0)  # which side's move heads each row
     table: dict[str, dict[str, bool]] = {}
     for pair, ok in result.items():
@@ -393,16 +448,21 @@ def main() -> None:
     ap.add_argument("--safe", action="store_true",
                     help="ask instead whether the defender has a defence that needs no guessing")
     ap.add_argument("--trap", action="store_true", help="count the measured shield trap as a win for the attacker")
+    ap.add_argument("--shield", type=int, default=0, help="start with the defender this many frames into his shield")
+    ap.add_argument("--tt-mb", type=int, default=400, help="memory for remembered positions, per process")
+    ap.add_argument("--out", help="file that collects finished jobs; a rerun continues from it")
     args = ap.parse_args()
     for g in args.gap:
-        r = solve(g, args.ledge, args.frames, args.workers, args.trap, "safe" if args.safe else "win", args.hop)
+        r = solve(g, args.ledge, args.frames, args.workers, args.trap, "safe" if args.safe else "win", args.hop,
+                  args.shield, args.tt_mb, args.out)
         where = (f"gap {r['gap']}, P1 height {r['p1_y']} (P2 at x={r['p2_x']}, facing {'left' if not r['p2_facing'] else 'right'}), "
                  f"{r['frames']} frames: ")
         if args.safe:
             verdict = f"SAFE with {r['forced']}" if r["forced"] else "NO SAFE DEFENCE: the defender must guess"
         else:
             verdict = f"FORCED WIN with {r['forced']}" if r["forced"] else "no forced win"
-        print(where + verdict + f"  [{r['expansions']:,} positions, {r['seconds']}s]", flush=True)
+        print(where + verdict + f"  [{r['expansions']:,} positions, {r['seconds']}s, {r['workers']} processes, "
+              f"{r['resumed']} of {r['jobs']} jobs from an earlier run]", flush=True)
         for m, ds in r["refuted_by"].items():
             print(f"     {m:8s} " + ("holds against everything" if not ds else "beaten by: " + ", ".join(ds)))
 

@@ -316,3 +316,30 @@ Probes: `scripts/solver_probes/` (run with `PYTHONPATH=. python scripts/solver_p
 - Yoshi's armored double jump and a frame-picked Judge as tree options.
 - The powershield and reflector ping-pong for lasers.
 - A ledge-stall cycle measured in the simulator.
+
+## 12. Standing just outside shine range: a cycle with no safe move but shield
+
+`force --gap 14 --frames 14 --trap --safe` (the defender cornered 12 units from the ledge, the attacker standing
+12.59 away, 72 million positions). Against an attacker who sees his input, the defender's moves fare like this:
+
+| Defender | Beaten by |
+|---|---|
+| wait | jab |
+| shine | wait, step back (the shine misses and is punished) |
+| jab | shine |
+| walk in | wait, step back, shine, jab |
+| any jump | wait, shine, jab |
+| shield | nothing within 14 frames |
+
+So without shield the position is a cycle (jab beats waiting, shine beats jab, waiting beats shine): standing still
+is not safe, and the standoff of section 1 only holds if shield does. Whether shield holds past 14 frames is the
+open question: a defender who sees the attacker walk in leaves his shield before the trap of section 9 closes
+(12 frames: no forced win), so the searches now running start with him already in shield, 20 frames deep.
+
+**Running long searches.** The first 22-frame run took the machine out of memory: every process kept every
+position it had decided, about 1.2 KB each. The table is now two dictionaries keyed by a hash (140 bytes per
+position), capped by `--tt-mb` and emptied when full; the process count is cut to fit the free memory; finished
+jobs are appended to `--out` and skipped on a rerun; and `scripts/search.sh` starts the run as a user service with
+a hard memory limit, so the search is what gets killed. The simulator library is now built with upstream's
+`python-release` profile instead of the unoptimised default: identical play over 60,000 frames, 1.47 times the
+search speed (14,000 positions a second per process).
