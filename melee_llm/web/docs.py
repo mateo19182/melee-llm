@@ -12,7 +12,7 @@ from melee_llm.paths import ROOT
 DOCS = ROOT / "docs"
 # Nav order; any other docs/*.md follows alphabetically.
 ORDER = ["architecture", "web-ui", "performance", "bench", "llm-player", "perception", "bots", "coach", "bot-writer", "llm-arena",
-         "jev", "netplay", "research"]
+         "jev", "netplay", "research", "tas"]
 _md = MarkdownIt("commonmark", {"html": False}).enable("table")
 
 
