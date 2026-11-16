@@ -14,6 +14,7 @@ Measured on 2026-11-16 on Final Destination, everyone at 0% unless stated, UCF o
 - **Same-frame shines:** [sim] on the ground they **clank** (0% to both, 4 frames of hitlag each, both stay in the shine). In the air they truly whiff: no hitlag, because the intangible hurtboxes skip the hit check. Shining one frame earlier deals 5%, on the ground or in the air.
 - **Yoshi's armor and Game & Watch's Judge 9 beat the shine itself, but not Fox.** [sim] Yoshi's double-jump armor absorbs the shine at every percent. A frame-picked Judge 9 lands for 32% through a shine just out of its range. Fox jabs, shields or punishes both on reaction.
 - **Two cracks in the standoff, both in the Fox ditto.** [sim] Holding shield next to a Fox who can act is a trap: every way out loses 5–18%, and the shield breaks by itself after 196 frames. And a Fox in the air beats a Fox on the ground in the shine war: he out-reaches him from above, and his double jump lets him shine again 2 frames sooner. Neither is a forced win from neutral yet; see [section 9](#9-two-cracks-in-the-fox-ditto-standoff-sim).
+- **Even banned glitches don't change it.** [sim] Ness's yo-yo glitch reproduces in the simulator: his jab hits Fox from 35 units on frame 3. Fox still escapes on reaction, and setting it up needs a hit on Fox first. The freeze glitch and Soul Breaker need a grab, or items. [web]
 - **Equilibrium values are about 0 against every character tested**, from the solver below: within ±2.2% damage per exchange over a short horizon, leaning slightly to Fox at close range. Petro's own plan, "walk in, then shine", loses to a best response in every matchup, by 2–38%.
 - **Running out the clock:** a timeout goes to the lower percent ([rules](https://www.ssbwiki.com/Tournament_rulesets_(SSBM))). With no ledge-grab limit, Fox, Falco, Sheik, Captain Falcon and Ganondorf have **fully intangible ledge stalls** ([SmashWiki](https://www.ssbwiki.com/Ledgestall)), so a lead could be held forever. Current rules cap cliff grabs at 40–60 per game and ban the known air stalls. Since nobody can force the first hit anyway, the clock rarely gets that far: a perfect game should time out at 0–0 and go to a 1-stock tiebreak that deadlocks the same way. [inferred]
 
@@ -128,6 +129,33 @@ A TAS sees the seed, so it knows each frame's result in advance:
 So a Judge 9 just outside shine range beats a Fox who answers with the shine. Jab one frame later interrupts it at every gap, and shield blocks it. It's tournament-legal (no rule forbids picking the number by timing), but like everything else it's answered on reaction.
 
 Peach's turnip pull and Luigi's misfire are drawn the same way, at the moment of input, so a TAS could pick them too. [inferred from the code; not measured]
+
+### 4c. Glitches, even banned ones: Ness's yo-yo "Deathline" reaches 35 units but is still answered on reaction [sim, web]
+
+**Every game-deciding glitch needs a first hit, a grab or items:**
+
+| Glitch | Effect | What it needs first |
+| --- | --- | --- |
+| Ice Climbers' [freeze glitch](https://www.ssbwiki.com/Freeze_glitch) | the opponent is frozen for good | Nana grabs Fox |
+| Mewtwo's [Soul Breaker](https://www.ssbwiki.com/Soul_breaker) | the opponent is stuck to Mewtwo, unable to act | a grab while reflecting a too-strong projectile, in practice an item |
+| [Black hole glitch](https://www.ssbwiki.com/List_of_glitches_(SSBM)) | a spot with endless hitboxes | turnips plus a Super Scope |
+
+The [yo-yo glitch](https://www.ssbwiki.com/Yo-yo_glitch) is the one that attacks the question directly: it gives Ness near-limitless range. It is legal at the organizer's discretion.
+
+**The setup reproduces in the simulator** (`python -m melee_llm.solver.yoyo`):
+- Ness's up smash hits Fox (at 60% or 100%) once, on frame 11, and A is released on frames 23–28.
+- Later, Fox walking past an idle Ness takes 4.6% from an invisible hitbox left behind Ness, where the yo-yo was on release. Other release frames leave nothing.
+- The cause is in `ftNs_AttackHi4`: the yo-yo's rehit refresh never schedules the hitbox's removal.
+
+**The Deathline also reproduces:**
+- With Fox standing between Ness and the dropped hitbox, Ness's jab hits him **32–35 units away on frame 3**, and forward smash on frame 16.
+- Without the glitch, neither connects from there.
+
+**It still doesn't beat a reacting Fox:**
+- Answering on the next frame with shine, shield, spotdodge, dash away, roll, jab, up smash or grab all escape the frame-3 jab. Only a short hop or down smash is still hit.
+- Setting the glitch up needs a free up smash on Fox, which a perfect Fox never gives (section 2).
+
+[inferred] Once it's set, a standing Fox caught in the line has to react every time Ness jabs. That costs a perfect player nothing, but it takes away his option to simply wait in that spot.
 
 ### 5. Projectiles are reflected or stopped [sim, web]
 
