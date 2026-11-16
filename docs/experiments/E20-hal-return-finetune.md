@@ -7,20 +7,26 @@ result:
 verdict:
 runs:
 prs:
-follows:
+follows: E19, E18
 ---
 
 ## Question
 
-What we want to know, and why it matters now.
+HAL is conditioned on the return it is asked for. Can it improve by playing games and then training on them, labelled with the returns it actually got?
 
 ## Setup
 
-Model, data, settings, and the one thing that changes.
+Not designed in detail yet; depends on E19 and on the opponents E18 finds.
+
+- Generate games of HAL-as-aMSa against a pool of opponents: HAL imitating other pros, and the opponents that beat it in E18.
+- Fine-tune on those games with HAL's own loss, which already weights actions by advantage and conditions on return.
+- Repeat with the new model.
+
+Open choices: simulator or Dolphin for generating games (HAL's simulator adapter needs building), how many games per round, and whether to mix in the original aMSa data so it does not forget.
 
 ## Judged by
 
-Which games, how many, at what delay. Written before launching.
+League games against the E18 yardstick opponents, no delay, at least 30 per model, compared with `hal:AMSA#0,return_target=40`.
 
 ## Result
 

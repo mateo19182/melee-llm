@@ -7,20 +7,20 @@ result:
 verdict:
 runs:
 prs:
-follows:
+follows: E20, E09
 ---
 
 ## Question
 
-What we want to know, and why it matters now.
+Does policy-gradient RL with a penalty for drifting from the cloned policy, the recipe of slippi-ai and Faynt, lift HAL-as-aMSa further than E20?
 
 ## Setup
 
-Model, data, settings, and the one thing that changes.
+Not designed yet; depends on E19 and E20. PPO in the simulator against a pool of opponents, never one frozen copy of the learner (lesson of E09), with a KL penalty toward the starting model.
 
 ## Judged by
 
-Which games, how many, at what delay. Written before launching.
+League games against the E18 yardstick opponents, at least 30 per snapshot. Simulator win rate is recorded but does not decide anything.
 
 ## Result
 
