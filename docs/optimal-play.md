@@ -13,6 +13,7 @@ Measured on 2026-11-16 on Final Destination, everyone at 0% unless stated, UCF o
 - **The shine is not what wins.** [sim] Its reach is short, about 9–11 units between the two fighters' centres. Ordinary moves out-range it: Fox's own jab hits at 21, Marth's jab at 30, and most of the cast lands a jab at 12 on frame 2. What saves Fox is the shine's **frame 1**: it is intangible, and on the ground its hitbox **clanks** with the attacker's grounded hitbox.
 - **Same-frame shines:** [sim] on the ground they **clank** (0% to both, 4 frames of hitlag each, both stay in the shine). In the air they truly whiff: no hitlag, because the intangible hurtboxes skip the hit check. Shining one frame earlier deals 5%, on the ground or in the air.
 - **Yoshi's armor and Game & Watch's Judge 9 beat the shine itself, but not Fox.** [sim] Yoshi's double-jump armor absorbs the shine at every percent. A frame-picked Judge 9 lands for 32% through a shine just out of its range. Fox jabs, shields or punishes both on reaction.
+- **Two cracks in the standoff, both in the Fox ditto.** [sim] Holding shield next to a Fox who can act is a trap: every way out loses 5–18%, and the shield breaks by itself after 196 frames. And a Fox in the air beats a Fox on the ground in the shine war: he out-reaches him from above, and his double jump lets him shine again 2 frames sooner. Neither is a forced win from neutral yet; see [section 9](#9-two-cracks-in-the-fox-ditto-standoff-sim).
 - **Equilibrium values are about 0 against every character tested**, from the solver below: within ±2.2% damage per exchange over a short horizon, leaning slightly to Fox at close range. Petro's own plan, "walk in, then shine", loses to a best response in every matchup, by 2–38%.
 - **Running out the clock:** a timeout goes to the lower percent ([rules](https://www.ssbwiki.com/Tournament_rulesets_(SSBM))). With no ledge-grab limit, Fox, Falco, Sheik, Captain Falcon and Ganondorf have **fully intangible ledge stalls** ([SmashWiki](https://www.ssbwiki.com/Ledgestall)), so a lead could be held forever. Current rules cap cliff grabs at 40–60 per game and ban the known air stalls. Since nobody can force the first hit anyway, the clock rarely gets that far: a perfect game should time out at 0–0 and go to a 1-stock tiebreak that deadlocks the same way. [inferred]
 
@@ -194,6 +195,44 @@ Every value is within ±2.2% damage per exchange.
   Final Destination is bounded, so running alone cannot avoid being cornered. A cornered player escapes past the chaser by jumping over or rolling, or by going to the ledge, which brings back the grab limit.
 - **Putting it together:** [inferred] the duel results say the first committed attack loses. Perfect players therefore never get hit in neutral, and the score stays 0–0. The only lead available is chip damage that can't be fully blocked; Fox's 3% no-hitstun laser is the obvious candidate if the opponent mistimes a powershield. A TAS opponent powershields every laser, reflecting each one back at half damage ([SmashWiki: Reflection](https://www.ssbwiki.com/Reflection)), and Fox shines the reflection back. We haven't simulated that ping-pong.
 
+### 9. Two cracks in the Fox-ditto standoff [sim]
+
+Probes: `scripts/solver_probes/` (run with `PYTHONPATH=. python scripts/solver_probes/<name>.py`). Both Foxes at 0% on Final Destination.
+
+**The shield is a trap** (`shield_trap.py`). P2 holds shield; P1 stands 9.1 units away, able to act, and answers one frame after P2 moves. For each way out of shield, P1's best answer:
+
+| P2 leaves shield by | P1's answer | P1 nets |
+| --- | --- | --- |
+| dropping it, jumping, jump then shine or nair, wavedash back, up smash out of shield | up smash (or shine for a sure 5%) | +18% |
+| spotdodge | up smash timed for its end | +18% |
+| roll in or away | chase and jab | +7% |
+| shield grab | shine | +5% |
+| holding on | nothing | 0%, until the shield breaks |
+
+- One answer covers every exit that starts with a jump, which all look the same on frame 1: a shine 1–3 frames later always hits (+5%), and an up smash 11 frames later hits all six (+18%).
+- An untouched shield shrinks to nothing and breaks after **196 frames** (3.3 s); under a multishine it breaks after 177.
+- Grabbing the shield is worse for P1: a roll or spotdodge on reaction escapes it.
+- So shielding is safe for a few frames, as the 9-frame trees say, but not as a place to stay. [inferred] A Fox who shields when the other walks up has already lost at least 5%.
+
+**The Fox in the air wins the shine war** (`air_ground_reach.py`, `air_shine_race.py`, `facing_reach.py`).
+- **Reach is one-sided from above.** During a short hop from 11.5 units, on 7 straight airborne frames (heights 5.6–10.6, horizontal distance 7.8–10.3) the air Fox's shine hits the standing Fox and the standing Fox's shine cannot hit back. The reverse happens on one frame only, as the hopper lands.
+- **Same-frame shines favour the air Fox.** He cancels his shine with the double jump, which has no jumpsquat, and shines again on frame 5. The grounded Fox needs his 3-frame jumpsquat first and can't shine again before frame 7 ([frame data](https://www.ssbwiki.com/Reflector_(Fox))). Measured with the air Fox 7.9 units away:
+
+| Air Fox shines on hop frame | Ground Fox waits | Ground Fox shines the same frame | Ground Fox shines one frame earlier | Ground Fox shields |
+| --- | --- | --- | --- | --- |
+| 5–6 (low: both reach) | air +5% | **air +5%** (double-jump re-shine) | ground +5% | 0 |
+| 7–8 | air +5% | ground +5% against this follow-up (the re-shine is now too high and misses) | ground +5% | 0 |
+| 9 | air +5% | ground +5% against this follow-up | **air +5%** (the early shine can't reach and is punished) | 0 |
+| 10–12 (high: only air reaches) | air +5% | 0 | **air +5%** | 0 |
+
+- From hop frame 9 on, the grounded Fox's shine no longer works as a defence: too early or too late loses 5%, and only the exact frame breaks even. His other safe answers are to shield, which leads to the trap above once the hopper lands next to him, or to back away.
+- **Facing changes reach but not who wins:** face to face the shine reaches 10.7 units, with one Fox turned away 12.0, back to back 13.3. It is the same for both in every case (to our 0.4-unit resolution).
+
+**What this does and doesn't show.** [inferred]
+- In a symmetric position these cancel out: both Foxes have the same options, and re-shining as fast as possible is each one's best reply. Petro's ground deadlock survives.
+- In an asymmetric position they don't. A Fox who gets above and beside the other with his double jump, or who walks up to a shield, is ahead.
+- We haven't shown the attacker can force either position. The hop takes 5 or more frames to reach the one-sided zone, and the defender can back away on reaction. That turns the question into cornering: Final Destination is 171 units wide, and a Fox backed up to the ledge can no longer retreat. Solving that game needs frame-by-frame decisions over 15+ frames, which the 9-frame trees don't cover.
+
 ## What this says about Petro's claim
 
 - **"Two perfect Foxes walk in and shine on the same frame":** not optimal. Walking into shine range loses to a jab from 12 or more, and on the ground the same-frame shines clank rather than whiff.
@@ -202,6 +241,7 @@ Every value is within ±2.2% damage per exchange.
 
 ## Open next steps
 
+- The cornering game: can a Fox walk the other to the ledge and use the hop or the shield trap there? This is the most likely way out of the standoff.
 - Deeper trees with a better leaf: a small matrix game over continuation policies instead of a fixed idle or shield play-out.
 - Wavedash, crouch cancel and DI in the menus.
 - Yoshi's armored double jump and a frame-picked Judge as tree options.
