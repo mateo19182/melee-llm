@@ -1,7 +1,7 @@
 """Game-theoretic optimal play for short Melee exchanges, computed on the real game code (melee-sim-light).
 
-Two players stand facing each other. Every `move_frames` frames both pick one of a few macro-actions at the same
-time (wait, dash in, dash away, shine, short hop, shield, grab, jab, laser). The tree runs `depth` such joint picks deep;
+Two players stand facing each other. At each step both pick one of a few macro-actions at the same
+time (wait, dash in, dash away, shine, short hop, shield, grab, jab, laser). The tree runs one joint pick per entry of `schedule` (frames that pick lasts);
 an exchange ends early when someone takes damage. Each leaf lets the hit play out (`rollout` frames of nothing)
 and scores damage dealt minus damage taken by P1. Backward induction solves the zero-sum matrix game at every node
 exactly (`matrix.solve`), so the root gives the value and the equilibrium (often mixed) strategies.
@@ -10,7 +10,7 @@ Alongside the equilibrium the same tree scores the plan Dan Petro gave at DEF CO
 "walk in until in range, then shine": how much a best-responding opponent wins against it, and what it scores
 against itself.
 
-    uv run python -m melee_llm.solver.neutral --gaps 8 12 16 20 --depth 2
+    uv run python -m melee_llm.solver.neutral --gaps 8 12 16 20 --schedule 3 3 3
 """
 from __future__ import annotations
 
@@ -29,6 +29,7 @@ from melee_llm.solver import matrix
 A, B, X, Z, R = 0x0100, 0x0200, 0x0400, 0x0010, 0x0020
 ACTIONS = ("wait", "in", "away", "shine", "hop", "shield", "grab", "jab", "laser")
 WAIT, IN, SHINE = 0, 1, 3
+ALL = tuple(range(len(ACTIONS)))
 SHINE_REACH = 11.0  # largest gap (x distance, standing Foxes) at which a standing shine hits; measured by reach()
 
 
@@ -120,6 +121,22 @@ class Sim:
                 return self.save()
         return start
 
+    def setup_run_in(self, gap: float) -> bytes:
+        """P1 runs at full speed from his spawn at a standing P2; the state just before the gap would drop
+        to `gap` or less."""
+        w = self.world
+        gs = w.reset(0)
+        while gs.frame < 0 or gs.players[1].action != melee.Action.STANDING:
+            gs = w.step()
+        prev = self.save()
+        for _ in range(600):
+            self.step([(0, 80, 0, 0), (0, 0, 0, 0)])
+            a, b = self.players()
+            if b["pos_x"] - a["pos_x"] <= gap:
+                return prev
+            prev = self.save()
+        return prev
+
 
 def _key(p, q) -> tuple:
     def one(s):
@@ -131,8 +148,9 @@ def _key(p, q) -> tuple:
 
 
 class Solver:
-    def __init__(self, sim: Sim, depth: int, move_frames: int, rollout: int):
-        self.sim, self.depth, self.k, self.rollout = sim, depth, move_frames, rollout
+    def __init__(self, sim: Sim, schedule: tuple[int, ...], rollout: int, menu: tuple[int, ...] = ALL):
+        """`schedule[i]` is how many frames the i-th joint pick lasts; `menu` the action indices both may pick."""
+        self.sim, self.schedule, self.rollout, self.menu = sim, tuple(schedule), rollout, tuple(menu)
         self.cache: dict[tuple, tuple[Totals, int]] = {}
         self.nodes = 0
 
@@ -151,13 +169,13 @@ class Solver:
         close = abs(float(b["pos_x"]) - float(a["pos_x"])) <= SHINE_REACH
         return (SHINE, SHINE) if close else (IN, IN)
 
-    def play(self, i: int, j: int) -> bool:
+    def play(self, i: int, j: int, frames: int) -> bool:
         """Play joint macro (i, j) from the current state; True if someone was hit (the exchange is decided)."""
         a, b = self.sim.players()
         toward = 1 if b["pos_x"] >= a["pos_x"] else -1
         hit = False
         p0 = (float(a["percent"]), float(b["percent"]))
-        for f in range(self.k):
+        for f in range(frames):
             self.sim.step([_input(i, f, toward), _input(j, f, -toward)])
             a, b = self.sim.players()
             hit = hit or (float(a["percent"]), float(b["percent"])) != p0 or int(a["stocks"]) + int(b["stocks"]) == 0
@@ -170,7 +188,7 @@ class Solver:
 
     def child(self, state: bytes, i: int, j: int, depth: int, base) -> Totals:
         self.sim.restore(state)
-        hit = self.play(i, j)
+        hit = self.play(i, j, self.schedule[len(self.schedule) - depth])
         if hit or depth == 1:
             v = self.finish(base)
             return Totals(v, v, v)
@@ -180,15 +198,15 @@ class Solver:
         key = _key(*self.sim.players()) + (depth,)
         if key in self.cache:
             return self.cache[key][0]
-        pi, pj = self.petro()
-        n = len(ACTIONS)
+        pi, pj = (self.menu.index(a) if a in self.menu else 0 for a in self.petro())
+        n = len(self.menu)
         nash, worst, mirror = np.zeros((n, n)), np.zeros((n, n)), np.zeros((n, n))
-        for i in range(n):
-            for j in range(n):
-                t = self.child(state, i, j, depth, base)
+        for i, ai in enumerate(self.menu):
+            for j, aj in enumerate(self.menu):
+                t = self.child(state, ai, aj, depth, base)
                 nash[i, j], worst[i, j], mirror[i, j] = t.nash, t.petro_worst, t.petro_mirror
         self.nodes += 1
-        out = Totals(matrix.solve(nash).value, float(worst[pi].min()), float(mirror[pi, pj]))
+        out = Totals(float(matrix.solve(nash).value), float(worst[pi].min()), float(mirror[pi, pj]))
         self.cache[key] = (out, self.nodes)
         return out
 
@@ -203,23 +221,27 @@ def _init() -> None:
 
 def _subtree(args) -> tuple[int, int, Totals, int, tuple[int, int]]:
     """One root joint action, solved below it in a worker process."""
-    state, i, j, depth, k, rollout, base = args
-    solver = Solver(_SIM, depth, k, rollout)
-    t = solver.child(state, i, j, depth, base)
+    state, i, j, schedule, rollout, base, menu = args
+    solver = Solver(_SIM, schedule, rollout, menu)
+    t = solver.child(state, menu[i], menu[j], len(schedule), base)
     _SIM.restore(state)
     return i, j, t, solver.nodes, solver.petro()
 
 
-def solve_root(gap: float, depth: int = 2, move_frames: int = 3, rollout: int = 25, workers: int = 8) -> Root:
+def solve_root(gap: float, schedule: tuple[int, ...] = (3, 3), rollout: int = 25, workers: int = 8,
+               menu: tuple[int, ...] = ALL, run_in: bool = False) -> Root:
+    """Solve from two standing Foxes `gap` apart, or with `run_in` from P1 running at a standing P2."""
     t0 = time.time()
     sim = Sim()
-    state = sim.setup(gap)
+    state = sim.setup_run_in(gap) if run_in else sim.setup(gap)
+    sim.restore(state)
     a, b = sim.players()
     real_gap = float(b["pos_x"] - a["pos_x"])
-    root = Solver(sim, depth, move_frames, rollout)
-    base, (pi, pj) = root._base(), root.petro()
-    n = len(ACTIONS)
-    jobs = [(state, i, j, depth, move_frames, rollout, base) for i in range(n) for j in range(n)]
+    root = Solver(sim, schedule, rollout, menu)
+    base = root._base()
+    pi, pj = (menu.index(x) if x in menu else 0 for x in root.petro())
+    n = len(menu)
+    jobs = [(state, i, j, tuple(schedule), rollout, base, tuple(menu)) for i in range(n) for j in range(n)]
     nash, worst, mirror = np.zeros((n, n)), np.zeros((n, n)), np.zeros((n, n))
     nodes = 1
     with mp.get_context("spawn").Pool(workers, initializer=_init) as pool:
@@ -228,11 +250,12 @@ def solve_root(gap: float, depth: int = 2, move_frames: int = 3, rollout: int = 
             nodes += k
     sim.world.close()
     sol = matrix.solve(nash)
-    mix = lambda v: {ACTIONS[k]: round(float(p), 4) for k, p in enumerate(v) if p > 1e-4}
-    return Root(gap=round(real_gap, 2), depth=depth, move_frames=move_frames, rollout=rollout,
+    mix = lambda v: {ACTIONS[menu[k]]: round(float(p), 4) for k, p in enumerate(v) if p > 1e-4}
+    return Root(gap=round(real_gap, 2), depth=len(schedule), move_frames=schedule[0], rollout=rollout,
                 totals=Totals(round(float(sol.value), 3), float(worst[pi].min()), float(mirror[pi, pj])),
                 p1=mix(sol.row), p2=mix(sol.col), matrix=nash.round(2).tolist(), nodes=nodes,
-                seconds=round(time.time() - t0, 1), best_vs_petro=ACTIONS[int(np.argmin(worst[pi]))])
+                seconds=round(time.time() - t0, 1), best_vs_petro=ACTIONS[menu[int(np.argmin(worst[pi]))]],
+                notes=[f"schedule {list(schedule)}", f"menu {[ACTIONS[m] for m in menu]}"] + (["P1 running in"] if run_in else []))
 
 
 def reach(gaps=np.arange(6.0, 20.0, 0.5)) -> list[tuple[float, bool]]:
@@ -253,8 +276,9 @@ def reach(gaps=np.arange(6.0, 20.0, 0.5)) -> list[tuple[float, bool]]:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--gaps", type=float, nargs="+", default=[10, 14, 20, 30])
-    ap.add_argument("--depth", type=int, default=2)
-    ap.add_argument("--move-frames", type=int, default=3)
+    ap.add_argument("--schedule", type=int, nargs="+", default=[3, 3], help="frames each joint pick lasts, root first")
+    ap.add_argument("--menu", nargs="+", default=list(ACTIONS), choices=ACTIONS)
+    ap.add_argument("--run-in", action="store_true", help="P1 starts running at a standing P2")
     ap.add_argument("--rollout", type=int, default=25)
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--reach", action="store_true", help="only measure the shine's reach")
@@ -266,7 +290,8 @@ def main() -> None:
         return
     results = []
     for g in args.gaps:
-        r = solve_root(g, args.depth, args.move_frames, args.rollout, args.workers)
+        r = solve_root(g, tuple(args.schedule), args.rollout, args.workers, tuple(ACTIONS.index(m) for m in args.menu),
+                       args.run_in)
         results.append(asdict(r))
         print(f"gap {r.gap:6.2f}  value {r.totals.nash:+.2f}  P1 {r.p1}  P2 {r.p2}  "
               f"Petro worst {r.totals.petro_worst:+.1f} (answer: {r.best_vs_petro})  "
