@@ -83,6 +83,8 @@ Other communities automate TAS work with search, usually on top of a decompilati
 
 Nothing like this is public for Melee that we found: Melee TAS work is still Lua scripts plus frame-by-frame editing by hand.
 
+**Update, 2026-11-16:** we published one: [melee-brute](https://github.com/mateo19182/melee-brute), a fork of melee-sim-light with a 9-microsecond take-back and search functions. See [optimal-play.md](optimal-play.md), section 11.
+
 ## 7. Why this is adjacent to this repo [ours]
 
 - **The simulator is a TAS engine.** [melee-sim-light](simulator.md) is the decompiled game logic with save/restore of a whole game, at about 17,500 frames/s on one thread here (about 100× our headless Dolphin) and batched. Our `melee_llm/sim/world.py` already has `save()`/`restore()`, and `sim/scenes.py` reaches a situation from plain inputs and saves it. That is the setup SM64's decomp bruteforcers use.
