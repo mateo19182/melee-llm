@@ -57,7 +57,8 @@ def test_force_menus_follow_the_fighter_state():
     from melee_llm.solver import force
     names = lambda action: {force.NAMES[i] for i in force.menu({"action_id": action})}
     assert {"shine", "hop_in", "shield2"} <= names(melee.Action.STANDING.value)
-    assert names(melee.Action.KNEE_BEND.value) == {"wait", "in", "out"}
+    assert names(melee.Action.KNEE_BEND.value) == {"wait", "in", "out", "shine"}
+    assert "jump_oos" in names(179) and "jump" not in names(179)  # X alone only drops the shield
     assert "roll_out" in names(melee.Action.SHIELD.value) and "shine" not in names(melee.Action.SHIELD.value)
     assert names(melee.Action.DOWN_B_GROUND.value) == {"wait", "hold_b", "jump"}
     assert names(melee.Action.GRABBED.value) == {"wait"}
@@ -87,3 +88,19 @@ def test_rollback_reproduces_the_game_exactly():
         assert s.env.save(0) == first
         s.back(0)
     assert len(s.rb.verify()) == 0
+
+
+@needs_sim
+def test_leaving_shield_near_a_free_fox_loses_to_a_reaction():
+    """12.6 units from a standing Fox, every way out of shield but the spotdodge is hit within 10 frames by an
+    attacker who reacts one frame late (docs/optimal-play.md, section 13)."""
+    from melee_llm.solver import force, nash
+    sim = force.Sim()
+    s = nash.Nash(force.corner(sim, 14, 12, shield=12), 10)
+    sim.world.close()
+    for exit_ in ("release", "jump_oos", "roll_out"):
+        s.rb.checkpoint(0)
+        s.joint("wait", exit_)
+        assert s.forced(1, 9, True), exit_
+        s.back(0)
+    assert s.value(0, 6) == 0.0  # while he may still hold the shield, nothing is forced
