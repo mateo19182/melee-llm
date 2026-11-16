@@ -40,6 +40,9 @@ RUNS = LIVE / "data/train/runs"
 def player(name):
     if name in ROSTER:
         return ROSTER[name]
+    if ":" in name:  # a raw match spec, e.g. hal:AMSA#0,temperature=0.9 or phillip:gm/FOX (default Yoshi)
+        spec, _, char = name.partition("/")
+        return spec, char or "YOSHI"
     run, _, delay = name.partition("@d")
     if (RUNS / run / "last.pt").exists():
         return f"meleebot:{run}" + (f",delay={int(delay)}" if delay else ""), "YOSHI"
