@@ -216,7 +216,7 @@ Probes: `scripts/solver_probes/` (run with `PYTHONPATH=. python scripts/solver_p
 
 **The Fox in the air wins the shine war** (`air_ground_reach.py`, `air_shine_race.py`, `facing_reach.py`).
 - **Reach is one-sided from above.** During a short hop from 11.5 units, on 7 straight airborne frames (heights 5.6–10.6, horizontal distance 7.8–10.3) the air Fox's shine hits the standing Fox and the standing Fox's shine cannot hit back. The reverse happens on one frame only, as the hopper lands.
-- **Same-frame shines favour the air Fox.** He cancels his shine with the double jump, which has no jumpsquat, and shines again on frame 5. The grounded Fox needs his 3-frame jumpsquat first and can't shine again before frame 8. Measured with the air Fox 7.9 units away:
+- **Same-frame shines favour the air Fox.** He cancels his shine with the double jump, which has no jumpsquat, and shines again on frame 5. The grounded Fox needs his 3-frame jumpsquat first and can't shine again before frame 7 ([frame data](https://www.ssbwiki.com/Reflector_(Fox))). Measured with the air Fox 7.9 units away:
 
 | Air Fox shines on hop frame | Ground Fox waits | Ground Fox shines the same frame | Ground Fox shines one frame earlier | Ground Fox shields |
 | --- | --- | --- | --- | --- |
