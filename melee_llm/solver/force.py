@@ -8,11 +8,9 @@ is involved. A "no" only says no forced win exists with these moves inside the h
 Moves depend on the fighter's state (standing, airborne, in shield, in the shine, jumpsquat); in every other state
 the only move is to wait a frame. Most moves last one or two frames, so both sides decide almost every frame.
 
-Speed: the search never serializes a state. All positions live in lanes of one simulator batch; branching is an
-in-batch lane copy (about 0.3 ms against 2.5 ms for save/restore), and each attacker move is tried against all
-defender answers in one batched step. One core does about 2,700 positions/s; the machine tops out near 10,500/s
-at 8 processes, because every branch copies the simulator's 1 MB state and that saturates memory bandwidth.
-Python is about 5% of the time.
+Speed: the search plays on one simulator match and takes moves back with `sim/rollback.py` (our patch to
+melee-sim-light: about 9 µs per rollback, against 300 µs for the library's lane copy). Each process is exact by
+check: after every root job it verifies that no memory page outside the rollback set changed.
 
     uv run python -m melee_llm.solver.force --gap 14 --ledge 12 --frames 16
 """
@@ -77,17 +75,20 @@ def _key(s) -> tuple:
             int(s["jumps_left"]))
 
 
-class Search:
-    BLOCK = 12  # lanes per depth: one per defender answer
+_WARMUP = [N, (B, 0, -80, 0), (X, 0, 0, 0), (A, 0, 0, 0), (0, 80, 0, 0), (0, -80, 0, 0), (R, 0, 0, 255), (B, 0, 0, 0),
+           (A, 0, 80, 0), (X, 80, 0, 0), (Z, 0, 0, 0), (R, 80, 0, 255), (R, -80, 0, 255), (R, 0, -80, 255)]
 
-    def __init__(self, root: bytes, max_depth: int = 48, trap: bool = False):
-        self.trap = trap
+
+class Search:
+    """Depth-first search on one simulator match: make a move, look, take it back (`sim/rollback.py`)."""
+
+    def __init__(self, root: bytes, max_depth: int = 64, trap: bool = False):
         import melee_sim as msl
+        from melee_llm.sim.rollback import Rollback
         from melee_llm.sim.state import SIM_STAGE
         from melee_llm.sim.world import DATA_DIR
-        self.n = 1 + self.BLOCK * max_depth
-        self.max_depth = max_depth
-        self.env = msl.EnvBatch(batch_size=self.n, length=64, action_format="raw", data_dir=str(DATA_DIR))
+        self.trap, self.max_depth = trap, max_depth
+        self.env = msl.EnvBatch(batch_size=1, length=64, action_format="raw", data_dir=str(DATA_DIR))
         players = tuple(msl.PlayerConfig(melee.Character.FOX.value, controller_port=p) for p in (0, 1))
         self.env.configure_match(stage=SIM_STAGE[melee.Stage.FINAL_DESTINATION], seed=0, max_frame=28800,
                                  players=players)
@@ -95,69 +96,71 @@ class Search:
         self.env.restore(0, root)
         self.env.reset_cursor()
         self.env.observe()
-        s = self.slots(0)
+        s = self.slots()
         self.base = (float(s[0]["percent"]), float(s[1]["percent"]), int(s[0]["stocks"]), int(s[1]["stocks"]))
         self.tt: dict[tuple, list[int]] = {}  # key -> [fewest frames proven a win, most frames proven not a win]
         self.expansions = 0
-        self.inputs = np.zeros((self.n, 2, 4), dtype=np.int32)
+        self.rb = Rollback(self.env, depth=max_depth)
+        rng = np.random.default_rng(0)  # learn which pages a frame can change, from 3000 frames of random inputs
+        for f in range(3000):
+            i, j = rng.integers(len(_WARMUP), size=2)
+            self.step(_WARMUP[i], _WARMUP[j])
+            if f % 100 == 99:
+                self.rb.add(self.rb.changed())
+        self.rb.reset()
+        self.observe()
 
-    def slots(self, lane: int):
-        return self.env.current_frame[lane]["slots"]
+    def slots(self):
+        return self.env.current_frame[0]["slots"]
 
-    def _step(self, mask: np.ndarray) -> None:
+    def step(self, p1, p2) -> None:
         env = self.env
         if env.t >= env.length:
             env.reset_cursor()
-        row = env.raw_action_view[env.t]["players"]
-        for p in (0, 1):
-            row["buttons"][:, p], row["main_x"][:, p] = self.inputs[:, p, 0], self.inputs[:, p, 1]
-            row["main_y"][:, p], row["r"][:, p] = self.inputs[:, p, 2], self.inputs[:, p, 3]
-            row["c_x"][:, p], row["c_y"][:, p], row["l"][:, p] = 0, 0, 0
-        env.step(mask)
+        row = env.raw_action_view[env.t, 0]["players"]
+        for i, (b, mx, my, r) in enumerate((p1, p2)):
+            row[i]["buttons"], row[i]["main_x"], row[i]["main_y"] = b, mx, my
+            row[i]["c_x"], row[i]["c_y"], row[i]["l"], row[i]["r"] = 0, 0, 0, r
+        env.step()
 
-    def _outcome(self, lane: int) -> int:
+    def observe(self) -> None:
+        if self.env.t >= self.env.length:
+            self.env.reset_cursor()
+        self.env.observe()
+
+    def back(self, level: int) -> None:
+        self.rb.rollback(level)
+        self.observe()
+
+    def _outcome(self) -> int:
         """+1 the attacker landed the first hit, -1 he was hit or it was a trade, 0 nobody hit yet."""
-        s = self.slots(lane)
+        s = self.slots()
         d1 = float(s[0]["percent"]) - self.base[0] + 100 * (self.base[2] - int(s[0]["stocks"]))
         d2 = float(s[1]["percent"]) - self.base[1] + 100 * (self.base[3] - int(s[1]["stocks"]))
         return 0 if d1 == 0 and d2 == 0 else 1 if d2 > d1 else -1
 
-    def expand(self, lane: int, depth: int, pa, pd_list):
-        """Play attacker move `pa` against every defender move in `pd_list` from `lane`. Moves are
-        (id, frame, toward). Returns per child: (lane, outcome, frames used, attacker's rest, defender's rest)."""
-        k = len(pd_list)
-        lanes = np.arange(k, dtype=np.uint32) + 1 + depth * self.BLOCK
-        self.env.copy_matches_from(self.env, lanes, np.full(k, lane, dtype=np.uint32))
-        self.expansions += k
-        run = np.array([min(LEN[pa[0]] - pa[1], LEN[d[0]] - d[1]) for d in pd_list])
-        out, used = np.zeros(k, dtype=int), np.zeros(k, dtype=int)
-        mask = np.zeros(self.n, dtype=np.uint8)
-        for f in range(int(run.max())):
-            live = (out == 0) & (f < run)
-            if not live.any():
+    def play(self, pa, pd):
+        """Play attacker move `pa` against defender move `pd` from the current state until one of them ends or
+        someone is hit. Moves are (id, frame, toward). Returns (outcome, frames used, attacker's rest,
+        defender's rest)."""
+        self.expansions += 1
+        arows, drows = MOVES[NAMES[pa[0]]][1], MOVES[NAMES[pd[0]]][1]
+        run = min(len(arows) - pa[1], len(drows) - pd[1])
+        out = used = 0
+        for f in range(run):
+            b, mx, my, r = arows[pa[1] + f]
+            db, dx, dy, dr = drows[pd[1] + f]
+            self.step((b, mx * pa[2], my, r), (db, dx * pd[2], dy, dr))
+            used += 1
+            out = self._outcome()
+            if out:
                 break
-            mask[:] = 0
-            mask[lanes[live]] = 1
-            b, mx, my, r = MOVES[NAMES[pa[0]]][1][pa[1] + f] if pa[1] + f < LEN[pa[0]] else N
-            for c in np.flatnonzero(live):
-                d = pd_list[c]
-                db, dx, dy, dr = MOVES[NAMES[d[0]]][1][d[1] + f]
-                self.inputs[lanes[c], 0] = (b, mx * pa[2], my, r)
-                self.inputs[lanes[c], 1] = (db, dx * d[2], dy, dr)
-            self._step(mask)
-            for c in np.flatnonzero(live):
-                used[c] += 1
-                out[c] = self._outcome(int(lanes[c]))
-        res = []
-        for c in range(k):
-            d, u = pd_list[c], int(used[c])
-            ra = (pa[0], pa[1] + u, pa[2]) if pa[1] + u < LEN[pa[0]] else None
-            rd = (d[0], d[1] + u, d[2]) if d[1] + u < LEN[d[0]] else None
-            res.append((int(lanes[c]), int(out[c]), u, ra, rd))
-        return res
+        ra = (pa[0], pa[1] + used, pa[2]) if pa[1] + used < len(arows) else None
+        rd = (pd[0], pd[1] + used, pd[2]) if pd[1] + used < len(drows) else None
+        return out, used, ra, rd
 
-    def options(self, lane: int, pa, pd):
-        s = self.slots(lane)
+    def options(self, pa, pd):
+        s = self.slots()
         toward = 1 if float(s[1]["pos_x"]) >= float(s[0]["pos_x"]) else -1
         att = [pa] if pa else [(m, 0, toward) for m in menu(s[0])]
         dfn = [pd] if pd else [(m, 0, -toward) for m in menu(s[1])]
@@ -167,12 +170,55 @@ class Search:
         """The shield trap (docs/optimal-play.md, section 9): P2 is in shield and P1 stands next to him, free to
         act. Measured there: every exit from shield loses to a reaction, and a held shield breaks."""
         return (int(s[1]["action_id"]) in (178, 179) and int(s[0]["action_id"]) in _FREE
-                and abs(float(s[1]["pos_x"]) - float(s[0]["pos_x"])) <= 10.0 and float(s[0]["pos_y"]) == float(s[1]["pos_y"]))
+                and abs(float(s[1]["pos_x"]) - float(s[0]["pos_x"])) <= 10.0
+                and float(s[0]["pos_y"]) == float(s[1]["pos_y"]))
 
-    def win(self, lane: int, depth: int, pa, pd, frames: int) -> bool:
+    def safe(self, depth: int, pa, pd, frames: int) -> bool:
+        """The mirror question: does the defender have a move that survives every attacker move, with the
+        attacker picking after seeing it, for `frames` frames? Surviving the horizon counts as safe."""
+        if frames <= 0 or depth >= self.max_depth - 1:
+            return True
+        s = self.slots()
+        if self.trap and pa is None and self.trapped(s):
+            return False
+        key = _key(s[0]) + _key(s[1]) + (pa, pd, "safe")
+        seen = self.tt.setdefault(key, [10 ** 6, -1])  # [fewest frames proven unsafe, most frames proven safe]
+        if frames >= seen[0]:
+            return False
+        if frames <= seen[1]:
+            return True
+        att, dfn = self.options(pa, pd)
+        self.rb.checkpoint(depth)
+        for d in dfn:
+            kids = []
+            for a in att:
+                kids.append(self.play(a, d))
+                self.back(depth)
+                if kids[-1][0] > 0:
+                    break
+            if kids[-1][0] > 0:
+                continue
+            ok = True
+            for a, (o, u, ra, rd) in zip(att, kids):
+                if o < 0:
+                    continue
+                self.play(a, d)
+                ok = self.safe(depth + 1, ra, rd, frames - u)
+                self.back(depth)
+                if not ok:
+                    break
+            if ok:
+                seen[1] = frames
+                return True
+        seen[0] = frames
+        return False
+
+    def win(self, depth: int, pa, pd, frames: int) -> bool:
+        """Does the attacker force the first hit from the current state within `frames`? Leaves the state as
+        it found it."""
         if frames <= 0 or depth >= self.max_depth - 1:
             return False
-        s = self.slots(lane)
+        s = self.slots()
         if self.trap and pa is None and self.trapped(s):
             return True
         key = _key(s[0]) + _key(s[1]) + (pa, pd)
@@ -181,20 +227,36 @@ class Search:
             return True
         if frames <= seen[1]:
             return False
-        att, dfn = self.options(lane, pa, pd)
+        att, dfn = self.options(pa, pd)
+        self.rb.checkpoint(depth)
         for a in att:
-            kids = self.expand(lane, depth, a, dfn)
-            if any(o < 0 for _, o, _, _, _ in kids):
+            kids = []
+            for d in dfn:  # look at every answer first: one that hits the attacker refutes the move at once
+                kids.append(self.play(a, d))
+                self.back(depth)
+                if kids[-1][0] < 0:
+                    break
+            if kids[-1][0] < 0:
                 continue
-            if all(o > 0 or self.win(ln, depth + 1, ra, rd, frames - u) for ln, o, u, ra, rd in kids):
+            ok = True
+            for d, (o, u, ra, rd) in zip(dfn, kids):
+                if o > 0:
+                    continue
+                self.play(a, d)
+                ok = self.win(depth + 1, ra, rd, frames - u)
+                self.back(depth)
+                if not ok:
+                    break
+            if ok:
                 seen[0] = frames
                 return True
         seen[1] = frames
         return False
 
 
-def corner(sim: Sim, gap: float, ledge: float) -> bytes:
-    """P2 stands `ledge` units from the right ledge of Final Destination, facing P1, who stands `gap` away."""
+def corner(sim: Sim, gap: float, ledge: float, hop: int = 0) -> bytes:
+    """P2 stands `ledge` units from the right ledge of Final Destination, facing P1, who stands `gap` away.
+    With `hop`, P1 has then short-hopped toward P2 and is `hop` frames into it, P2 not having moved."""
     edge = 85.57
     sim.restore(sim.start())
     for _ in range(600):  # P2 walks right
@@ -210,60 +272,115 @@ def corner(sim: Sim, gap: float, ledge: float) -> bytes:
             break
         sim.step([(0, 30, 0, 0), N])
     sim.idle(30)
+    for f in range(hop):
+        sim.step([(X, 40, 0, 0) if f == 0 else (0, 40, 0, 0), N])
     return sim.save()
 
 
 _S: Search | None = None
 _ARGS = None
+_MODE = "win"
 
 
-def _init(root: bytes, frames: int, trap: bool) -> None:
-    global _S, _ARGS
-    _S, _ARGS = Search(root, max_depth=frames + 4, trap=trap), frames
+def _init(root: bytes, frames: int, trap: bool, mode: str) -> None:
+    global _S, _ARGS, _MODE
+    _MODE = mode
+    _S, _ARGS = Search(root, max_depth=2 * frames + 8, trap=trap), frames
+
+
+def _clean(run):
+    """Run `run()` and repeat it, with the page added, if the final check finds a page the rollbacks missed."""
+    while True:
+        out = run()
+        missed = _S.rb.verify()
+        if not len(missed):
+            return out
+        _S.rb.add(missed)
+        _S.rb.reset()
+        _S.observe()
+        _S.tt.clear()
+
+
+def _open(job):
+    """A root joint move: whether it is decided at once (True: for the side being asked about), and the next
+    options of the side that picks first."""
+    def run():
+        a, d = job
+        _S.rb.checkpoint(0)
+        o, u, ra, rd = _S.play(a, d)
+        trapped = o == 0 and _S.trap and ra is None and _S.trapped(_S.slots())
+        if _MODE == "win":
+            done = True if o > 0 or trapped else False if o < 0 else None
+        else:
+            done = True if o < 0 else False if o > 0 or trapped else None
+        nxt = [] if done is not None else _S.options(ra, rd)[0 if _MODE == "win" else 1]
+        _S.back(0)
+        return a, d, done, nxt
+    return _clean(run)
 
 
 def _task(job):
-    """Replay a path of joint moves from the root, then search below it."""
-    path, frames = job
-    lane, pa, pd = 0, None, None
-    for depth, (a, d) in enumerate(path):
-        (lane, o, u, pa, pd), = _S.expand(lane, depth, a, [d])
-        frames -= u
-        if o != 0:
-            return path, o > 0, _S.expansions
-    return path, _S.win(lane, len(path), pa, pd, frames), _S.expansions
+    """After root (a, d): does the first picker's next move `m` hold against every reply?"""
+    def run():
+        a, d, m = job
+        _S.rb.checkpoint(0)
+        o, u, ra, rd = _S.play(a, d)
+        att, dfn = _S.options(m if _MODE == "win" else ra, rd if _MODE == "win" else m)
+        _S.rb.checkpoint(1)
+        ok = True
+        for a2 in att:
+            for d2 in dfn:
+                o2, u2, ra2, rd2 = _S.play(a2, d2)
+                left = _ARGS - u - u2
+                if _MODE == "win":
+                    ok = o2 > 0 or (o2 == 0 and _S.win(2, ra2, rd2, left))
+                else:
+                    ok = o2 < 0 or (o2 == 0 and _S.safe(2, ra2, rd2, left))
+                _S.back(1)
+                if not ok:
+                    break
+            if not ok:
+                break
+        _S.back(0)
+        n, _S.expansions = _S.expansions, 0
+        return a, d, m, ok, n
+    return _clean(run)
 
 
-def solve(gap: float, ledge: float, frames: int, workers: int = 8, trap: bool = False) -> dict:
-    """One job per root (attacker move, defender answer). More than about 8 workers adds nothing: the
-    simulator's state copy saturates memory bandwidth."""
+def solve(gap: float, ledge: float, frames: int, workers: int = 28, trap: bool = False, mode: str = "win",
+          hop: int = 0) -> dict:
+    """`mode` "win": can the attacker force the first hit against a defender who sees his inputs? "safe": can the
+    defender hold against an attacker who sees his? Jobs are split two decisions deep, one per (root joint move,
+    first picker's next move), so the workers stay evenly loaded."""
     t0 = time.time()
     sim = Sim()
-    root = corner(sim, gap, ledge)
-    b = sim.players()[1]
-    info = {"gap": round(sim.gap(), 2), "p2_x": round(float(b["pos_x"]), 2), "p2_facing": int(b["facing"]),
-            "frames": frames}
+    root = corner(sim, gap, ledge, hop)
+    s = sim.players()
+    info = {"p1_y": round(float(s[0]["pos_y"]), 1), "gap": round(sim.gap(), 2), "p2_x": round(float(s[1]["pos_x"]), 2), "p2_facing": int(s[1]["facing"]),
+            "frames": frames, "mode": mode}
+    toward = 1 if float(s[1]["pos_x"]) >= float(s[0]["pos_x"]) else -1
+    att = [(m, 0, toward) for m in menu(s[0])]
+    dfn = [(m, 0, -toward) for m in menu(s[1])]
     sim.world.close()
-    s = Search(root, max_depth=2, trap=trap)
-    att, dfn = s.options(0, None, None)
-    del s
-    jobs = [(((a, d),), frames) for a in att for d in dfn]
+    result: dict[tuple, bool] = {}
+    total = 0
+    with mp.get_context("spawn").Pool(workers, initializer=_init, initargs=(root, frames, trap, mode)) as pool:
+        jobs = []
+        for a, d, done, nxt in pool.imap_unordered(_open, [(a, d) for a in att for d in dfn]):
+            result[(a, d)] = bool(done)
+            jobs += [(a, d, m) for m in nxt] if done is None else []
+        np.random.default_rng(0).shuffle(jobs)
+        for a, d, m, ok, n in pool.imap_unordered(_task, jobs):
+            result[(a, d)] = result[(a, d)] or ok
+            total += n
+    first, second = (0, 1) if mode == "win" else (1, 0)  # which side's move heads each row
     table: dict[str, dict[str, bool]] = {}
-    with mp.get_context("spawn").Pool(workers, initializer=_init, initargs=(root, frames, trap)) as pool:
-        for path, ok, _ in pool.imap_unordered(_task, jobs):
-            (a, d), = path
-            table.setdefault(NAMES[a[0]], {})[NAMES[d[0]]] = ok
-        total = sum(pool.map(_count, range(workers * 4)))
+    for pair, ok in result.items():
+        table.setdefault(NAMES[pair[first][0]], {})[NAMES[pair[second][0]]] = ok
     info["forced"] = [x for x, row in table.items() if all(row.values())]
     info["refuted_by"] = {x: [y for y, ok in row.items() if not ok] for x, row in table.items()}
-    info["expansions"], info["seconds"] = total, round(time.time() - t0, 1)
+    info["expansions"], info["seconds"], info["jobs"] = total, round(time.time() - t0, 1), len(jobs)
     return info
-
-
-def _count(_):
-    n, _S.expansions = _S.expansions, 0
-    time.sleep(0.05)  # let every worker take a share of these
-    return n
 
 
 def main() -> None:
@@ -271,16 +388,23 @@ def main() -> None:
     ap.add_argument("--gap", type=float, nargs="+", default=[14])
     ap.add_argument("--ledge", type=float, default=12, help="how far the defender stands from the ledge behind him")
     ap.add_argument("--frames", type=int, default=12)
-    ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--workers", type=int, default=28)
+    ap.add_argument("--hop", type=int, default=0, help="start with the attacker this many frames into a short hop")
+    ap.add_argument("--safe", action="store_true",
+                    help="ask instead whether the defender has a defence that needs no guessing")
     ap.add_argument("--trap", action="store_true", help="count the measured shield trap as a win for the attacker")
     args = ap.parse_args()
     for g in args.gap:
-        r = solve(g, args.ledge, args.frames, args.workers, args.trap)
-        print(f"gap {r['gap']} (P2 at x={r['p2_x']}, facing {'left' if not r['p2_facing'] else 'right'}), "
-              f"{r['frames']} frames: " + (f"FORCED WIN with {r['forced']}" if r["forced"] else "no forced win")
-              + f"  [{r['expansions']:,} positions, {r['seconds']}s]", flush=True)
-        for a, ds in r["refuted_by"].items():
-            print(f"     {a:8s} " + ("wins against every answer" if not ds else "answered by: " + ", ".join(ds)))
+        r = solve(g, args.ledge, args.frames, args.workers, args.trap, "safe" if args.safe else "win", args.hop)
+        where = (f"gap {r['gap']}, P1 height {r['p1_y']} (P2 at x={r['p2_x']}, facing {'left' if not r['p2_facing'] else 'right'}), "
+                 f"{r['frames']} frames: ")
+        if args.safe:
+            verdict = f"SAFE with {r['forced']}" if r["forced"] else "NO SAFE DEFENCE: the defender must guess"
+        else:
+            verdict = f"FORCED WIN with {r['forced']}" if r["forced"] else "no forced win"
+        print(where + verdict + f"  [{r['expansions']:,} positions, {r['seconds']}s]", flush=True)
+        for m, ds in r["refuted_by"].items():
+            print(f"     {m:8s} " + ("holds against everything" if not ds else "beaten by: " + ", ".join(ds)))
 
 
 if __name__ == "__main__":

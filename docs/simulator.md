@@ -23,6 +23,10 @@ Tested on 2026-11-14 at upstream commit `eea7b5fb`. It has **no license file**, 
 
 **Phillip vs Phillip in the simulator.** slippi-ai's own evaluator played `gm.onnx` vs `gold.onnx` (Fox ditto) to completion: gm won 4-0 on Fountain of Dreams in 5,248 frames. Per frame, the simulator plus observation conversion took 0.66 ms and each policy 8.6 ms (batch-1 ONNX on a shared, busy GPU), so the policy is the bottleneck. Our ONNX exports have a fixed batch of 1; many games at once need batched exports.
 
+## Our patch: in-place checkpoint and rollback
+
+`scripts/patch_sim.sh` applies `patches/melee-sim-light-checkpoint.patch` to a checkout in `vendor/melee-sim-light`, builds it and swaps the library in the venv. `uv sync --reinstall` restores upstream's, so run the script again after it. The patch adds four calls (`msl_batch_checkpoint_size`, `_checkpoint`, `_rollback`, `_diff_pages`); nothing existing changes, and code that doesn't use them behaves as before. `melee_llm/sim/rollback.py` wraps them: a rollback takes about 9 µs against 300 µs for the library's lane copy. Details and the search built on it: [optimal-play.md](optimal-play.md), section 11.
+
 ## Gaps
 
 - **slippi-ai bug.** slippi-ai @ `5ada33e` looks players up by `present`, which melee_sim clears for an eliminated player, so every game that ends on stocks crashes. `scripts/sim_phillip_eval.py` patches the two lookups at runtime; the vendored repo stays untouched.
