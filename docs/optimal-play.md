@@ -286,6 +286,8 @@ Probes: `scripts/solver_probes/` (run with `PYTHONPATH=. python scripts/solver_p
 - Exactness is checked on every run: a rollback never restores the other pages, so a page that changed unexpectedly stays changed, and a final comparison with the starting state finds it. No run below reported one.
 - The search of section 10 now plays on one match per process and takes moves back. It no longer saturates memory, so it scales with cores: **67,000–113,000 positions/s on 28 processes, against a ceiling of 10,500 before.** 14 frames from the corner take 3.4 minutes (13.8 million positions).
 
+**Published as its own repo.** The patch, the rollback wrapper and the searches are also available standalone as [melee-brute](https://github.com/mateo19182/melee-brute), a fork of melee-sim-light that anyone can install without this project. It adds `best` (every line for one player) and `improve` (random changes to a long line, the method of TMInterface for Trackmania and of the SM64 bruteforcers). We found no such tool for Melee: TASes there are made by hand with Dolphin's Lua tools.
+
 **Two questions bracket the truth.** `force` asks whether the attacker can force the first hit against a defender who sees his inputs. `force --safe` asks the mirror: does the defender have a defence that holds against an attacker who sees *his* inputs? If the first is yes the attacker wins outright; if the second is yes the position is a draw; if both are no, the defender has to guess and the equilibrium is mixed.
 
 | Position (defender cornered about 10 units from the ledge) | Attacker can force a hit | Defender has a safe defence |
