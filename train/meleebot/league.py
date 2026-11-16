@@ -43,7 +43,6 @@ ROSTER = {  # name -> (match spec, character); see docs/bots.md
     "phillip-sheik-vs-yoshi": ("phillip:sheik_d18_vs_yoshi", "SHEIK"),
     "phillip-peach-vs-yoshi": ("phillip:peach_d18_vs_yoshi_v3", "PEACH"),
     # Phillip's own Yoshi agents: rivals for ours. Each RL one was trained for one matchup.
-    "phillip-yoshi-imitation": ("phillip:yoshi_d18_imitation_v3", "YOSHI"),
     "phillip-yoshi-ditto": ("phillip:yoshi_d18_ditto", "YOSHI"),
     "phillip-yoshi-vs-fox": ("phillip:yoshi_d18_vs_fox_v3", "YOSHI"),
     "phillip-yoshi-vs-marth": ("phillip:yoshi_d18_vs_marth_v3", "YOSHI"),

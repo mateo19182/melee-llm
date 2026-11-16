@@ -3,10 +3,10 @@ id: E18
 title: Stronger league opponents
 date: 2026-11-16
 status: running
-result:
+result: partial: 2 of 26 against Phillip's anti-Yoshi agents
 verdict:
 runs:
-prs:
+prs: 81
 follows: E15
 ---
 
@@ -35,6 +35,26 @@ The question for later experiments is whether at least a few opponents beat our 
 
 ## Result
 
+Running. So far, `hal:AMSA#0,return_target=40` with no delay (wins of finished games):
+
+| Opponent | Wins | Games lost to errors |
+|---|---|---|
+| Phillip Fox trained against Yoshi | 0 of 6 | 1 |
+| Phillip Marth trained against Yoshi | 0 of 4 | 2 |
+| Phillip Falco trained against Yoshi | 0 of 4 | 2 |
+| Phillip Sheik trained against Yoshi | 2 of 6 | 0 |
+| Phillip Peach trained against Yoshi | 0 of 6 | 0 |
+| Phillip `super-gm` Fox | 0 of 4 | 2 |
+| Phillip Fox v6.2 | 0 of 2 | 4 |
+| Phillip Marth v6.2 | 3 of 4 | 2 |
+| Phillip Falco v6.2 | 2 of 6 | 0 |
+| Phillip's ditto Yoshi | 1 of 4 | 3 |
+| Faynt 75M | 0 of 1 | 0 |
+
+- **The yardstick exists.** Phillip's agents trained against Yoshi beat our best Yoshi 24 games to 2, with 18 frames of delay against our none.
+- **Errors.** 18 games died with a Dolphin disconnect (`EnetDisconnected`), the same fault as in E16. They came while training jobs were loading the machine; whether load is the cause is not established.
+- **Faynt 75M** runs on the CPU at about 5 cores a game. Four at once stalled for 30 minutes, so its games now run last, two at a time.
+- **Phillip's imitation-only Yoshi** cannot play as set up: its model needs a player name. It is out of the roster until that is added.
 
 ## Verdict
 

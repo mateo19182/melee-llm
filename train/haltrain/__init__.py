@@ -59,7 +59,8 @@ def save_bundle(model, source, destination, name):
 
     with art.extract_policy_bundle(source) as (manifest, root), tempfile.TemporaryDirectory() as tmp:
         raw = torch.load(root / art._CHECKPOINT_MEMBER, map_location="cpu", weights_only=False)
-        raw["model"] = {k: v.detach().float().cpu() for k, v in model.state_dict().items()}
+        # keep each entry's type: the state also holds byte buffers (the player codes)
+        raw["model"] = {k: v.detach().cpu().to(raw["model"][k].dtype) for k, v in model.state_dict().items()}
         checkpoint = Path(tmp) / art._CHECKPOINT_MEMBER
         torch.save(raw, checkpoint)
         config = json.loads((root / art._CONFIG_MEMBER).read_text())

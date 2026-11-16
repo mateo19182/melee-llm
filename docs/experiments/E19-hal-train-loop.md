@@ -2,11 +2,11 @@
 id: E19
 title: A training loop for HAL's model on the 3090
 date: 2026-11-16
-status: planned
-result:
+status: running
+result: validation 1.0867 bits (HAL: 1.0870); trains at 7 GB and about 40 windows/s
 verdict:
-runs:
-prs:
+runs: hal-ft-check
+prs: 82
 follows: E14
 ---
 
@@ -33,5 +33,33 @@ No simulator and no new data yet. HAL's simulator adapter is not built on this m
 3. After the short fine-tune, validation loss on aMSa's held-out games is no worse than before, and the fine-tuned model is no weaker than `hal:AMSA#0,return_target=40` over 30 league games. This run is not expected to make the bot stronger: the model has already seen this data. It only proves the loop does no harm.
 
 ## Result
+
+**Gate 1, validation: passed.** `python -m haltrain.validate` on the released weights, HAL's fixed cohort of 2,048 windows over all 44 sources:
+
+| | Ours | HAL's record |
+|---|---|---|
+| `val/nll` (bits) | 1.0867 | 1.0870 |
+| near offsets | 0.8661 | 0.8664 |
+| far offsets | 0.2206 | 0.2206 |
+| exact frame accuracy | 0.611 | 0.613 |
+
+The validation games of the 37 pros that were not on disk were downloaded from HAL's public dataset (1 GB). Baseline on aMSa's held-out Yoshi games (928 windows, eight passes with different random windows): **1.037 bits**. One pass (116 windows) gave 0.933, so a single pass is too noisy to compare models.
+
+**Gate 2, a training step on the 3090: passed.** Microbatches of 16 windows, with the trunk and decoder compiled (HAL's decoder attention cannot run a backward pass uncompiled):
+- Peak GPU memory 7.0 GB, next to the stomped bot and league games.
+- About 40 windows a second between validations, while league games were also using the GPU and CPU. The original run did 512 windows per update; at 64 per update here that is roughly 1.5 s per update.
+- Start-up: 1.7 minutes to compile; the first start also decompresses aMSa's shards (2.4 GB to 27 GB).
+- Compiled and uncompiled losses agree to three decimals on the same batch (0.9615 against 0.9623 bits).
+
+**Gate 3, a short fine-tune: validation passed, league pending.** `hal-ft-check`: 300 updates of 64 windows (19,200 windows, 10 minutes) on aMSa's Yoshi games at 1/170 of HAL's learning rates.
+- Validation on aMSa's held-out games: 1.0369 → 1.0354 → 1.0348 → 1.0345 bits. Training loss stayed around 1.1 bits, gradient norm around 1.1.
+- 156 of 184 weight tensors changed, by at most 0.0014.
+- The checkpoint saves as a bundle the bots load: `hal:AMSA#0,run=hal-ft-check`.
+- League games against the released weights' five opponents from E15 are queued.
+
+Problems found on the way:
+- HAL's loaders delete the compressed shards after decompressing them, so training and validation read from copies (`/mnt/data/melee/hal-ft`, `/mnt/data/melee/hal-val`), never the dataset itself.
+- A killed run leaves the loader's shared memory behind and the next start fails with "Reused local directory"; `streaming.base.util.clean_stale_shared_memory()` clears it.
+- While this ran, the live stomped bot's decision time rose from 9 ms to 26–48 ms (95th percentile) and it missed up to 2,047 frames in a match. Training and the live bot cannot share the GPU without hurting the bot.
 
 ## Verdict
