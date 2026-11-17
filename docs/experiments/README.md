@@ -50,5 +50,5 @@ Loss is validation loss, summed over the four controller heads. "vs CPU 9" is wi
 | [E20](E20-hal-return-finetune.md) | 11-16 | planned | Return-conditioned self-improvement in the simulator |  |  |
 | [E21](E21-hal-ppo.md) | 11-16 | planned | PPO on HAL with a KL penalty toward the clone |  |  |
 | [E22](E22-hal-delay-offsets.md) | 11-17 | done | HAL under delay: rebalance the action offsets | at 10 frames of delay the fine-tune won 8 of 30, the released weights 10 of 30 | no effect; the offset weighting is not why HAL is weak under delay |
-| [E23](E23-hal-dida-delay.md) | 11-17 | running | Delay: imitate the no-delay model on our own delayed games |  |  |
+| [E23](E23-hal-dida-delay.md) | 11-17 | abandoned | Delay: imitate the no-delay model on our own delayed games | stopped after 167 of 288 games, before training; no result | superseded by the simulator game farm: the same loss, on games from the simulator and a small student |
 <!-- index:end -->

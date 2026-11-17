@@ -2,11 +2,11 @@
 id: E23
 title: Delay: imitate the no-delay model on our own delayed games
 date: 2026-11-17
-status: running
-result:
-verdict:
-runs: hal-dida-1
-prs:
+status: abandoned
+result: stopped after 167 of 288 games, before training; no result
+verdict: superseded by the simulator game farm: the same loss, on games from the simulator and a small student
+runs:
+prs: 96
 follows: E22
 ---
 
@@ -45,4 +45,10 @@ Then, if it wins clearly more at `delay=10` (about 8 wins more is what 30 games 
 
 ## Result
 
+None. Game generation was stopped on 2026-11-17 after 167 of 288 games (12 more lost to errors); the model was never trained. The 167 delayed games are in the league log and their replays are archived, so the experiment can be resumed with `haltrain.dida` as written.
+
+Generation was the slow part: about 1.2 games a minute with three Dolphins on a shared machine.
+
 ## Verdict
+
+Stopped to free the GPU for a measurement that changed the plan: HAL's model playing 64 games at once in the simulator makes about 1,800 game frames a second, roughly ten times this run's rate, without Dolphin's disconnects. The question stays open and moves to the simulator, with a small student instead of the 247M model. The code (`haltrain/own.py`, `haltrain/dida.py`, delay 11 in the bot) is merged because the next step reuses it.
