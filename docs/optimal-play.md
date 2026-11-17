@@ -14,6 +14,7 @@ Measured on 2026-11-16 on Final Destination, everyone at 0% unless stated, UCF o
 - **Same-frame shines:** [sim] on the ground they **clank** (0% to both, 4 frames of hitlag each, both stay in the shine). In the air they truly whiff: no hitlag, because the intangible hurtboxes skip the hit check. Shining one frame earlier deals 5%, on the ground or in the air.
 - **Yoshi's armor and Game & Watch's Judge 9 beat the shine itself, but not Fox.** [sim] Yoshi's double-jump armor absorbs the shine at every percent. A frame-picked Judge 9 lands for 32% through a shine just out of its range. Fox jabs, shields or punishes both on reaction.
 - **Two cracks in the standoff, both in the Fox ditto.** [sim] Holding shield next to a Fox who can act is a trap: every way out loses 5–18%, and the shield breaks by itself after 196 frames. And a Fox in the air beats a Fox on the ground in the shine war: he out-reaches him from above, and his double jump lets him shine again 2 frames sooner. Neither is a forced win from neutral yet; see [section 9](#9-two-cracks-in-the-fox-ditto-standoff-sim).
+- **The Fox-ditto standoff as a playable defence: not a fortress yet, and not broken.** [sim] A Fox who only stands and answers what he sees must guess after 183 frames: the other walks to 13.2 and flicks his stick away, worth 25% of a clean first hit, or the defender shields into the trap above. A defender who gives ground at 13.7 and remembers every position where he had to guess was not cracked again in our samples and lands the first hit on nearly every approach, but each retreat costs 21 units of a finite stage. See [section 14](#14-the-fortress-a-fox-who-is-never-hit-first-as-a-policy-that-is-played-sim).
 - **Even banned glitches don't change it.** [sim] Ness's yo-yo glitch reproduces in the simulator: his jab hits Fox from 35 units on frame 3. Fox still escapes on reaction, and setting it up needs a hit on Fox first. The freeze glitch and Soul Breaker need a grab, or items. [web]
 - **Equilibrium values are about 0 against every character tested**, from the solver below: within ±2.2% damage per exchange over a short horizon, leaning slightly to Fox at close range. Petro's own plan, "walk in, then shine", loses to a best response in every matchup, by 2–38%.
 - **Running out the clock:** a timeout goes to the lower percent ([rules](https://www.ssbwiki.com/Tournament_rulesets_(SSBM))). With no ledge-grab limit, Fox, Falco, Sheik, Captain Falcon and Ganondorf have **fully intangible ledge stalls** ([SmashWiki](https://www.ssbwiki.com/Ledgestall)), so a lead could be held forever. Current rules cap cliff grabs at 40–60 per game and ban the known air stalls. Since nobody can force the first hit anyway, the clock rarely gets that far: a perfect game should time out at 0–0 and go to a 1-stock tiebreak that deadlocks the same way. [inferred]
@@ -440,6 +441,209 @@ smash, down smash, crouch, walking either way and a turn added, the attacker sti
 for 5% and takes 0, except a shine on the same frame, which he beats by jumping out of his shine on frame 8 and
 shining again on frame 9. 300 of 300 random defenders were hit cleanly. A shield stops it, as section 13 says.
 
+### 14. The fortress: a Fox who is never hit first, as a policy that is played [sim]
+
+Section 13 solved single positions. Here the candidate defence is built as a policy, played from the match start
+(`sim.start()`, both at their spawns, 120 apart) and attacked. `melee_llm/solver/fortress.py`; long runs with
+`scripts/fortress.sh` (one systemd unit, 6 or 7 processes, 12 GB limit, resumable); tables with
+`scripts/solver_probes/fortress/report.py`.
+
+**The policy.** Each frame the defender (P2) takes the first input, in the order wait, step away, step in, hop,
+shine, jab, grab, spotdodge, shield, such that whatever the attacker (P1) presses on that frame, P2 still has a
+defence that holds for a lookahead of H frames even if P1 sees every input (`Nash.forced(..., attacking=False)`).
+The rules are section 13's menus and position key (previous inputs included, grabs count), made stricter for the
+defender:
+
+- no new shield while P1 is free to act within 15 units, and a shield with a free P1 within 14.4 counts as hit (the
+  one-way door);
+- an early spotdodge beside a standing or shining P1 counts as hit (`--dodge`);
+- leaving the stage counts as hit.
+
+A position with no such input is a **crack**. **A crack is never a false alarm at its own horizon:** a matrix game
+with payoffs between 0 and 1 is worth 0 only if one column is all zeros, so a position is worth 0 to H frames
+exactly when the defender has a defence that holds when read. No safe input means the attacker has a positive
+chance of a clean first hit within H frames. What a crack can be is avoidable: the defender got there by a choice
+that looked safe H frames earlier.
+
+Two ways of going on at a crack: (a) save it, play the exact mixed strategy of 6 frames until safe again, then
+solve the crack exactly at 4 to 10 frames; (b) **learn**: mark the position in a file shared by all games, take
+the game back frame by frame, marking every earlier position that has no safe input once marked positions count
+as lost, and resume from the first position that still has one. The marked set is the outside of the fortress as
+far as the attackers found it. By the same argument every marked position has a positive value at some horizon.
+
+**Cost decides the horizon.** One uncached frame near contact costs 1 to 4 s at H = 6 and 30 to 60 s at H = 8
+(12,000 simulator steps a second). Games are played at H = 6; H = 8 is used for the map of standing positions
+and the exact solves, and for a few games that got 1 to 55 frames far. Far apart nothing is searched: a
+standing defender further than 23 + 2.6 per remaining frame from an attacker who is not rolling cannot be hit in
+that time (`Fortress.far`; measured by `scripts/solver_probes/fortress/reach.py` over every attacker line of 8
+frames from 11 starts: the longest reach one frame before a hit is 21.9, **a jab**, which hits a standing Fox
+from 20.5 on its third frame; the fastest movement outside a roll is 2.4 a frame).
+
+**Proven to a horizon: the map of standing positions.** Both standing, facing each other. "Safe inputs" are the
+defender's first inputs that hold for 8 frames against an attacker who reads them (a proof for these menus and
+8 frames); the value is the exact chance of a clean first hit for the attacker.
+
+| Gap | Mid-stage | 12 from the ledge | 6 from the ledge | On the ledge |
+| --- | --- | --- | --- | --- |
+| 6.7 | none, value 0.5 | none | none | none |
+| 7.2 to 10.9 | shine only (value 0 at 9.7, 10.3, 10.9) | shine only (wait too at 10.8) | shine only | **none** (value 0.5 at 7.3 and 10.3) |
+| 11.5 to 12.0 | **none, value 0.29** (11.51) | **none, value 0.29** (11.99) | none (12.0) | none (11.5) |
+| 12.6 to 12.7 | wait, step away (value 0 to 10 frames) | wait, step away | wait, step away | wait only |
+| 14.5 to 15.0 | wait, step away, jab | same | same | wait, step away (a turn: he is on the ledge) |
+| 18.6 | wait, step away, jab, spotdodge, shield | same | same | wait, step away, spotdodge, shield |
+| 24.6 | those and step in, hop, shine | same | same | same |
+
+- Standing still is a fortress only from 12.6 outwards. Between 11.5 and 12.0 a standing defender has no defence
+  that holds when read, and the attacker gets a clean first hit 29% of the time within 8 frames (25% within 6).
+  Inside 11 the only safe input is to shine first; at 6.7 it is a coin flip.
+- **The ledge takes the shine away.** A defender standing on the ledge has no safe input at any gap up to 11.5
+  (why: under "The ledge" below). Six units of room are enough to get the mid-stage row back.
+
+**The line from the opening that makes a waiting defender guess** (exact, replayed in the raw simulator by
+`scripts/solver_probes/fortress/opening_line.py`). P1 walks in for 182 frames (stick at 30) and on frame 183
+flicks the stick away, the defender waiting throughout. Position: 13.19 apart, P1 in the first frame of a turn,
+P2 standing. P2 has no safe input at 6 or 8 frames. Exact value **0.25** at 6 and at 8 frames: both play wait
+50%, step away 25%, shine 25%. With `nash.py`'s own rules the value is 0, but only by shielding, and a shield
+13.19 from a free Fox is the one-way door of section 13. So the policy "stand and answer what you see" is not a
+fortress: an attacker reaches a position where it must guess, in 183 frames, without ever being in danger
+himself (at lookahead 6 and with the defender allowed to take any hit he can force within 3 frames, no hit on
+the walking attacker was forced).
+
+What the defender has to do instead, against the same walk (P1 walking in from the opening, P2 standing; inputs
+that hold for 8 frames when read, the marked positions of the learning games counted as lost;
+`scripts/solver_probes/fortress/walk_in.py`):
+
+| P1 walking, gap | 16.7 | 16.1 | 15.5 | 14.9 | 14.3 | 13.7 |
+| --- | --- | --- | --- | --- | --- | --- |
+| P2's safe inputs | wait, step away, jab | same | same | same | wait, step away | **step away only** |
+
+Against a walking Fox the fortress ends at 13.7: the defender has to give ground, and one dash back carries him
+21 units. From his spawn (25.6 from the ledge) the first retreat leaves him 3.95 from it.
+
+**Games (samples).** One game is one run from the match start (or from a placed position where said) until the
+first hit, the end of the attacker's plan, or its time limit. "Punish": the defender also takes any clean first
+hit he can force within 3 or 4 frames. All at lookahead 6 unless said; no crack-free game is a proof of
+anything beyond its own frames.
+
+| Attacker | Games | Frames | Nobody hit | Defender hit | Attacker hit | Trade | Cracks (guess / forced) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Dash in and let go at 30 to 8; run through; crowd at 17 with hops; dash-dance at 12, 16, 22; in and out; shield next to him. Punish 3 | 15 | 904 | 5 | 0 | 10 | 0 | 0 (0 / 0) |
+| Walk in and stop at 30, 26, ... 6, stand 40 frames. Punish 3 | 7 | 1,490 | 5 | 0 | 2 | 0 | 0 (0 / 0) |
+| Walk in to 10, 12, ... 30, stand, short hop (stick in, neutral or away; shine or nair in the air, shine on landing, or nothing). Punish 3 | 18 | 3,696 | 3 | 0 | 15 | 0 | 0 (0 / 0) |
+| The same hops, and full hops, from a standing start 10 to 30 apart mid-stage; defender only defends | 28 | 1,602 | 14 | 0 | 14 | 0 | 2 (1 / 1) |
+| Walk in to 12 to 16, then the adversary (two games with punish 3) | 7 | 1,663 | 2 | 4 | 1 | 0 | 5 (4 / 1) |
+| Dash in, then the adversary | 1 | 68 | 0 | 0 | 1 | 0 | 0 (0 / 0) |
+| Random held inputs | 16 | 1,321 | 1 | 0 | 15 | 0 | 1 (1 / 0) |
+| Random held inputs. Punish 4 | 9 | 623 | 0 | 0 | 9 | 0 | 0 (0 / 0) |
+| Defender placed 0 or 4 to 6 from the ledge, attacker 16 to 20 away: hop, dash in, crowd, adversary, random | 10 | 1,324 | 4 | 1 | 5 | 0 | 5 (1 / 4) |
+| Three of those at lookahead 8 (400 s each) | 3 | 60 | 2 | 0 | 1 | 0 | 0 (0 / 0) |
+| **All** | **114** | **12,751** | 36 | **5** | **73** | 0 | 13 |
+
+- **The mirror: the fortress hits first far more often than it is hit** (73 games to 5). A dash in to 12 or
+  closer, or through him, is shined as it arrives (frame 51), and a run that brakes slides 25 units into the same
+  shine; a walk to 12.5 or closer is shined; a hop from 16 or 18 is jabbed in its jumpsquat; a dash-dance at 12
+  to 22 is jabbed or shined on a turn; 24 of 25 random attackers were hit. Fox's jab reaches
+  21, so any committed state 14 to 21 from the defender is inside his punish range. Dashing in and stopping at
+  14.6 or further, walking in and stopping at 12.75 or further, and 17 of the 46 hop games (mostly the stick
+  away or neutral, or a hop from 26 or more) ended with nobody hit.
+- **The attackers that get through are the ones that walk to 13 to 15 and then do very little.** Every clean hit
+  on the defender from the opening came from "walk in, then the adversary", which is section 13's standoff
+  distance entered with the initiative.
+
+**Cracks, solved exactly** (fortress rules, 4 to 10 frames as far as 2 minutes allowed; none is a false alarm,
+by the argument above):
+
+| Crack (attacker / defender) | Where it came up | Value at 6, 8, 10 frames | Class | Avoidable earlier? |
+| --- | --- | --- | --- | --- |
+| 13.19 apart, P1 first frame of a turn after walking in, P2 standing (and the same at 12.84, second frame) | 4 of 7 walk-in games, frame 183 to 194 | 0.25, 0.25, not reached | **guess** | Yes, at lookahead 6: in the learning games the walk back stopped one frame earlier (P2 steps away at 13.7 instead of waiting) |
+| 10.71, P1 in jumpsquat, P2 first frame of a ground shine | walk-in game, frame 192 | 0.5, 1, 1 | **forced** | Yes at lookahead 6: the same kind of crack (his ground shine answered by a roll, its release animation punished) was walked back 14 to 18 frames in the learning games |
+| P2 in shield or spotdodge under a hopping P1 (9.5 apart and 7 up; 1.9 apart) | hop from 14 with a shine on landing, placed start | 0.17, 0.17; then 1, 1, 1 | guess, then forced | Yes at lookahead 6: the learning game from this start marked 10 positions (walk back 4 frames) and then hit the hopper on frame 17 every time |
+| 11.50, P2 landing from a hop, P1 near the end of a spotdodge | one random game, frame 100 | 0.5, 0.5, 0.5 | **guess** | Yes: replayed from 10, 20 and 40 frames earlier at lookahead 8 (18 to 40 frames each), no crack |
+| On or near the ledge: P2 in a jab, a shine's end lag, a spotdodge or teetering, P1 2 to 6 away | 5 games started 0 to 6 from the ledge | 1, 1, 1 (four) and 0.17 (one) | **forced** (4), guess (1) | Only with room: see the ledge below |
+
+The replays asked for in the plan (the same game from 10, 20 and 40 frames before the crack at lookahead 8)
+finished only for the random game; against the adversary they got 1 to 14 frames far in their time and showed
+nothing. The exact values 10 and 20 frames before three walk-in cracks are 0 at 6 and 8 frames (one to 10, one
+to 12), as they must be that far from the crack. The learning games are the walk back that fits the machine.
+
+**Learning games (samples, lookahead 6).** Game after game from the opening against the same kind of attacker
+with a new seed, all sharing the marked positions.
+
+| Attacker | Different rounds | Frames | Cracks, round by round | Positions marked | Deepest walk back | Closest to the ledge |
+| --- | --- | --- | --- | --- | --- | --- |
+| Walk in to 16, then the adversary | 6 | 1,384 | 0, 2, 1, 1, 0, 0 | 13 | 7 | 0.8 |
+| Walk in to 14, then the adversary | 5 | 1,247 | 2, 0, 0, 0, 0 | 15 | 14 | 23.2 |
+| Walk in to 13, then the adversary | 5 | 1,198 | 1, 1, 0, 1, 0 | 50 | 18 | 0.5 |
+| Walk in to 15, then the adversary, punish 3 | 7 | 1,630 | 0, 0, 2, 15, 0, 0, 0 | 54 | 14 | 14.0 |
+| Dash in, then the adversary | 5 | 725 | 0, 60, 3, 1, 0 | 253 | 18 | 11.0 |
+| Walk in to 12 (the same game 1,619 times: P1 walks into a shine on frame 221) | 1 | 221 | 0 | 0 | 0 | 4.0 |
+| Stalk: walk in to 13.2, 13.7 or 14.3, flick the stick away every other frame, follow (8 jobs, each one game repeated 155 to 1,759 times: P1 shined on frame 184 or 244 to 245) | 3 | 673 | 0 | 0 | 0 | 4.0 |
+| **After those marks, new seeds:** walk in to 13, 14, 14 (punish 3), 15 (punish 3), 16, then the adversary | 10 | 2,116 | 0, 0; 0, 3; 0, 0; 0, 1; 0, 0 | 24 | 18 | 12.3 |
+| After the marks: dash in, then the adversary | 3 | 254 | 0, 4, 0 | 60 | 16 | 11.0 |
+| After the marks: hop from 14 with a shine on landing, placed start (then the same game 3,328 times: P1 hit on frame 17) | 2 | 34 | 4, 0 | 10 | 4 | 62.4 |
+| After the marks: the adversary against a defender placed 4 from the ledge, and on it | 6 | 242 | 0, 1, 0; 0, 0, 0 | 13 | 13 | 0.0 |
+
+In all 508 positions marked. A defender who backs out of every crack cannot be hit, so what counts is the cracks
+and how far back they reach.
+
+- Every walk back ended within 18 frames: no crack was unavoidable from more than 18 frames earlier, at this
+  lookahead and against these attackers. None reached back to the opening; the earliest marked frame is 51.
+- **It has not converged.** With new seeds and starts after the marks, 5 of 21 rounds still found cracks (13
+  cracks, 107 more positions marked). The marked set grows by a few positions per new line; nothing bounds it yet.
+- The 11 marked positions with the defender standing are of one kind: P1 is 12.0 to 14.9 away in the first
+  frames of a turn, a dash, a crouch or a jump. The other 497 are his own committed moves (a shine and its
+  release, an air shine, a spotdodge, an up smash) with P1 next to him.
+
+**The ledge.** Placed 0 or 4 to 6 from the ledge with the attacker 16 to 20 away, the plain policy at lookahead
+6 cracked in 5 of 10 games, four of the cracks forced (value 1 at 6, 8 and 10 frames), and was hit once: with no
+room, the move it picks as safe for 6 frames (a jab, a shine, a spotdodge) is punished in its end lag. On the
+ledge itself the reason there is no safe input inside 11.5 was traced at 8.5: the attacker shields the
+defender's shine and the pushback slides the defender off the stage on the fourth frame (x 85.85), which the
+rules count as lost without playing it out. From the opening the defender gets there by his own retreat: one
+dash back from his spawn leaves him 3.95 from the ledge, and in three learning games he ended 0.5 to 0.8 from
+it. He was not cracked there in the samples: the stalking attackers were shined when they walked in again (a
+walk that stops slides 1.5 units, into shine range), and against a defender placed on the ledge or 4 from it
+the adversary found one crack in six short rounds (walk back 13 frames). Those rounds are 2 to 81 frames each:
+this is the thinnest part of the evidence.
+
+#### Is it a stalemate?
+
+**Not proven either way; what was built is not yet a fortress, and no forced line from the opening was found.**
+
+Proven, for these menus and rules, to the horizon stated:
+
+- Standing 12.6 or more apart, the defender has a defence that holds when read: 8 frames with safe inputs
+  listed above, value 0 to 10 frames at 12.71 mid-stage.
+- "Stand and answer what you see" is **not** a fortress. From the opening, in 183 frames of plain walking and one
+  flick of the stick, the attacker reaches a position worth 0.25 to him (6 and 8 frames) unless the defender
+  shields into the one-way door. The same goes for standing 11.5 to 12.0 apart (0.29) and for standing on the
+  ledge with the attacker inside 11.5 (0.5 at 7.3 and at 10.3).
+- A crack found by the policy always has a positive value at its own horizon; so has every marked position at
+  some horizon.
+- Against a walking attacker the defender's last safe distance is 13.7 (8 frames), where his only safe input is
+  to step away.
+
+Sampled (lookahead 6, the attackers above):
+
+- Every crack found (116 over all games) was avoidable from at most 18 frames earlier; none reached back to
+  the opening. The defender who gives ground at 13.7 and never plays into a marked position is still being
+  cracked by new lines, at a falling rate (508 marks so far).
+- The fortress lands the first hit on almost every scripted or random approach (73 games to 5 in the plain
+  games; every stalking game).
+
+Open:
+
+- **The ledge is the question.** Each forced retreat costs about 21 units and the stage is finite; on the ledge
+  itself there is no safe input inside 11.5. Whether an attacker can make him retreat twice without walking into a shine or a jab himself was
+not found either way: the scripted stalkers could not, and the adversary only looks one frame ahead.
+- Everything in the games is lookahead 6. At 8 a frame near contact costs 30 to 60 s, and the plan's deeper
+  horizons (10 to 12) were only reached for single positions.
+- The attackers are scripts, random inputs and a one-ply adversary. A search over attacker lines against the
+  learning defender (the same marking, for the other side) is the next step, with the menus widened (wavedash,
+  the reverse and turnaround moves, lasers, platform-less ledge options: none are in the menus).
+- The payoff is the attacker's clean first hit. A crack says the defender must guess, not that the attacker is
+  ahead: in the positions found the defender's own guesses hit too, and the game is symmetric.
+
 ## What this says about Petro's claim
 
 - **"Two perfect Foxes walk in and shine on the same frame":** not optimal. Walking into shine range loses to a jab from 12 or more, and on the ground the same-frame shines clank rather than whiff.
@@ -448,7 +652,7 @@ shining again on frame 9. 300 of 300 random defenders were hit cleanly. A shield
 
 ## Open next steps
 
-- The cornering game: can a Fox walk the other to the ledge and use the hop or the shield trap there? This is the most likely way out of the standoff.
+- The cornering game, now concrete (section 14): the defender must step away from a walking Fox at 13.7, a dash back is 21 units, and on the ledge he has no safe input inside 11.5. Search the attacker's lines against the learning defender there, at a lookahead of 8 or more.
 - Deeper trees with a better leaf: a small matrix game over continuation policies instead of a fixed idle or shield play-out.
 - Wavedash, crouch cancel and DI in the menus.
 - Yoshi's armored double jump and a frame-picked Judge as tree options.

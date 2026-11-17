@@ -211,3 +211,82 @@ def test_nash_agrees_with_a_brute_force_on_a_short_horizon():
         assert s.value(1, 1) == pytest.approx(value(state, 1)), (a, d)
         s.back(0)
     sim.world.close()
+
+
+def test_fortress_attackers_parse_and_ask_for_the_menus_they_need():
+    from melee_llm.solver import fortress
+    hop = fortress.attacker("hop:14:in:shine:full")
+    assert hop.g == 14 and "walk_in" in hop.add1["ground"] and hop.add1["squat"] == ("jump",)
+    assert fortress.attacker("dash:16").add1 is None and fortress.attacker("crowd").g == 17
+    assert isinstance(fortress.attacker("random:3"), fortress.Random)
+    assert isinstance(fortress.attacker("adv:1"), fortress.Adversary)
+    assert fortress.PREF[0] == "wait" and set(m for v in fortress.nash.MENUS.values() for m in v) <= set(fortress.PREF)
+
+
+@needs_sim
+def test_fortress_rules_no_shield_near_a_free_fox_and_the_stage_is_the_fortress():
+    from melee_llm.solver import force, fortress
+    sim = force.Sim()
+    near, far, edge = force.corner(sim, 13, 60), force.corner(sim, 30, 60), force.corner(sim, 16, 1)
+    sim.world.close()
+    fz = fortress.Fortress(near, 6)
+    assert "shield" not in fz.menus()[1] and "shield" in fz.menus()[0]
+    fz.load(far)
+    assert "shield" in fz.menus()[1]
+    assert fz.far(1) and not fz.far(6)  # 28.9 apart: out of reach this frame, not for six
+    fz.load(edge)
+    fz.rb.checkpoint(0)
+    for _ in range(3):  # a turn, a dash, and he is in the air past the ledge
+        assert fz.leaf() is None
+        fz.joint("wait", "out")
+    assert fz.leaf() == 1.0 and fz.damage() == (0.0, 0.0)  # off the stage: counted as hit
+    fz.back(0)
+
+
+@needs_sim
+def test_fortress_reach_shortcut_agrees_with_the_full_search():
+    from melee_llm.solver import force, fortress
+    sim = force.Sim()
+    roots = [force.corner(sim, g, 60) for g in (22, 26, 32)]
+    sim.world.close()
+    fast, full = fortress.Fortress(roots[0], 6), fortress.Fortress(roots[0], 6, reach=False)
+    for root in roots:
+        fast.load(root)
+        full.load(root)
+        assert fast.safe_moves(4) == full.safe_moves(4)
+        assert fast.expansions <= full.expansions
+    assert fast.expansions < full.expansions
+
+
+@needs_sim
+def test_fortress_waits_at_the_opening_and_a_hit_never_comes_without_a_crack():
+    from melee_llm.solver import force, fortress
+    sim = force.Sim()
+    start = sim.start()
+    sim.world.close()
+    fz = fortress.Fortress(start, 6)
+    r = fortress.play(fz, fortress.attacker("dash:16"), 60, 4, start)
+    assert r["result"] == "survived" and not r["cracks"] and r["shields"] == 0 and r["min_gap"] < 20
+    r = fortress.play(fz, fortress.attacker("random:5"), 60, 4, start)
+    assert r["result"] in ("survived", "P1 hit") or r["cracks"]
+
+
+@needs_sim
+def test_fortress_marked_positions_count_as_lost_and_a_crack_takes_the_game_back(tmp_path):
+    from melee_llm.solver import force, fortress
+    sim = force.Sim()
+    root = force.corner(sim, 16, 60)
+    sim.world.close()
+    fz = fortress.Fortress(root, 6)
+    assert fz.safe_moves(3)[0] == "wait"
+    fz.rb.checkpoint(0)
+    fz.joint("wait", "wait")
+    fz.mark(str(tmp_path / "bad.jsonl"), "test", 1)  # pretend standing here one frame later is a crack
+    fz.back(0)
+    assert "wait" not in fz.safe_moves(3)
+    other = fortress.Fortress(root, 6)
+    other.learn(str(tmp_path / "bad.jsonl"))
+    assert other.bad == fz.bad and "wait" not in other.safe_moves(3)
+    # in a game the defender then steps around the marked position instead of waiting into it
+    r = fortress.play(other, fortress.attacker("dash:0"), 3, 3, root, learn=str(tmp_path / "bad.jsonl"))
+    assert r["inputs"][0][1] != "wait" or r["cracks"]
