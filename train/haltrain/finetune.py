@@ -8,10 +8,16 @@ advantage weights are normalised per microbatch and not per update. Identity and
 probabilities. The optimiser is HAL's Muon + Adam with its per-role learning rates times --lr-scale; the default,
 1/170, is where the released run ended.
 
+--offsets delay changes the objective for play under input delay. HAL weights offset 1 at 0.50, offsets 2-6 at 0.07
+and the rest at 0.015, and applies advantage weights to offsets 1-6 only; with d frames of delay the bot executes
+offsets d+1 and d+2, so at 10 frames it plays from heads trained at 0.015 without advantage weights. `delay` gives
+offsets 1-12 equal weight (1/12) and advantage weights. Validation always reports HAL's own weighting.
+
 Writes RUN_DIR/run.json, log.jsonl (one line per --log-every updates and per validation) and last.hal, a bundle
 the bots load like the original (`hal:AMSA#0` with config weights=RUN_DIR/last.hal).
 """
 import argparse
+import contextlib
 import json
 import time
 from pathlib import Path
@@ -21,6 +27,23 @@ import torch
 from . import WEIGHTS, load_model, o59, save_bundle
 from .data import train_loader
 from .validate import cohort, score
+
+
+OBJECTIVES = {"delay": ((1 / 12,) * 12 + (0.015,) * 4, 12)}  # offset weights, offsets that get advantage weights
+
+
+@contextlib.contextmanager
+def objective(m, name):
+    """HAL's loss reads its offset weights from module globals; swap them for the training loss only."""
+    if name == "hal":
+        yield
+        return
+    old = m.OFFSET_LOSS_WEIGHTS, m.AWRCalibration.near_offsets
+    m.OFFSET_LOSS_WEIGHTS, m.AWRCalibration.near_offsets = OBJECTIVES[name]
+    try:
+        yield
+    finally:
+        m.OFFSET_LOSS_WEIGHTS, m.AWRCalibration.near_offsets = old
 
 
 def main():
@@ -36,6 +59,7 @@ def main():
     ap.add_argument("--warmup", type=int, default=20)
     ap.add_argument("--val-every", type=int, default=100)
     ap.add_argument("--log-every", type=int, default=10)
+    ap.add_argument("--offsets", choices=["hal", *OBJECTIVES], default="hal", help="loss weighting over action offsets")
     ap.add_argument("--compile", action="store_true", help="torch.compile the trunk and decoder (slow start)")
     ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args()
@@ -64,8 +88,10 @@ def main():
                                                     "started_at": time.time()}, indent=1))
 
     def validate(update):
-        out = m._validation_wandb_metrics(score(model, cfg, held_out, a.micro), cfg)
-        row = {"update": update, "val": {k: round(v, 4) for k, v in out.items()}}
+        full = score(model, cfg, held_out, a.micro)
+        out = m._validation_wandb_metrics(full, cfg)
+        row = {"update": update, "val": {k: round(v, 4) for k, v in out.items()},
+               "offset_bits": {o: round(full[f"nll_o{o:02d}"], 4) for o in (1, 2, 6, 11, 12)}}
         log.write(json.dumps(row) + "\n"); log.flush(); print(row, flush=True)
 
     validate(0)
@@ -79,9 +105,11 @@ def main():
                 batch = drop_return(drop_identity(next(batches))).to("cuda")
                 positions = sampler.sample(batch.context.ctx_pad, length=cfg.arch.L_ctx,
                                            suffix_start=cfg.arch.direct_loss_start)
-                loss, _, metrics = m.microbatch_loss(
-                    model, batch, cfg, step=cfg.awr.start_update, valid_prefixes=a.micro * m.POLICY_PREFIXES_PER_WINDOW,
-                    trunk_fn=trunk_fn, temporal_fn=temporal_fn, prefix_positions=positions)
+                with objective(m, a.offsets):
+                    loss, _, metrics = m.microbatch_loss(
+                        model, batch, cfg, step=cfg.awr.start_update,
+                        valid_prefixes=a.micro * m.POLICY_PREFIXES_PER_WINDOW,
+                        trunk_fn=trunk_fn, temporal_fn=temporal_fn, prefix_positions=positions)
                 if not bool(torch.isfinite(loss)):
                     raise FloatingPointError(f"update {update}: loss is not finite")
                 (loss / a.accum).backward()
