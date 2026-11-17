@@ -40,6 +40,24 @@ def test_clips_are_complete(clips):
             assert not re.search(r"orange", json.dumps([clip["title"], clip["caption"], clip["notes"]]), re.I), where
 
 
+def test_clips_can_be_drawn_as_fox(clips):
+    """The page draws each Fox with Slippi Lab's renderer: a row gives it an action, its frame and a facing, and the
+    renderer in the patch has every function the player calls."""
+    for scene in clips["scenes"]:
+        for clip in scene["clips"]:
+            for row in clip["rows"]:
+                for p in row:
+                    assert isinstance(p[2], int) and isinstance(p[3], int) and p[3] >= -1 and p[4] in (0, 1), clip["id"]
+    player = (BRUTE / "player.js").read_text()
+    patch = (server.ROOT / "patches" / "slippilab.patch").read_text()
+    assert 'import("/slippilab-live.js")' in player
+    used = set(re.findall(r"\b(?:R\??|m)\.(draw\w+|preload)\b", player))
+    assert used == {"drawFighter", "drawShield", "drawShine", "preload"}
+    for name in used:
+        assert f"+export function {name}(" in patch, name
+    assert "+export const STAGES" in patch and "R?.STAGES.FINAL_DESTINATION" in player
+
+
 def hits(clip):
     """(frame, player, percent) for every frame on which someone's percent went up, as the page counts them."""
     rows = clip["rows"]

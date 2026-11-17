@@ -20,6 +20,7 @@ Pages:
 - **Games**: every `.slp` under `replays/` and the bot-writer ladders, with players and results. A game page embeds Slippi Lab next to the decision log: the current decision follows the replay, and clicking a decision jumps to the state the model saw.
 - **Brute** (`/brute`): what the frame-by-frame search of [optimal-play.md](optimal-play.md) found about perfect play, for Melee players, with animated positions.
   - The clips are simulator traces in `static/brute/clips.json`, written and checked by `scripts/optimal_play_animations.py` and drawn by `static/brute/player.js`.
+  - Each Fox is drawn in his true pose by the same Slippi Lab renderer as All matches (`drawFighter`, `drawShield`, `drawShine` in `patches/slippilab.patch`), on Final Destination's outline. After a change to the renderer in the patch, copy `src/live/renderer.ts` into `vendor/slippilab` and run `npm run build:live` there; the server needs no restart. With an older build, or while Fox's animations load, the Foxes are plain capsules.
   - The "search in progress" block at the end reads `static/brute/status.json` on every page load: edit that file to report on the search (`state` is `not_started`, `running` or `done`; `summary`, `plan`, `details` as label and value pairs, `findings` as a list of sentences, `updated`). No restart is needed.
 - **Arena**, **Coach** (pilot summaries), **Bot-writer** (sessions with cost, time and bot source; ladder boards), **Play vs bot** (placeholder for netplay).
 

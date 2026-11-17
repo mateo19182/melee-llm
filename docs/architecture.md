@@ -32,7 +32,7 @@ Everything is built on `runner.play()`: it boots a Slippi Dolphin, connects two 
 | `scripts/` | `setup.sh` (fetch Dolphin builds and vendored tools), `live.sh` (start the Xvfb displays), `dolphin-gpu.sh`, `stream.sh` and `mediamtx.yml` (live video), `viewer.py` (old replay list and MJPEG fallback on port 8767), `coach_pilot.py`, `coach_deepdive.py`, `perception_pilot.py`, `llm_dryrun.py`, `reyn_agreement.py`, `sim_phillip_eval.py` |
 | `tests/` | Offline tests (`uv run pytest -q`): no ISO and no network. `test_jev_bench.py` makes real Jev calls only with `JEV_BENCH=1` |
 | `docs/` | These pages; the web UI's Docs tab renders every `docs/*.md` |
-| `patches/slippilab.patch` | Changes to Slippi Lab: load a replay by URL, keep CPU games, post the frame to the embedding page, the live 2D renderer |
+| `patches/slippilab.patch` | Changes to Slippi Lab: load a replay by URL, keep CPU games, post the frame to the embedding page, the live 2D renderer (also draws the Brute page's clips) |
 
 Gitignored, created by `scripts/setup.sh` or at run time: `bin/` (Dolphin AppImages, VirtualGL, mediamtx), `vendor/` (bot repos with their venvs, Slippi Lab, noVNC), `replays/`, `data/`.
 

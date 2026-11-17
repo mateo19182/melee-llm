@@ -1,8 +1,15 @@
 // Frame-by-frame player for the simulator traces in clips.json (written by scripts/optimal_play_animations.py).
 // One player shows one scene: its clips as tabs, or as the cells of a solved guess (scene.grid) with both mixes.
-// The figures are abstract shapes at the simulator's coordinates, not the game's hitboxes.
+// Each Fox is drawn in his true pose (action and animation frame) at the simulator's coordinates by Slippi Lab's
+// character renderer (/slippilab-live.js, built from patches/slippilab.patch), with its shield bubble and reflector,
+// on Final Destination. Reach ticks, hit bursts and labels are drawn here. The poses are not the game's hitboxes.
 
-const SHINE = new Set([360, 361, 365, 366]), SHIELD = new Set([178, 179, 181, 182]), LOW = new Set([24, 42]), ROLL = new Set([233, 234]);
+const SHINE = new Set([360, 361, 365, 366]), SHIELD = new Set([178, 179, 181, 182]);
+const FOX = 1; // internal character id
+// The renderer with Fox's animations loaded, or null: the Foxes are then plain capsules.
+let lab;
+const renderer = () => (lab ??= import("/slippilab-live.js")
+  .then(async (m) => (m.drawFighter && await m.preload(FOX) ? m : null)).catch((e) => { console.error(e); return null; }));
 const FONT = "Barlow, system-ui, sans-serif";
 
 const el = (tag, cls, html) => {
@@ -48,9 +55,20 @@ export function mountPlayer(root, scene, D, signal) {
   const names = D.names.map((n) => n.split(" ")[0]);
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   let clip = scene.clips[0], events = [], i = 0, playing = false, timer = 0, fps = 8, auto = !reduced;
+  let R = null;
   let lo = 1e9, hi = -1e9, top = 0; // one view for the whole scene, so switching clips does not move the picture
   scene.clips.forEach((c) => c.rows.forEach((r) => r.forEach((p) => { lo = Math.min(lo, p[0]); hi = Math.max(hi, p[0]); top = Math.max(top, p[1]); })));
-  const view = { x0: lo - 9, x1: Math.max(hi + 7, D.ledge + 5), up: Math.max(18, top + 17) };
+  const view = { x0: lo - 9, x1: Math.max(hi + 7, D.ledge + 5), up: Math.max(20, top + 19) };
+  // The pose of an action that turns Fox around is drawn facing the way he faced when it began.
+  scene.clips.forEach((c) => [0, 1].forEach((p) => {
+    let began = 0;
+    c.starts = c.starts || [];
+    c.rows.forEach((r, k) => {
+      const was = c.rows[k - 1]?.[p];
+      if (!was || was[2] !== r[p][2] || r[p][3] < was[3]) began = r[p][4];
+      (c.starts[k] ||= [])[p] = began ? 1 : -1;
+    });
+  }));
   const frameNo = (k) => k - clip.lead;
 
   root.classList.add("bp");
@@ -130,13 +148,16 @@ export function mountPlayer(root, scene, D, signal) {
     ctx.lineJoin = ctx.lineCap = "round";
     ctx.font = `600 11px ${FONT}`;
 
-    // the stage: a slab between the two ledges
-    const left = Math.max(0, X(-D.ledge)), right = X(D.ledge);
-    ctx.fillStyle = C.stage; ctx.globalAlpha = .12; ctx.fillRect(left, base, right - left, 9);
-    ctx.globalAlpha = 1; ctx.strokeStyle = C.stage; ctx.lineWidth = 2;
+    // the stage: Final Destination's outline, or a slab between the two ledges
+    const left = Math.max(0, X(-D.ledge)), right = X(D.ledge), fd = R?.STAGES.FINAL_DESTINATION.main;
     ctx.beginPath();
-    if (left > 0) { ctx.moveTo(left, base + 9); ctx.lineTo(left, base); } else ctx.moveTo(0, base);
-    ctx.lineTo(right, base); ctx.lineTo(right, base + 9); ctx.stroke();
+    if (fd) fd.forEach(([x, y]) => ctx.lineTo(X(x), Y(y))); else ctx.rect(left, base, right - left, 9);
+    const body = ctx.createLinearGradient(0, base, 0, H);
+    body.addColorStop(0, C.stage); body.addColorStop(1, "transparent");
+    ctx.fillStyle = body; ctx.globalAlpha = .3; ctx.fill();
+    ctx.globalAlpha = 1; ctx.strokeStyle = C.stage; ctx.lineWidth = 2;
+    if (!fd) { ctx.beginPath(); ctx.moveTo(left, base + 9); ctx.lineTo(left, base); ctx.lineTo(right, base); ctx.lineTo(right, base + 9); }
+    ctx.stroke();
     ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText("ledge", right - 4, base + 37); // under the reach labels
 
     // reach ticks, measured from red toward blue
@@ -155,45 +176,38 @@ export function mountPlayer(root, scene, D, signal) {
     }
 
     const feet = (p) => Math.abs(p[0]) < D.ledge ? Math.max(0, p[1]) : p[1]; // the origin dips under the floor just before landing
-    const hurt = (p) => D.actions[p[2]].startsWith("hit");
     const clank = row[0][7] > 0 && row[1][7] > 0 && SHINE.has(row[0][2]) && SHINE.has(row[1][2]);
+    const dpr = window.devicePixelRatio || 1;
+    const world = () => ctx.setTransform(dpr * s, 0, 0, -dpr * s, -dpr * x0 * s, dpr * base); // simulator units, y up
 
     row.forEach((p, k) => {
       const [x, , act, af, facing, , shield, hitlag, inv] = p, y = feet(p), f = facing ? 1 : -1, c = C.p[k];
-      let w = 5, h = 10;
-      if (LOW.has(act)) { w = 6.2; h = 7.4; } else if (ROLL.has(act)) { w = 6.6; h = 6.6; } else if (act === 235) { w = 3.4; }
-      const jx = hitlag ? ((i + k) % 2 ? 1.5 : -1.5) : 0, cx = X(x) + jx, cy = Y(y + 5);
+      const jx = hitlag ? ((i + k) % 2 ? 1.5 : -1.5) : 0, was = clip.rows[i - 1]?.[k];
+      const fox = { x: x + jx / s, y, facing: f, facingAtStart: clip.starts[i][k], actionId: act, actionFrame: af, charId: FOX, color: c,
+        outline: inv ? c : C.card, outlineWidth: 15 / s, alpha: inv ? .35 : 1, dash: inv ? [45 / s, 40 / s] : [], // dashed while intangible
+        from: was && [was[0], feet(was)] };
+      ctx.save(); world();
+      if (R && SHINE.has(act)) { // the reflector, behind him; brighter on the frame it comes out and can hit
+        const out = (act === 360 || act === 365) && af === 1;
+        if (out) { ctx.shadowColor = "#8abce9"; ctx.shadowBlur = 10 * dpr; }
+        R.drawShine(ctx, fox, "#8abce9", out ? 1 : .6);
+      }
+      const drawn = R?.drawFighter(ctx, fox);
+      if (R && SHIELD.has(act)) R.drawShield(ctx, fox, shield, .4);
+      ctx.restore();
+      if (drawn) return;
+
+      // no renderer, or no animation for this action: a capsule with a mark on the side he faces
+      const w = 5, h = 10, cx = X(x) + jx, cy = Y(y + 5);
       ctx.strokeStyle = c; ctx.fillStyle = c;
-
-      if (SHIELD.has(act)) {
-        const r = (3.4 + 2.8 * shield / 60) * s;
-        ctx.globalAlpha = .16; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.fill();
-        ctx.globalAlpha = .9; ctx.lineWidth = 1.5; ctx.stroke(); ctx.globalAlpha = 1;
+      if (SHIELD.has(act) || SHINE.has(act)) {
+        ctx.globalAlpha = .9; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(cx, cy, 6.2 * s, 0, 7); ctx.stroke(); ctx.globalAlpha = 1;
       }
-      if (SHINE.has(act)) {
-        const out = (act === 360 || act === 365) && af === 1, r = 6.2 * s;
-        ctx.beginPath();
-        for (let a = 0; a < 6; a++) ctx.lineTo(cx + r * Math.sin(a * Math.PI / 3), cy - r * Math.cos(a * Math.PI / 3));
-        ctx.closePath();
-        if (out) { ctx.globalAlpha = .3; ctx.fill(); ctx.globalAlpha = 1; }
-        ctx.lineWidth = out ? 3 : 1.2; ctx.globalAlpha = out ? 1 : .7; ctx.stroke(); ctx.globalAlpha = 1;
-      }
-      if (act === 63) { // up smash: a wind-up, then a swing overhead
-        const swing = af >= 7 && af <= 12, r = 9.5 * s;
-        ctx.lineWidth = swing ? 5 : 1.5; ctx.globalAlpha = swing ? .9 : .5; if (!swing) ctx.setLineDash([3, 4]);
-        ctx.beginPath(); ctx.arc(cx + f * 2 * s, cy, r, f > 0 ? -Math.PI * .6 : -Math.PI * .95, f > 0 ? -Math.PI * .05 : -Math.PI * .4); ctx.stroke();
-        ctx.setLineDash([]); ctx.globalAlpha = 1;
-      }
-      if (act === 212 || act === 44) { // grab or jab: an arm
-        ctx.lineWidth = 1.6 * s; ctx.beginPath(); ctx.moveTo(cx, Y(y + 6)); ctx.lineTo(cx + f * Math.min(7, 2 + af) * s, Y(y + 6)); ctx.stroke();
-      }
-
-      // the body: a capsule, tilted when hit, dashed when intangible
-      ctx.save(); ctx.translate(cx, Y(y)); if (hurt(p)) ctx.rotate(-f * .35);
+      ctx.save(); ctx.translate(cx, Y(y));
       ctx.beginPath(); ctx.roundRect(-w * s / 2, -h * s, w * s, h * s, w * s / 2);
       ctx.globalAlpha = inv ? .22 : .88; ctx.fill(); ctx.globalAlpha = 1;
       ctx.lineWidth = 2; if (inv) ctx.setLineDash([4, 3.5]); ctx.stroke(); ctx.setLineDash([]);
-      ctx.fillStyle = inv ? c : C.card; // a mark on the side he faces
+      ctx.fillStyle = inv ? c : C.card;
       ctx.beginPath(); ctx.arc(f * w * s * .2, -h * s + w * s * .55, Math.max(1.6, .55 * s), 0, 7); ctx.fill();
       ctx.restore();
     });
@@ -204,16 +218,16 @@ export function mountPlayer(root, scene, D, signal) {
       ctx.closePath(); ctx.fill();
     };
     if (clank) {
-      const mx = (X(row[0][0]) + X(row[1][0])) / 2, my = Y(5);
+      const mx = (X(row[0][0]) + X(row[1][0])) / 2, my = Y(7);
       burst(mx, my, 2.6 * s, C.ink);
-      ctx.fillStyle = C.ink; ctx.textAlign = "center"; ctx.font = `700 13px ${FONT}`; ctx.fillText("clank · 0%", mx, Y(15));
+      ctx.fillStyle = C.ink; ctx.textAlign = "center"; ctx.font = `700 13px ${FONT}`; ctx.fillText("clank · 0%", mx, Y(17));
     }
     events.forEach((e) => {
       if (i < e.i || i > e.i + 12) return;
-      const v = row[e.p], bx = Math.min(W - 44, X(v[0])), by = Y(feet(v) + 5);
-      if (e.hit && v[7] > 0) burst(bx, by, 4.2 * s, C.hit);
+      const v = row[e.p], bx = Math.min(W - 44, X(v[0])), by = Y(feet(v) + 7);
+      if (e.hit && v[7] > 0) burst(bx, by, 3 * s, C.hit);
       ctx.fillStyle = C.hit; ctx.textAlign = "center"; ctx.font = `800 15px ${FONT}`;
-      ctx.fillText(e.text, bx, Y(Math.max(0, feet(v)) + 13) - (i - e.i) * 1.5);
+      ctx.fillText(e.text, bx, Y(Math.max(0, feet(v)) + 16) - (i - e.i) * 1.5);
     });
   }
 
@@ -252,6 +266,7 @@ export function mountPlayer(root, scene, D, signal) {
   prevB.onclick = () => jump(i - 1); nextB.onclick = () => jump(i + 1);
   range.oninput = () => jump(+range.value);
   speed.onchange = () => { fps = +speed.value; };
+  renderer().then((m) => { if (m && !signal?.aborted) { R = m; draw(); } });
   const resize = new ResizeObserver(draw);
   resize.observe(canvas);
   const seen = new IntersectionObserver((es) => es.forEach((e) => { // play while on screen until the reader takes over
