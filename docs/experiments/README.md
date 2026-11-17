@@ -51,5 +51,5 @@ Loss is validation loss, summed over the four controller heads. "vs CPU 9" is wi
 | [E21](E21-hal-ppo.md) | 11-16 | planned | PPO on HAL with a KL penalty toward the clone |  |  |
 | [E22](E22-hal-delay-offsets.md) | 11-17 | done | HAL under delay: rebalance the action offsets | at 10 frames of delay the fine-tune won 8 of 30, the released weights 10 of 30 | no effect; the offset weighting is not why HAL is weak under delay |
 | [E23](E23-hal-dida-delay.md) | 11-17 | abandoned | Delay: imitate the no-delay model on our own delayed games | stopped after 167 of 288 games, before training; no result | superseded by the simulator game farm: the same loss, on games from the simulator and a small student |
-| [E24](E24-sim-farm.md) | 11-17 | running | Simulator game farm: speed, and agreement with Dolphin |  |  |
+| [E24](E24-sim-farm.md) | 11-17 | done | Simulator game farm: speed, and agreement with Dolphin | 1,700 to 1,900 game frames a second at 64 lanes; at delay 10 the simulator gave 20 wins in 192, Dolphin 7 in 60 | the farm replaces Dolphin for generating games and for quick checks; Dolphin stays the judge |
 <!-- index:end -->
