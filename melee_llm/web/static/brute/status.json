@@ -1,12 +1,18 @@
 {
-  "state": "not_started",
+  "state": "running",
   "updated": "2026-11-17",
   "title": "Can the attacker take the stage from a retreating Fox for free?",
-  "summary": "The search has not started yet. It is being set up.",
-  "plan": "Search the attacker's lines against a defender who gives ground and avoids every position already found to be a guess, at a lookahead of 8 frames or more, with more moves allowed for both sides.",
+  "summary": "Running. First results: mid-stage the defender is not forced back within 8 frames, and at the ledge the attacker has a small edge once falling off the stage counts.",
+  "plan": "For a grid of starting positions (attacker standing, walking in or dashing in; 15 distances; mid-stage and six distances from the ledge) find which defender inputs are safe for 8 frames against an attacker who sees each input first. Then solve the real one-frame-late game at the positions where none is safe.",
   "details": [
-    {"label": "Positions searched", "value": "0"},
-    {"label": "Result so far", "value": "none"}
+    {"label": "Positions searched", "value": "about 1.1 billion (90 of 630 grid jobs, 4 exact solves)"},
+    {"label": "Result so far", "value": "no forced win; a small attacker edge at the ledge"}
   ],
-  "findings": []
+  "findings": [
+    "Proven, 8 frames, mid-stage: against a Fox walking in at 13.5 to 14.1 the only safe inputs are steps away; from 14.7 out the defender may also stand still.",
+    "Proven, 8 frames, mid-stage: with both standing 11.5 to 12.1 apart the defender has no safe input and has to guess.",
+    "Proven, 8 frames, mid-stage: stepping away costs under 3 units, so the defender is not pushed back within this lookahead.",
+    "Proven, 8 frames, at the ledge, both standing 10.3 apart: attacker's clean first hits minus defender's is 0 if falling off costs nothing, and +0.27 if leaving the stage loses the exchange.",
+    "Proven, 8 frames, at the ledge, attacker walking in at 13.9: +0.08 for the attacker with the same rule."
+  ]
 }
