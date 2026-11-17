@@ -46,6 +46,50 @@ def objective(m, name):
         m.OFFSET_LOSS_WEIGHTS, m.AWRCalibration.near_offsets = old
 
 
+def prepare(init, compiled):
+    """The model, HAL's optimiser with its base learning rates, and the two functions its loss calls."""
+    m = o59()
+    torch.set_float32_matmul_precision("high")
+    cfg = m.TrainConfig()
+    model, artifact = load_model(init)
+    model.train()
+    optimizer = m.make_optimizer(model, cfg)
+    base = [g["lr"] for g in optimizer.param_groups]
+    trunk_fn, temporal_fn = model.forward, model.temporal.teacher_forced_nll_with_diagnostics
+    model.trunk.resolve_attention("cuda")
+    if compiled:
+        trunk_fn = torch.compile(trunk_fn, dynamic=False, fullgraph=True)
+        temporal_fn = torch.compile(temporal_fn, dynamic=False, fullgraph=True)
+    return m, cfg, model, artifact, optimizer, base, trunk_fn, temporal_fn
+
+
+class HumanLoss:
+    """HAL's loss on one microbatch of aMSa's Yoshi games, with its identity and return dropout."""
+
+    def __init__(self, data, stats, cfg, micro, seed, offsets="hal"):
+        m = o59()
+        self.m, self.cfg, self.micro, self.offsets = m, cfg, micro, offsets
+        self.sampler = m.PrefixSampler(seed, "cuda")
+        self.drop_identity, self.drop_return = m.IdentityMasker(seed, cfg.identity_dropout), m.ReturnMasker(seed, cfg.return_dropout)
+        self.loader = train_loader(data, stats, batch=micro, seed=seed)
+        self.batches = iter(self.loader)
+
+    def __call__(self, model, trunk_fn, temporal_fn):
+        m, cfg = self.m, self.cfg
+        batch = self.drop_return(self.drop_identity(next(self.batches))).to("cuda")
+        positions = self.sampler.sample(batch.context.ctx_pad, length=cfg.arch.L_ctx, suffix_start=cfg.arch.direct_loss_start)
+        with objective(m, self.offsets):
+            loss, _, metrics = m.microbatch_loss(
+                model, batch, cfg, step=cfg.awr.start_update, valid_prefixes=self.micro * m.POLICY_PREFIXES_PER_WINDOW,
+                trunk_fn=trunk_fn, temporal_fn=temporal_fn, prefix_positions=positions)
+        if not bool(torch.isfinite(loss)):
+            raise FloatingPointError("loss is not finite")
+        return loss, metrics
+
+    def close(self):
+        self.loader.close()
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("run_dir", type=Path)
@@ -63,26 +107,11 @@ def main():
     ap.add_argument("--compile", action="store_true", help="torch.compile the trunk and decoder (slow start)")
     ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args()
-    m = o59()
     torch.manual_seed(a.seed)
-    torch.set_float32_matmul_precision("high")
     a.run_dir.mkdir(parents=True, exist_ok=True)
-    cfg = m.TrainConfig()
-    model, artifact = load_model(a.init)
-    model.train()
-    optimizer = m.make_optimizer(model, cfg)
-    base = [g["lr"] for g in optimizer.param_groups]
-    trunk_fn, temporal_fn = model.forward, model.temporal.teacher_forced_nll_with_diagnostics
-    model.trunk.resolve_attention("cuda")
-    if a.compile:
-        trunk_fn = torch.compile(trunk_fn, dynamic=False, fullgraph=True)
-        temporal_fn = torch.compile(temporal_fn, dynamic=False, fullgraph=True)
-    sampler = m.PrefixSampler(a.seed, "cuda")
-    drop_identity = m.IdentityMasker(a.seed, cfg.identity_dropout)
-    drop_return = m.ReturnMasker(a.seed, cfg.return_dropout)
+    m, cfg, model, artifact, optimizer, base, trunk_fn, temporal_fn = prepare(a.init, a.compile)
+    human = HumanLoss(a.data, artifact.statistics, cfg, a.micro, a.seed, a.offsets)
     _, held_out = cohort(a.val, 0, only_amsa=True)
-    loader = train_loader(a.data, artifact.statistics, batch=a.micro, seed=a.seed)
-    batches = iter(loader)
     log = open(a.run_dir / "log.jsonl", "a")
     (a.run_dir / "run.json").write_text(json.dumps({"kind": "haltrain", "args": {k: str(v) for k, v in vars(a).items()},
                                                     "started_at": time.time()}, indent=1))
@@ -102,16 +131,7 @@ def main():
                 g["lr"] = lr * a.lr_scale * min(1.0, update / max(a.warmup, 1))
             optimizer.zero_grad()
             for _ in range(a.accum):
-                batch = drop_return(drop_identity(next(batches))).to("cuda")
-                positions = sampler.sample(batch.context.ctx_pad, length=cfg.arch.L_ctx,
-                                           suffix_start=cfg.arch.direct_loss_start)
-                with objective(m, a.offsets):
-                    loss, _, metrics = m.microbatch_loss(
-                        model, batch, cfg, step=cfg.awr.start_update,
-                        valid_prefixes=a.micro * m.POLICY_PREFIXES_PER_WINDOW,
-                        trunk_fn=trunk_fn, temporal_fn=temporal_fn, prefix_positions=positions)
-                if not bool(torch.isfinite(loss)):
-                    raise FloatingPointError(f"update {update}: loss is not finite")
+                loss, metrics = human(model, trunk_fn, temporal_fn)
                 (loss / a.accum).backward()
                 for name, k in (("policy_bits", "train/loss"), ("value_loss", "value/loss"), ("awr_ess", "awr/ess_fraction")):
                     acc[name] = acc.get(name, 0.0) + float(metrics[k]) / a.accum
@@ -129,7 +149,7 @@ def main():
             if update % a.val_every == 0 or update == a.updates:
                 validate(update)
     finally:
-        loader.close()
+        human.close()
     save_bundle(model, a.init, a.run_dir / "last.hal", name=a.run_dir.name)
 
 
