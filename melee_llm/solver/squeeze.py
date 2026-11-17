@@ -28,7 +28,7 @@ import time
 DOOR = 14.39  # the widest gap at which the shield door was verified shut
 DODGE, DODGE_REACH = 235, 16.8
 SHIELDING = frozenset({178, 179, 182})  # shield coming up, held, and its first frames (which reflect)
-WORKER_MB, RESERVE_MB = 250, 10_000
+WORKER_MB, RESERVE_MB = 420, 10_000  # a search process without its table (measured)
 KINDS = ("stand", "walk", "dash")
 GAPS = (10.4, 11.0, 11.6, 12.2, 12.8, 13.4, 14.0, 14.6, 15.2, 16.0, 17.0, 18.0, 20.0, 22.0, 25.0)
 GRIDS = {  # name -> (kinds, gaps, rooms behind the defender, conditions)
