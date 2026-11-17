@@ -69,4 +69,4 @@ So games for training come from the farm from now on, and it is also the quick c
 
 The model is the bottleneck, as expected. A billion-frame RL run would take about a week of rollouts at this speed, which is why RL will run on a small student of HAL and not on the 247M model.
 
-Open: the patched simulator is a local worktree and should be pinned in our fork; Phillip's agents need a batched export to join the farm.
+Since then the simulator commit is in our fork ([melee-brute#18](https://github.com/mateo19182/melee-brute/pull/18)) and the farm builds from a checkout of it in `/mnt/data/melee/native/melee-brute`. Open: Phillip's agents need a batched export to join the farm.

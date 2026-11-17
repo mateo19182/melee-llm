@@ -10,8 +10,9 @@ over-counted. Players that share weights and delay share one model and one batch
 With --out, DIR/results.jsonl gets one row per game (the league log's keys) and DIR/frames/ one .npz per game with
 every frame as the simulator adapter packs it: HAL's 71 observation columns, both controllers and the reward.
 
-The simulator is melee-sim-light with the observation layout HAL's adapter needs ($MELEE_SIM, a checkout with
-`make python-library` done) and HAL's compiled adapter ($HAL_NATIVE_LIBRARY, from `python -m hal.sim.native_build`).
+The simulator is our fork, melee-brute, at d3832724 or later (the observation layout HAL's adapter needs):
+$MELEE_SIM is a checkout with `make python-library` done, and $HAL_NATIVE_LIBRARY is HAL's adapter compiled against
+it (`python -m hal.sim.native_build --native-source $MELEE_SIM --output $HAL_NATIVE_LIBRARY`, in vendor/hal).
 """
 import argparse
 import dataclasses
@@ -26,7 +27,7 @@ import numpy as np
 
 from . import HAL, REPO, WEIGHTS
 
-SIM = Path(os.environ.get("MELEE_SIM", Path.home() / ".t3/worktrees/melee-sim-light/hal-abi2"))
+SIM = Path(os.environ.get("MELEE_SIM", "/mnt/data/melee/native/melee-brute"))
 os.environ.setdefault("HAL_NATIVE_LIBRARY", "/mnt/data/melee/native/libhal_native.so")
 sys.path.insert(0, str(SIM))
 RUNS = REPO / "data/train/runs"
