@@ -84,8 +84,8 @@ def _menus(s, m1, m2, no_shield: bool):
 
 class Nash(force.Search):
     def __init__(self, root: bytes, frames: int, payoff: str = "hit", shield_cost: float = 0.0, tt_mb: int = 400,
-                 no_shield: bool = False, trap: bool = False, add1: dict | None = None, add2: dict | None = None,
-                 dodge: bool = False, key=force._key):
+                 no_shield: bool = False, trap: bool = False, grain: int = 1, add1: dict | None = None,
+                 add2: dict | None = None, dodge: bool = False, key=force._key):
         super().__init__(root, max_depth=frames + 4, tt_mb=tt_mb)
         self.payoff, self.shield_cost, self.no_shield, self.door = payoff, shield_cost, no_shield, trap
         self.dodge = dodge
@@ -95,6 +95,7 @@ class Nash(force.Search):
         self.rb.checkpoint = self._checkpoint
         self.m1, self.m2, self.key = menus_with(add1), menus_with(add2), key
         self.values: dict[int, float] = {}
+        self.grain = grain  # frames each chosen input is held: 2 halves the depth, and reactions come up to 2 late
         self.cap = tt_mb * 1_000_000 // (3 * force.TT_BYTES)  # `values` and the yes/no tables each hold this many
         s = self.slots()
         self.shield0 = (float(s[0]["shield_hp"]), float(s[1]["shield_hp"]))
@@ -151,6 +152,13 @@ class Nash(force.Search):
         return self.shield_cost * (lost2 - lost1) / SHIELD_FULL
 
     def joint(self, a: str, d: str) -> None:
+        """Both hold their chosen input for `grain` frames, or until a frame decides the game."""
+        for i in range(self.grain):
+            self._frame(a, d)
+            if i + 1 < self.grain and self.leaf() is not None:
+                return
+
+    def _frame(self, a: str, d: str) -> None:
         s = self.slots()
         toward = 1 if float(s[1]["pos_x"]) >= float(s[0]["pos_x"]) else -1
         b, x, y, r = MOVES[a]
@@ -168,7 +176,7 @@ class Nash(force.Search):
             for j, d in enumerate(dfn):
                 self.joint(a, d)
                 v = self.leaf()
-                m[i, j] = self.value(depth + 1, frames - 1) if v is None else v
+                m[i, j] = self.value(depth + 1, frames - self.grain) if v is None else v
                 self.back(depth)
         return att, dfn, m
 
@@ -193,7 +201,7 @@ class Nash(force.Search):
             for y in theirs:
                 self.joint(*((x, y) if attacking else (y, x)))
                 v = self.leaf()
-                ok = self.forced(depth + 1, frames - 1, attacking) if v is None else v == want
+                ok = self.forced(depth + 1, frames - self.grain, attacking) if v is None else v == want
                 self.back(depth)
                 if not ok:
                     break
@@ -270,7 +278,7 @@ def _task(job):
         _S.joint(*second)
         v = _S.leaf()
         if v is None:
-            v = _S.value(2, _FRAMES - 2)
+            v = _S.value(2, _FRAMES - 2 * _S.grain)
         _S.back(0)
         n, _S.expansions = _S.expansions, 0
         return first, second, v, n
@@ -279,8 +287,9 @@ def _task(job):
 
 def solve(gap: float, ledge: float, frames: int, payoff: str = "hit", shield_cost: float = 0.0, hop: int = 0,
           shield: int = 0, workers: int = 28, tt_mb: int = 400, out: str | None = None, must_exit: bool = False,
-          no_shield: bool = False, trap: bool = False, add1: dict | None = None, add2: dict | None = None,
-          away: bool = False, pre: tuple[str, ...] = (), dodge: bool = False) -> dict:
+          no_shield: bool = False, trap: bool = False, grain: int = 1, first: str | None = None,
+          add1: dict | None = None, add2: dict | None = None, away: bool = False, pre: tuple[str, ...] = (),
+          dodge: bool = False) -> dict:
     """`pre`: P1's inputs before the first decision, one move name per frame, P2 standing or holding his shield."""
     t0 = time.time()
     workers = force.fit_workers(workers, tt_mb)
@@ -295,12 +304,15 @@ def solve(gap: float, ledge: float, frames: int, payoff: str = "hit", shield_cos
             "workers": workers, "p1": melee.Action(int(s[0]["action_id"])).name,
             "p2": melee.Action(int(s[1]["action_id"])).name}
     att, dfn = _menus(s, menus_with(add1), menus_with(add2), no_shield)
+    if first:  # P1's first input is given: the value of one plan, not of the position
+        att = (first,)
     if must_exit:  # P2 starts in shield and may not keep holding it
         dfn = tuple(d for d in dfn if d != "shield")
     sim.world.close()
     ask = {"gap": gap, "ledge": ledge, "frames": frames, "payoff": payoff, "shield_cost": shield_cost, "hop": hop,
-           "shield": shield, "must_exit": must_exit, "no_shield": no_shield, "trap": trap, "menus": 2,
-           "add1": add1, "add2": add2, "away": away, "pre": list(pre), "dodge": dodge}
+           "shield": shield, "must_exit": must_exit, "no_shield": no_shield, "trap": trap, "grain": grain,
+           "first": first, "ledge2": ledge, "menus": 2, "add1": add1, "add2": add2, "away": away, "pre": list(pre),
+           "dodge": dodge}
     ask = json.loads(json.dumps(ask))  # as it reads back from the file
     old: dict[str, tuple[float, int]] = {}
     if out and os.path.exists(out):
@@ -313,7 +325,8 @@ def solve(gap: float, ledge: float, frames: int, payoff: str = "hit", shield_cos
     second: dict[tuple, tuple] = {}  # root pair -> (menus, matrix) of the position it leads to
     total = 0
     with mp.get_context("spawn").Pool(workers, initializer=_init,
-                                      initargs=(root, frames, payoff, shield_cost, tt_mb, no_shield, trap, add1, add2, dodge)) as pool:
+                                      initargs=(root, frames, payoff, shield_cost, tt_mb, no_shield, trap, grain,
+                                                add1, add2, dodge)) as pool:
         jobs = []
         for pair, v, nxt in pool.imap_unordered(_open, [(a, d) for a in att for d in dfn]):
             if v is not None:
@@ -362,6 +375,8 @@ def main() -> None:
     ap.add_argument("--must-exit", action="store_true", help="P2 may not keep holding his shield at the start")
     ap.add_argument("--no-shield", action="store_true", help="P2 never starts a shield from the ground")
     ap.add_argument("--trap", action="store_true", help="count P2 in shield next to a free P1 as P1's first hit")
+    ap.add_argument("--grain", type=int, default=1, help="frames each input is held (2: half the depth, coarser reactions)")
+    ap.add_argument("--first", help="fix P1's first input, to value one plan (for example hop)")
     ap.add_argument("--dodge", action="store_true",
                     help="count P2 early in a spotdodge beside a standing or just-shining P1 as P1's first hit")
     ap.add_argument("--away", action="store_true", help="P2 has his back to P1")
@@ -376,7 +391,8 @@ def main() -> None:
     add1, add2 = ({k: tuple(v.split(",")) for k, v in (x.split("=") for x in xs)} or None for xs in (args.add1, args.add2))
     pre = tuple(m for x in args.pre for m in [x.split(":")[0]] * int((x.split(":") + ["1"])[1]))
     r = solve(args.gap, args.ledge, args.frames, args.payoff, args.shield_cost, args.hop, args.shield, args.workers,
-              args.tt_mb, args.out, args.must_exit, args.no_shield, args.trap, add1, add2, args.away, pre, args.dodge)
+              args.tt_mb, args.out, args.must_exit, args.no_shield, args.trap, args.grain, args.first, add1, add2,
+              args.away, pre, args.dodge)
     unit = "chance of a clean first hit for P1" if args.payoff == "hit" else "percent for P1"
     print(f"gap {r['gap']}, P1 height {r['p1_y']} ({r['p1_state']} against {r['p2_state']}), {r['frames']} frames: value {r['value']:+.4f} ({unit})  "
           f"[{r['positions']:,} positions, {r['seconds']}s, {r['workers']} processes, "

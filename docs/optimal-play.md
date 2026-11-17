@@ -336,6 +336,9 @@ pick at the same time, knowing everything up to the previous frame. Each positio
 (`matrix.py`); pure strategies that hold even when read settle a position without a matrix. All moves last one
 frame. The payoff is the chance that the attacker lands a clean first hit.
 
+Animated, frame by frame, from simulator traces: [animations/optimal-play.html](animations/optimal-play.html)
+(regenerate with `scripts/optimal_play_animations.py`).
+
 **Two menu bugs found on the way, which weaken sections 9 to 12 for the defender.** (1) The "jump" out of shield
 in `force.py` and in the shield-trap probe was X alone, which only drops the shield; a jump out of shield needs
 the shield button held. (2) Nobody could shine on the first airborne frame out of a jumpsquat. Both are fixed
@@ -359,6 +362,13 @@ the shield button held. (2) Nobody could shine on the first airborne frame out o
 - **Against an airborne attacker the corner is a coin flip unless the defender shields**, and the shield is the
   one-way door once the attacker has landed. Whether the defender can get out while the attacker is still landing
   is the open question (`nash --hop 9 --trap --frames 16`, running).
+
+**The standoff needs a one-frame reaction.** `nash --grain 2` makes every input last two frames, so an answer
+comes up to two frames late. Standing 12.59 apart without shield, the value jumps from 0 to **0.382** (8 and 12
+frames, cornered or mid-stage): the attacker plays wait 38%, shine 38%, jab 24%, the defender wait 38%, jab 38%,
+shine 24%. So the draw of section 1 belongs to a player who answers on the very next frame; one frame slower and
+neutral is rock-paper-scissors. With shield allowed the two-frame game is 0 again over 12 frames, but only
+because the shield's cost (the one-way door) lies beyond the horizon.
 
 ## What this says about Petro's claim
 

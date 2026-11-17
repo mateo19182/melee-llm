@@ -1,6 +1,7 @@
 """Play on stomped.dev: a WebSocket server that reads the .slp event stream and answers 12-byte pads.
 
     uv run python -m meleebot.stomped CHECKPOINT --url https://HOST/SECRET [--port 3000]
+    uv run python -m meleebot.stomped hal:AMSA#0,return_target=40 --lead 11 --url ...   (HAL 250M, see HalBrain)
 
 Spec: https://docs.stomped.dev/llms-full.txt. stomped connects to the registered URL when a match
 starts; `GET <url>/ping` must answer `pong`. Upgrades are checked against stomped's Ed25519
@@ -49,6 +50,7 @@ class Events:
             if cmd == EVENT_PAYLOADS:
                 n = msg[i + 1]
                 self.sizes = {msg[j]: struct.unpack_from(">H", msg, j + 1)[0] for j in range(i + 2, i + 1 + n, 3)}
+                yield cmd, msg[i:i + 1 + n]
                 i += 1 + n
                 continue
             size = self.sizes.get(cmd)
@@ -160,6 +162,90 @@ class Brain:
         return {k: torch.as_tensor(np.asarray(v), device=self.device) for k, v in b.items()}
 
 
+_HAL_BUTTONS = {"BUTTON_A": "A", "BUTTON_B": "B", "BUTTON_X": "X", "BUTTON_Y": "Y", "BUTTON_Z": "Z", "BUTTON_L": "L",
+                "BUTTON_R": "R", "BUTTON_D_UP": "DPAD_UP"}
+HAL_MAX_LEAD = 11   # melee_llm/bots/bot_hal.py MAX_DELAY + 1
+
+
+class HalBrain:
+    """HAL 250M (vendor/hal) as the model, e.g. `hal:AMSA#0,return_target=40`.
+
+    HAL runs under its own venv, so this starts melee_llm/bots/server.py there and hands it the raw event
+    stream, as melee_llm.bots.BotAgent does. A HAL process is bound to one port and one delay, and takes too
+    long to load between matches: one process per port stays up, both at delay = lead - 1. Each answers
+    with the pad for F + lead and conditions on the pads it already sent for F + 1 .. F + lead - 1.
+    """
+    device = "cuda"
+
+    def __init__(self, spec, lead):
+        import subprocess, sys
+        from pathlib import Path
+        repo = Path(__file__).resolve().parents[2]
+        sys.path.insert(0, str(repo / "melee_llm/bots"))
+        import protocol   # stdlib only
+        self.protocol = protocol
+        if not lead or not 2 <= lead <= HAL_MAX_LEAD:
+            raise SystemExit(f"a HAL bot needs a fixed --lead of 2..{HAL_MAX_LEAD}")
+        self.lead = lead
+        identity, *opts = spec.split(",")
+        steer = {"identity": identity} if identity else {}
+        for k, _, v in (o.partition("=") for o in opts):
+            steer[k] = None if v == "None" else v if v == "p90" else float(v)
+        self.procs = {}
+        for port in (0, 1):  # both load at once
+            proc = subprocess.Popen([str(repo / "vendor/hal/.venv/bin/python"), str(repo / "melee_llm/bots/server.py"), "hal"],
+                                    cwd=repo / "vendor/hal", stdin=subprocess.PIPE, stdout=subprocess.PIPE, bufsize=0)
+            protocol.send(proc.stdin, {"op": "init", "port": port + 1, "opponent_port": 2 - port, "character": "YOSHI",
+                                       "config": {"delay": lead - 1, "ahead": True}, "steer": steer})
+            self.procs[port] = proc
+        for port, proc in self.procs.items():
+            reply = protocol.recv(proc.stdout)
+            if not reply["ok"]:
+                raise SystemExit(f"HAL (port {port}) failed to start:\n{reply['error']}")
+            self.steer = reply["info"]["steer"]
+        self.new_match(0, None, None, None, lead)
+
+    def new_match(self, port, me_char, opp_char, stage, lead):
+        self.port, self.opp, self.proc = port, 1 - port, self.procs[port]
+        self.buf, self.sent, self.pads, self.errors = [], {}, {}, 0
+
+    def warmup(self, n=0):
+        pass   # the HAL process compiles and warms up while it loads
+
+    def set_lead(self, lead):
+        pass   # fixed when the processes start
+
+    def on_event(self, cmd, b):
+        self.buf.append(b)
+        if cmd == PRE_FRAME and b[0x6] == 0 and b[0x5] == self.port:
+            self.pads[struct.unpack_from(">i", b, 1)[0]] = RawFrames._pad(b)
+
+    def polled(self, frame):
+        return self.pads.get(frame)
+
+    def decide(self, F):
+        events, self.buf = [("game_event", b"".join(self.buf))], []
+        self.protocol.send(self.proc.stdin, {"op": "step", "events": events, "steer": None, "open_loop": False})
+        reply = self.protocol.recv(self.proc.stdout)
+        if reply["error"]:
+            self.errors += 1
+            if self.errors <= 3:
+                print(f"hal: {reply['error']}", flush=True)
+        for d in (self.sent, self.pads):
+            for k in [k for k in d if k < F - 600]:
+                del d[k]
+        ctrl = reply["ctrl"]
+        if ctrl is None or reply["frame"] != F:
+            return None
+        c = np.zeros((), _PAD)
+        c["stick"] = np.round((np.array(ctrl["main"]) - 0.5) * 160)
+        c["cstick"] = np.round((np.array(ctrl["c"]) - 0.5) * 160)
+        c["trigger"] = (round(ctrl["l"] * 140), round(ctrl["r"] * 140))
+        c["buttons"] = sum(BUTTONS[_HAL_BUTTONS[b]] for b in ctrl["buttons"] if b in _HAL_BUTTONS)
+        self.sent[F + self.lead] = c
+        return F + self.lead, c
+
+
 def lead_for(rtt_ms, compute_ms, input_delay=1):
     """Smallest lead whose pad still arrives in time: the pad for F + 1 + inputDelay + k is due
     11 ms + k frames after F is sent, and needs a round trip plus the compute to get there."""
@@ -260,14 +346,17 @@ class Match:
 
 class Bot:
     def __init__(self, a):
-        self.brain = Brain(a.checkpoint, a.device, a.rank, temperature=a.temperature, threads=a.threads)
+        if a.checkpoint.startswith("hal:"):
+            self.brain = HalBrain(a.checkpoint[4:], a.lead)
+        else:
+            self.brain = Brain(a.checkpoint, a.device, a.rank, temperature=a.temperature, threads=a.threads)
+            self.brain.new_match(0, YOSHI, CHARACTERS.index("FOX"), 31, 2)
+            self.brain.warmup()
         self.url, self.verify, self.costume, self.lead = a.url, not a.no_verify, a.costume, a.lead
         self.path = urlsplit(a.url).path.rstrip("/") or "/"
         self.compute_ms = a.compute_ms
         self.log_path, self.busy = a.log, False
         self.key = self.platform_key() if self.verify else None
-        self.brain.new_match(0, YOSHI, CHARACTERS.index("FOX"), 31, 2)
-        self.brain.warmup()
 
     def platform_key(self):
         from urllib.request import urlopen
@@ -334,7 +423,7 @@ async def serve(bot, host, port):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("checkpoint")
+    ap.add_argument("checkpoint", help="a meleebot checkpoint, or hal:IDENTITY[,return_target=..,temperature=..] with --lead")
     ap.add_argument("--url", required=True, help="the registered URL, byte for byte (the handshake is signed over it)")
     ap.add_argument("--host", default="127.0.0.1"); ap.add_argument("--port", type=int, default=3000)
     ap.add_argument("--device"); ap.add_argument("--threads", type=int, default=4)

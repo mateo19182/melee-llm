@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run a long solver search as a user service with a hard memory limit, so a search that grows too far is the
 # thing that gets killed, not the rest of the machine. Finished jobs are kept in data/solver/NAME.jsonl; running
-# the same command again continues from there.
+# the same command again continues from there. A run killed for memory restarts by itself after five minutes.
 #   scripts/search.sh NAME [--mem GB] -- <arguments of melee_llm.solver.force>
 #   MOD=nash scripts/search.sh NAME -- <arguments of melee_llm.solver.nash>
 set -euo pipefail
@@ -14,5 +14,6 @@ mkdir -p data/solver
 systemd-run --user --unit="$NAME" --collect --working-directory="$PWD" \
   -p MemoryMax="${MEM}G" -p MemorySwapMax=0 -p OOMScoreAdjust=1000 -p Nice=10 \
   ${MSL_DATA_DIR:+--setenv=MSL_DATA_DIR="$MSL_DATA_DIR"} \
+  -p Restart=on-failure -p RestartSec=300 \
   bash -c ".venv/bin/python -m melee_llm.solver.${MOD:-force} --out data/solver/$NAME.jsonl $* >> data/solver/$NAME.txt 2>&1"
 echo "started $NAME (limit ${MEM} GB): data/solver/$NAME.txt, stop with: systemctl --user stop $NAME"
