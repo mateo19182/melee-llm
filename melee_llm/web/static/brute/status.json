@@ -1,18 +1,25 @@
 {
-  "state": "running",
+  "state": "done",
   "updated": "2026-11-17",
   "title": "Can the attacker take the stage from a retreating Fox for free?",
-  "summary": "Running. First results: mid-stage the defender is not forced back within 8 frames, and at the ledge the attacker has a small edge once falling off the stage counts.",
+  "summary": "Mid-stage the standoff holds: to 8 frames nothing forces the defender back, and walking in gains the attacker nothing. The attacker has a small edge only when the defender already stands at the ledge.",
   "plan": "For a grid of starting positions (attacker standing, walking in or dashing in; 15 distances; mid-stage and six distances from the ledge) find which defender inputs are safe for 8 frames against an attacker who sees each input first. Then solve the real one-frame-late game at the positions where none is safe.",
   "details": [
-    {"label": "Positions searched", "value": "about 1.1 billion (90 of 630 grid jobs, 4 exact solves)"},
-    {"label": "Result so far", "value": "no forced win; a small attacker edge at the ledge"}
+    {
+      "label": "Positions searched",
+      "value": "about 1.4 billion (90 grid jobs, 6 exact solves)"
+    },
+    {
+      "label": "Result",
+      "value": "no way found from the middle of the stage to the ledge; the standoff stands at this depth"
+    }
   ],
   "findings": [
-    "Proven, 8 frames, mid-stage: against a Fox walking in at 13.5 to 14.1 the only safe inputs are steps away; from 14.7 out the defender may also stand still.",
-    "Proven, 8 frames, mid-stage: with both standing 11.5 to 12.1 apart the defender has no safe input and has to guess.",
-    "Proven, 8 frames, mid-stage: stepping away costs under 3 units, so the defender is not pushed back within this lookahead.",
-    "Proven, 8 frames, at the ledge, both standing 10.3 apart: attacker's clean first hits minus defender's is 0 if falling off costs nothing, and +0.27 if leaving the stage loses the exchange.",
-    "Proven, 8 frames, at the ledge, attacker walking in at 13.9: +0.08 for the attacker with the same rule."
+    "Proven, 8 frames, mid-stage: attacker walking in at 13.9 against a standing Fox is worth exactly 0 (attacker's clean first hits minus defender's). Both wait.",
+    "Proven, 8 frames, mid-stage: both standing 12.1 apart is worth exactly 0. Both wait.",
+    "Proven, 8 frames, mid-stage: against an attacker who sees each input first, a Fox walking in at 13.5 to 14.1 leaves only steps away as safe inputs, but the step costs under 3 units, so the defender is not pushed back.",
+    "Proven, 8 frames, at the ledge, both standing 10.3 apart: 0 if falling off costs nothing, +0.27 for the attacker if leaving the stage loses the exchange.",
+    "Proven, 8 frames, at the ledge, attacker walking in at 13.9: +0.08 for the attacker with the same rule.",
+    "Not searched: more than 8 frames ahead, where a slower squeeze could still exist. Each extra frame about doubles the work."
   ]
 }

@@ -644,6 +644,31 @@ not found either way: the scripted stalkers could not, and the adversary only lo
 - The payoff is the attacker's clean first hit. A crack says the defender must guess, not that the attacker is
   ahead: in the positions found the defender's own guesses hit too, and the game is symmetric.
 
+### 15. Can the defender be squeezed to the ledge? [sim]
+
+Section 14 left one question: can the attacker take stage from a Fox who gives ground, and is the ledge then worth anything. Three exact searches, all 8 frames, one input a frame for both sides.
+
+**The map** (`squeeze.py`, melee-brute's C search; the attacker sees each defender input before answering). Mid-stage, 90 jobs, 1.2 billion positions:
+
+- From 14.7 apart outwards the defender has several safe inputs against a standing, walking or dashing Fox, standing still among them.
+- Against a Fox walking in at 13.5 to 14.1 only stepping away is safe. With both standing 11.5 to 12.1 apart he has no safe input.
+- Adding "the defender loses if he is ever 3 units behind his spot" changes no cell. The step away costs less than that, so within 8 frames he is not pushed back.
+
+**Who is favoured** (`nash.py --payoff net`: P1's clean first hits minus P2's, both picking at once, one frame late):
+
+| Position | Leaving the stage | Net value | Best play |
+| --- | --- | --- | --- |
+| Mid-stage, attacker walking in at 13.9 | loses | **0** | both wait |
+| Mid-stage, both standing 12.11 apart | loses | **0** | both wait |
+| Defender at the ledge, both standing 10.32 apart | costs nothing | 0 | both shine |
+| Defender at the ledge, both standing 12.72 apart | costs nothing | 0 | both wait |
+| Defender at the ledge, both standing 10.32 apart | loses | **+0.27** | attacker: shield 54%, wait 27%, shine 20%. Defender: shield 46%, wait 27%, shine 27% |
+| Defender at the ledge, attacker walking in at 13.9 | loses | **+0.08** | attacker: walk in 54%, dash in 46%. Defender: wait 97% |
+
+**What it says.** Mid-stage the standoff holds at this depth: approaching is worth nothing and nothing forces the defender back. The ledge is worth a little to the attacker, and only through the fall, but we found no way to put the defender there. A squeeze slower than 8 frames is not ruled out; each extra frame about doubles the work.
+
+The earlier 0.5 at the ledge (section 14) and the 0.5 of the hop nine frames in were chances of the attacker's clean hit alone. On the hop position the net value is also 0.5 (4 and 5 frames, checked with and without shortcuts).
+
 ## What this says about Petro's claim
 
 - **"Two perfect Foxes walk in and shine on the same frame":** not optimal. Walking into shine range loses to a jab from 12 or more, and on the ground the same-frame shines clank rather than whiff.
