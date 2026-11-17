@@ -2,9 +2,9 @@
 id: E19
 title: A training loop for HAL's model on the 3090
 date: 2026-11-16
-status: running
-result: validation 1.0867 bits (HAL: 1.0870); trains at 7 GB and about 40 windows/s
-verdict:
+status: done
+result: validation 1.0867 bits (HAL: 1.0870); trains at 7 GB and about 40 windows/s; fine-tuned checkpoint 22 of 30 against the released 23 of 30
+verdict: the loop is correct and usable on the 3090
 runs: hal-ft-check
 prs: 82
 follows: E14
@@ -51,11 +51,20 @@ The validation games of the 37 pros that were not on disk were downloaded from H
 - Start-up: 1.7 minutes to compile; the first start also decompresses aMSa's shards (2.4 GB to 27 GB).
 - Compiled and uncompiled losses agree to three decimals on the same batch (0.9615 against 0.9623 bits).
 
-**Gate 3, a short fine-tune: validation passed, league pending.** `hal-ft-check`: 300 updates of 64 windows (19,200 windows, 10 minutes) on aMSa's Yoshi games at 1/170 of HAL's learning rates.
+**Gate 3, a short fine-tune: passed.** `hal-ft-check`: 300 updates of 64 windows (19,200 windows, 10 minutes) on aMSa's Yoshi games at 1/170 of HAL's learning rates.
 - Validation on aMSa's held-out games: 1.0369 → 1.0354 → 1.0348 → 1.0345 bits. Training loss stayed around 1.1 bits, gradient norm around 1.1.
 - 156 of 184 weight tensors changed, by at most 0.0014.
 - The checkpoint saves as a bundle the bots load: `hal:AMSA#0,run=hal-ft-check`.
-- League games against the released weights' five opponents from E15 are queued.
+- League, 6 games against each of the five opponents the released weights played in E15:
+
+| Opponent | Fine-tuned | Released |
+|---|---|---|
+| HAL as aMSa, default steering | 4 | 4 |
+| HAL Master Fox | 4 | 4 |
+| Phillip Diamond Fox | 3 | 3 |
+| Phillip Platinum Fox | 6 | 6 |
+| CPU 9 | 5 | 6 |
+| Total of 30 | 22 | 23 |
 
 Problems found on the way:
 - HAL's loaders delete the compressed shards after decompressing them, so training and validation read from copies (`/mnt/data/melee/hal-ft`, `/mnt/data/melee/hal-val`), never the dataset itself.
@@ -63,3 +72,5 @@ Problems found on the way:
 - While this ran, the live stomped bot's decision time rose from 9 ms to 26–48 ms (95th percentile) and it missed up to 2,047 frames in a match. Training and the live bot cannot share the GPU without hurting the bot.
 
 ## Verdict
+
+All three gates passed: our loss matches HAL's, a training step fits the 3090, and a fine-tuned checkpoint saves, loads in the bot and plays as well as the released weights. The loop is ready for training that is meant to change the model. Its limits: about 40 windows a second (HAL's run used 512 windows per update on a far larger card), and it must not run while the stomped bot is live.

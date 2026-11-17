@@ -45,8 +45,8 @@ Loss is validation loss, summed over the four controller heads. "vs CPU 9" is wi
 | [E15](E15-hal-steering.md) | 11-16 | done | Steering sweep: return target and temperature | return target 40: 561 Elo, 23 of 30 | +160 Elo for free; tops the league |
 | [E16](E16-hal-delay.md) | 11-16 | done | Input delay 3, 6 and 10 on HAL-as-aMSa | 135, 87, 176 Elo against 403 with no delay | Delay costs 200–300 Elo, most of it by 3 frames |
 | [E17](E17-stomped-hal.md) | 11-16 | running | stomped.dev with HAL-as-aMSa | first match won |  |
-| [E18](E18-league-opponents.md) | 11-16 | running | Stronger league opponents | partial: 2 of 26 against Phillip's anti-Yoshi agents |  |
-| [E19](E19-hal-train-loop.md) | 11-16 | running | A training loop for HAL's model on the 3090 | validation 1.0867 bits (HAL: 1.0870); trains at 7 GB and about 40 windows/s |  |
+| [E18](E18-league-opponents.md) | 11-16 | done | Stronger league opponents | our best Yoshi wins 2 of 26 against Phillip's anti-Yoshi agents; Phillip's Yoshi rates 688 against our 402 | yardstick found, and Phillip's Yoshi is a stronger Yoshi than HAL as aMSa |
+| [E19](E19-hal-train-loop.md) | 11-16 | done | A training loop for HAL's model on the 3090 | validation 1.0867 bits (HAL: 1.0870); trains at 7 GB and about 40 windows/s; fine-tuned checkpoint 22 of 30 against the released 23 of 30 | the loop is correct and usable on the 3090 |
 | [E20](E20-hal-return-finetune.md) | 11-16 | planned | Return-conditioned self-improvement in the simulator |  |  |
 | [E21](E21-hal-ppo.md) | 11-16 | planned | PPO on HAL with a KL penalty toward the clone |  |  |
 <!-- index:end -->
