@@ -128,13 +128,13 @@ class Fortress(nash.Nash):
                 and int(s[0]["action_id"]) not in _ROLLS
                 and self.gap() > REACH + SPEED * (frames - 1))
 
-    def forced(self, depth: int, frames: int, attacking: bool) -> bool:
-        if not attacking and frames > 0:
+    def forced(self, depth: int, frames: int, attacking: bool, who: int = 0) -> bool:
+        if who == 0 and not attacking and frames > 0:
             if self.reach and self.far(frames):
                 return True
             if self.bad and hash(self.where() + (False,)) in self.bad:
                 return False
-        return super().forced(depth, frames, attacking)
+        return super().forced(depth, frames, attacking, who)
 
     def learn(self, path: str) -> None:
         """Take in the positions other games have marked. What was proven safe before may pass through them."""
