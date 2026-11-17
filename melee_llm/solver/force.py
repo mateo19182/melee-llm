@@ -284,19 +284,22 @@ class Search:
         return False
 
 
-def corner(sim: Sim, gap: float, ledge: float, hop: int = 0, shield: int = 0) -> bytes:
-    """P2 stands `ledge` units from the right ledge of Final Destination, facing P1, who stands `gap` away.
-    With `hop`, P1 has then short-hopped toward P2 and is `hop` frames into it, P2 not having moved.
-    With `shield`, P2 has then held his shield for that many frames, P1 standing still."""
+def corner(sim: Sim, gap: float, ledge: float, hop: int = 0, shield: int = 0, away: bool = False) -> bytes:
+    """P2 stands `ledge` units from the right ledge of Final Destination, facing P1 (with `away`, his back to
+    him), who stands `gap` away. With `hop`, P1 has then short-hopped toward P2 and is `hop` frames into it, P2 not
+    having moved. With `shield`, P2 has then held his shield for that many frames, P1 standing still."""
     edge = 85.57
     sim.restore(sim.start())
-    for _ in range(600):  # P2 walks right
-        if float(sim.players()[1]["pos_x"]) >= edge - ledge:
+    left = float(sim.players()[1]["pos_x"]) > edge - ledge  # his spawn is 25.57 from the ledge
+    for _ in range(900):  # P2 walks there
+        x = float(sim.players()[1]["pos_x"])
+        if (x <= edge - ledge) if left else (x >= edge - ledge):
             break
-        sim.step([N, (0, 30, 0, 0)])
+        sim.step([N, (0, -30 if left else 30, 0, 0)])
     sim.idle(20)
-    for _ in range(3):  # and turns back to face the stage
-        sim.step([N, (0, -25, 0, 0)])
+    if left == away:  # he faces the way he walked: turn him round
+        for _ in range(3):
+            sim.step([N, (0, 25 if left else -25, 0, 0)])
     sim.idle(25)
     for _ in range(900):  # P1 walks in
         if sim.gap() <= gap + 1.0:

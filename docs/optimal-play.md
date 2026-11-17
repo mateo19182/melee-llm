@@ -349,16 +349,16 @@ the shield button held. (2) Nobody could shine on the first airborne frame out o
 | Both standing, 12.59 apart | 8 frames | **0** | both wait; the defender needs no shield |
 | Same, defender never shields | 8 | **0** | both wait |
 | Defender in shield and must leave it; attacker standing 7.8 or 10.2 away | 10 | **1** | every exit is hit |
-| Same, 12.59 away | 10 | 1 for release, jump, both rolls, shield grab; the spotdodge outlasts 10 frames and is hit for 18% on frame 16 to 20 of its 22 (direct check) | attacker waits, then shines the exit on its third frame |
-| Same, 18 away | 10 | 0 within the horizon for jump, rolls, spotdodge | |
+| Same, 12.59 away | 10 | 1 for release, jump, both rolls, shield grab; the spotdodge outlasts 10 frames and is hit for 18% on frame 16 to 22 of its 22 (direct check) | attacker waits, then shines the exit on its second frame (jabs a roll in or a shield grab) |
+| Same, 16.8 away | 10 | 0 within the horizon for release and jump; the rolls and the spotdodge are hit at their end (Verification) | |
 | **Attacker 9 frames into a short hop, 7.8 away and 9.2 up; defender never shields** | 8 | **0.5** | attacker: wait or shine, half each. Defender: step back or shine, half each |
 | Same, defender may shield | 8 | 0 | defender shields |
 
 - **The cycle of section 12 was an artefact.** One frame late, the defender simply waits and answers what he sees:
   the standoff holds at 12.59, with or without shield.
-- **Shield is a one-way door.** Within 12.6 units of a standing Fox, a shielding Fox cannot leave: the attacker
-  waits, sees the exit a frame late and shines it. The shine reaches a Fox in jumpsquat or starting a roll from
-  12.6, further than it reaches one standing (10.7).
+- **Shield is a one-way door.** Within 14.4 units of a standing Fox, a shielding Fox cannot leave: the attacker
+  waits, sees the exit a frame late and shines or jabs it. The shine reaches a Fox in jumpsquat or starting a roll
+  from 12.6, further than it reaches one standing (10.7); the jab reaches further still.
 - **Against an airborne attacker the corner is a coin flip unless the defender shields**, and the shield is the
   one-way door once the attacker has landed. Whether the defender can get out while the attacker is still landing
   is the open question (`nash --hop 9 --trap --frames 16`, running).
@@ -369,6 +369,76 @@ frames, cornered or mid-stage): the attacker plays wait 38%, shine 38%, jab 24%,
 shine 24%. So the draw of section 1 belongs to a player who answers on the very next frame; one frame slower and
 neutral is rock-paper-scissors. With shield allowed the two-frame game is 0 again over 12 frames, but only
 because the shield's cost (the one-way door) lies beyond the horizon.
+
+#### Verification
+
+An independent pass over this section (probes in `scripts/solver_probes/verify13/`, run with `PYTHONPATH=.`;
+solves with `scripts/search.sh`, 4 or 5 processes). "Ran" is a solve or a replay in the raw simulator (`game.Sim`, no search class); everything else is
+marked inferred.
+
+**Bugs found and fixed first; every number below is from the fixed solver.**
+
+| Bug | Effect | Fix |
+| --- | --- | --- |
+| The position key left out the previous frame's inputs (a held button is not a new press) | Wrong cell values: `out` against `hop` at 12.59 was 0.75 with 4 or more frames left, 0.6667 with the fixed key and with the table switched off. No value in the table above changed | Previous inputs are in the key (about twice the positions) |
+| A grab moved no percent, so it never counted as a hit | Fox's standing grab catches a standing Fox from 12.59 on its 7th frame; the grab row was all 0 | A held fighter is a first hit |
+| Dropping a shield was treated as 15 locked frames | It can be cut short by a jump or a spotdodge from its 2nd frame | New `release` menu |
+| The jumpsquat menu lacked up-B, up smash and grab; the ground menu lacked the spotdodge (R and down, no shield first) | The up-B out of shield dodges the reaction shine at 12.59 (the jab still hits it) | Added to the default menus |
+| `values` and the yes/no tables each took the whole `--tt-mb` | Memory above the budget | Each gets a third |
+| `corner()` ignored `--ledge` above 25.6 | No mid-stage positions | P2 walks either way |
+
+Soundness (claim D), ran: the old key against no table agrees at 4 frames on three positions and disagrees from
+4 frames on in the cell above; a key made of every observed field, unrounded, changes nothing over 7 frames
+(three positions); `forced` and `value` against a plain recursion on save and restore agree in 1,240 comparisons
+over five positions (horizons 1 and 2). RNG, ECB and intangibility timers are not in the key: no difference seen.
+
+**A. One-way door: confirmed, and wider than stated (14.4, not 12.6); it ends between 14.4 and 16.8.**
+
+- Ran, raw replay at 12.59: against release, jump and roll away the shine one frame after the exit deals 5% and
+  takes 0; a roll in and a shield grab are missed by that shine and hit by a jab on the same frame (4%); against
+  release and jump the up smash on reaction also works (18%).
+- Ran, the spotdodge: 22 frames, hittable on the first and on the last 7, nothing cuts it short. At every gap from
+  7.2 to 16.8 a waiting attacker up-smashes its end for 18%, and so does one who had already shined at it; an
+  attacker who up-smashed on reaction is the one who gets punished. `--dodge` counts such a dodge as hit.
+- Ran, rolls: free again on frame 31, intangible on 4 to 19. A waiting attacker has a clean punish at every gap
+  from 12.6 to 21, cornered and mid-stage. Beyond the door only release and jump can be exits.
+- Ran, `nash --shield 12 --must-exit --frames 10 --dodge`, attacker waiting on the first frame:
+
+| Gap | release | jump | roll in | roll away | spotdodge | shield grab | Value |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 7.79, 11.99, 12.59, 13.79, 14.39 | 1 | 1 | 1 | 1 | 1 | 1 | **1** |
+| 14.99 | 0.93 | 1 | 0 in 10 frames, hit later | 1 | 1 | 1 | 0.5 in 10 frames |
+| 15.59 | 0 | 1 | 0, hit later | 1 | 1 | 1 | 0.17 |
+| 16.19 | 0 | 1 | 0, hit later | 0, hit later | 1 | 1 | 0 |
+| 16.79 | 0 | 0 | 0, hit later | 0, hit later | 1 | 1 | 0 |
+
+  So the plain release is the first way out (from 15, partly) and the jump the second (from 16.8). Past 14.4 the
+  zeros for release are lower bounds for the attacker: the dodge rule only covers a standing or shining attacker,
+  not one who has dashed in.
+- Ran at 12.59, all value 1: shield held 2, 4, 12, 60 and 150 frames; defender mid-stage (12.71); defender facing
+  away; attacker walking (12.28), dashing (12.23), turned round.
+- Ran, exits outside the old menus, now in them: up smash and up-B out of shield, jump-cancelled grab, release
+  then jump or spotdodge. Traced in the raw simulator and found to be one of the above on their first frames:
+  wavedash, full hop and double jump (all jumpsquat), light shield and shield angling (still shield).
+- Not run: an attacker in the middle of an attack or in the air.
+
+**B. Standing 12.59 apart is a draw: confirmed** (ran, 8 frames, value 0, both wait, with grabs counted and the
+spotdodge in both menus). The grab is answered on reaction. Ran with wide menus for both (three smashes, two tilts,
+walking, crouch, full hop, wavedash; `standoff_wide.py`): over 8 frames the defender has a defence that holds
+even when read, without shield; waiting is one. 10 frames with the wide menus did not finish in 25 minutes on
+one process.
+
+**C. Coin flip from hop frame 9: confirmed, 0.5** (ran, 8 frames). Raw replay of the four cells: wait against
+shine and shine against step back end with the defender at 5%; wait against step back and shine against shine
+end unhit. Adding spotdodge, up smash, down smash, crouch and a turn to the defender leaves 0.5 with the same
+mix: the smashes lose to everything, and spotdodge, crouch and turn do no better than the step back. Rolls need
+the shield and were not tried.
+
+**Hop frame 5 (attacker 9.42 away, 4.0 up, defender never shields): confirmed, value 1.** Ran: with spotdodge, up
+smash, down smash, crouch, walking either way and a turn added, the attacker still has a forced win (`forced`,
+10 frames). His strategy replayed in the raw simulator: the shine on the first frame hits every answer at once
+for 5% and takes 0, except a shine on the same frame, which he beats by jumping out of his shine on frame 8 and
+shining again on frame 9. 300 of 300 random defenders were hit cleanly. A shield stops it, as section 13 says.
 
 ## What this says about Petro's claim
 

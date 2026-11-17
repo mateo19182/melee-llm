@@ -13,6 +13,7 @@ MEM=24
 mkdir -p data/solver
 systemd-run --user --unit="$NAME" --collect --working-directory="$PWD" \
   -p MemoryMax="${MEM}G" -p MemorySwapMax=0 -p OOMScoreAdjust=1000 -p Nice=10 \
+  ${MSL_DATA_DIR:+--setenv=MSL_DATA_DIR="$MSL_DATA_DIR"} \
   -p Restart=on-failure -p RestartSec=300 \
   bash -c ".venv/bin/python -m melee_llm.solver.${MOD:-force} --out data/solver/$NAME.jsonl $* >> data/solver/$NAME.txt 2>&1"
 echo "started $NAME (limit ${MEM} GB): data/solver/$NAME.txt, stop with: systemctl --user stop $NAME"
