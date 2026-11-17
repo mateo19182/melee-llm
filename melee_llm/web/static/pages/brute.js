@@ -36,13 +36,14 @@ const SCORE = [
 ];
 
 function status(s) {
-  const kind = { not_started: ["Not started", "muted"], running: ["Running", "live"], done: ["Finished", "ok"] }[s.state] ?? [s.state, ""];
+  const kind = { not_started: ["Search not started", "muted"], running: ["Search running", "live"], done: ["Search finished", "ok"] }[s.state] ?? [s.state, ""];
   return h("div.brute-status", { id: "search-status" },
-    h("div.brute-status-head", {}, badge("Search in progress", "warn"), h("b", {}, s.title), badge(...kind)),
+    h("div.brute-status-head", {}, badge(...kind), h("b", {}, s.title)),
     h("p", {}, s.summary),
     s.plan ? h("p.dim", {}, s.plan) : null,
     s.details?.length ? h("dl", {}, s.details.map((d) => [h("dt", {}, d.label), h("dd", {}, d.value)])) : null,
     s.findings?.length ? h("ul", {}, s.findings.map((f) => h("li", {}, f))) : null,
+    s.next?.length ? [h("h3", {}, "Next steps"), h("ul", {}, s.next.map((f) => h("li", {}, f)))] : null,
     h("div.small-meta", {}, `Last updated ${s.updated}.`));
 }
 
@@ -66,7 +67,7 @@ export default async function brute(root, _params, signal) {
     h("article.prose", {},
       html("p.lede", `At DEF CON 24, Dan Petro <a href="https://www.youtube.com/watch?v=_0Z_oN_CZyA" target="_blank" rel="noopener">argued</a> that Melee played perfectly is a stalemate. Fox's <b>shine</b> (down-B, the reflector) hits on the very first frame, so nothing beats a Fox who reacts, and two perfect Foxes can only stare at each other.`),
       p(`We tested that by brute force. <a href="https://github.com/mateo19182/melee-brute" target="_blank" rel="noopener">melee-brute</a> runs the game's real code, rebuilt from the decompilation, without graphics. It can try an input, look at what happened, and take it back. So we try every input for both players, one frame at a time. A frame is 1/60 of a second.`),
-      p(`The short version: the stalemate is real if you stand still at the right distance, but it is <b>not a fortress</b>. An attacker can walk in and make a standing Fox guess. The defender's answer is to back away, and the stage runs out. Whether that wins is still open.`),
+      p(`The short version: the stalemate is real if you stand still at the right distance, but it is <b>not a fortress</b>. An attacker can walk in and make a standing Fox guess. The defender's answer is to back away, and the stage runs out. We then searched whether the attacker can use that: to the depth we can reach, he cannot, and the standoff holds in the middle of the stage.`),
 
       h("h2", {}, "How to read this page"),
       p(`Think of it as chess. A <b>position</b> is one exact situation: where both Foxes are and what they are doing. We sort positions into three kinds.`),
@@ -166,8 +167,8 @@ export default async function brute(root, _params, signal) {
         h("tbody", {}, SCORE.map(([pos, kind, value, how]) => h("tr", {}, h("td", {}, pos), h("td", {}, verdict[kind]()), h("td", {}, value), h("td", {}, how)))))),
       p(`So: is perfect Melee a stalemate? <b>Not proven either way.</b> Standing still is not a fortress. No forced win from the opening was found either. It comes down to one question.`),
 
-      h("h2", {}, "Still open: can the attacker take the stage for free?"),
-      p(`Each retreat costs blue about 21 units and the stage is finite. If a strong attacker can make him retreat twice without ever walking into a shine or a jab himself, blue ends up guessing on the ledge. Our scripted attackers could not do it, and the one-frame-ahead attacker is too short-sighted to say. A larger search is being set up for exactly this.`),
+      h("h2", {}, "The search: can the attacker take the stage for free?"),
+      p(`Each retreat costs blue about 21 units and the stage is finite. If a strong attacker can make him retreat twice without ever walking into a shine or a jab himself, blue ends up guessing on the ledge. Our scripted attackers could not do it, and the one-frame-ahead attacker is too short-sighted to say. So we searched it exactly, 8 frames deep. The result and what comes next are below.`),
       status(state),
 
       h("h2", {}, "Limits"),

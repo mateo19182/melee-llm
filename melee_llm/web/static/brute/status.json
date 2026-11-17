@@ -21,5 +21,11 @@
     "Proven, 8 frames, at the ledge, both standing 10.3 apart: 0 if falling off costs nothing, +0.27 for the attacker if leaving the stage loses the exchange.",
     "Proven, 8 frames, at the ledge, attacker walking in at 13.9: +0.08 for the attacker with the same rule.",
     "Not searched: more than 8 frames ahead, where a slower squeeze could still exist. Each extra frame about doubles the work."
+  ],
+  "next": [
+    "Give the attacker the moves we left out and solve the mid-stage walk-in again: lasers from range first, then full hop, dash dance and wavedash. If any makes the value leave 0, that is the break.",
+    "Look further ahead than 8 frames where it matters, by reusing solved positions as known results instead of searching them again.",
+    "Rerun the older sections (9 to 12) with the corrected move lists.",
+    "Then the same questions for the characters that came closest in the first sections."
   ]
 }

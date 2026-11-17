@@ -90,3 +90,4 @@ def test_status_file():
     assert s["state"] in ("not_started", "running", "done")
     assert s["title"] and s["summary"] and re.fullmatch(r"\d{4}-\d\d-\d\d", s["updated"])
     assert all(set(d) == {"label", "value"} for d in s["details"]) and isinstance(s["findings"], list)
+    assert all(isinstance(x, str) and x for x in s.get("next", []))
