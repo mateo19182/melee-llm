@@ -28,7 +28,7 @@ from hal.wire import BUTTON_BITS
 WEIGHTS = Path("weights/hal-250m.hal")
 BUTTON_NAMES = {bit: f"BUTTON_{name.upper()}" for name, bit in BUTTON_BITS.items() if bit & POLICY_BUTTON_MASK}
 B = melee.enums.Button
-MAX_DELAY = 10
+MAX_DELAY = 11
 
 
 class _Adapter(PolicyBatchAdapter):
@@ -74,11 +74,11 @@ class Bot:
             raise ValueError("HAL's observation schema is fixed to ports 1 and 2")
         # delay: frames between choosing an action and the game reading it, beyond the usual one. The
         # actions already on their way are the fixed prefix; the model's contiguous heads reach 12 frames
-        # ahead, so 10 is the most that still leaves a 2-frame replan.
+        # ahead, so 10 is the most that still leaves a 2-frame replan and 11 replans every frame.
         delay = int(cfg.get("delay", 0))
         if not 0 <= delay <= MAX_DELAY:
             raise ValueError(f"delay must be 0..{MAX_DELAY}")
-        timing = FrameTiming(delay, 0, delay, 2, min(delay + 4, 12))
+        timing = FrameTiming(delay, 0, delay, min(2, 12 - delay), min(delay + 4, 12))
         self.policy = load_action_sequence_policy(
             cfg.get("weights", WEIGHTS), device="cuda", seed=cfg.get("seed"), compiled=cfg.get("compile", True),
             history_mode="kv_cache", kv_update_frames=2)
