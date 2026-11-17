@@ -12,9 +12,8 @@ Memory: each process remembers decided positions in a table capped at `--tt-mb` 
 the number of processes is cut to what the free memory can hold. Finished jobs go to `--out` as they complete, and
 a rerun with the same file skips them. Launch long runs with `scripts/search.sh`, which adds a hard memory limit.
 
-Speed: the search plays on one simulator match and takes moves back with `melee_brute.rollback` (our patch to
-melee-sim-light: about 9 µs per rollback, against 300 µs for the library's lane copy). Each process is exact by
-check: after every root job it verifies that no memory page outside the rollback set changed.
+Speed: the search plays on one simulator match and takes moves back with melee-brute's exact take-back
+(`takeback.py`: about 5 µs per rollback, against 300 µs for the library's lane copy).
 
     uv run python -m melee_llm.solver.force --gap 14 --ledge 12 --frames 16
 """
@@ -100,15 +99,15 @@ _WARMUP = [N, (B, 0, -80, 0), (X, 0, 0, 0), (A, 0, 0, 0), (0, 80, 0, 0), (0, -80
 
 
 class Search:
-    """Depth-first search on one simulator match: make a move, look, take it back (`melee_brute.rollback`)."""
+    """Depth-first search on one simulator match: make a move, look, take it back (`takeback.Rollback`)."""
 
     def __init__(self, root: bytes, max_depth: int = 64, trap: bool = False, tt_mb: int = 400):
         import melee_sim as msl
-        from melee_brute.rollback import Rollback
+        from melee_llm.solver.takeback import Rollback, make_env
         from melee_llm.sim.state import SIM_STAGE
         from melee_llm.sim.world import DATA_DIR
         self.trap, self.max_depth = trap, max_depth
-        self.env = msl.EnvBatch(batch_size=1, length=64, action_format="raw", data_dir=str(DATA_DIR))
+        self.env = make_env(batch_size=1, length=64, action_format="raw", data_dir=str(DATA_DIR))
         players = tuple(msl.PlayerConfig(melee.Character.FOX.value, controller_port=p) for p in (0, 1))
         self.env.configure_match(stage=SIM_STAGE[melee.Stage.FINAL_DESTINATION], seed=0, max_frame=28800,
                                  players=players)
@@ -124,14 +123,6 @@ class Search:
         self.cap = tt_mb * 1_000_000 // TT_BYTES
         self.expansions = 0
         self.rb = Rollback(self.env, depth=max_depth)
-        rng = np.random.default_rng(0)  # learn which pages a frame can change, from 3000 frames of random inputs
-        for f in range(3000):
-            i, j = rng.integers(len(_WARMUP), size=2)
-            self.step(_WARMUP[i], _WARMUP[j])
-            if f % 100 == 99:
-                self.rb.add(self.rb.changed())
-        self.rb.reset()
-        self.observe()
 
     def slots(self):
         return self.env.current_frame[0]["slots"]

@@ -35,4 +35,4 @@ select = ["E", "F", "I", "B"]
 ignore = ["E501", "E702", "E731", "B023", "B905"]
 
 [tool.uv.sources]
-melee-brute = { git = "https://github.com/mateo19182/melee-brute", rev = "1d7157817907555c7aea7ce61ac644c16058336a" }
+melee-brute = { git = "https://github.com/mateo19182/melee-brute", rev = "090e54b048b7d51e82f9f6b551046c2ca8b130c7" }

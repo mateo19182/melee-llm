@@ -584,7 +584,7 @@ wheels = [
 [[package]]
 name = "melee-brute"
 version = "0.0.0"
-source = { git = "https://github.com/mateo19182/melee-brute?rev=1d7157817907555c7aea7ce61ac644c16058336a#1d7157817907555c7aea7ce61ac644c16058336a" }
+source = { git = "https://github.com/mateo19182/melee-brute?rev=090e54b048b7d51e82f9f6b551046c2ca8b130c7#090e54b048b7d51e82f9f6b551046c2ca8b130c7" }
 dependencies = [
     { name = "numpy" },
 ]
@@ -619,7 +619,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "markdown-it-py", specifier = ">=4.3.0" },
     { name = "melee", specifier = ">=0.47.6" },
-    { name = "melee-brute", git = "https://github.com/mateo19182/melee-brute?rev=1d7157817907555c7aea7ce61ac644c16058336a" },
+    { name = "melee-brute", git = "https://github.com/mateo19182/melee-brute?rev=090e54b048b7d51e82f9f6b551046c2ca8b130c7" },
     { name = "openai", specifier = ">=3.50.0" },
     { name = "pillow", specifier = ">=13.0.0" },
     { name = "starlette", specifier = ">=1.10.0" },
