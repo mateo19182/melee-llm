@@ -49,4 +49,5 @@ Loss is validation loss, summed over the four controller heads. "vs CPU 9" is wi
 | [E19](E19-hal-train-loop.md) | 11-16 | done | A training loop for HAL's model on the 3090 | validation 1.0867 bits (HAL: 1.0870); trains at 7 GB and about 40 windows/s; fine-tuned checkpoint 22 of 30 against the released 23 of 30 | the loop is correct and usable on the 3090 |
 | [E20](E20-hal-return-finetune.md) | 11-16 | planned | Return-conditioned self-improvement in the simulator |  |  |
 | [E21](E21-hal-ppo.md) | 11-16 | planned | PPO on HAL with a KL penalty toward the clone |  |  |
+| [E22](E22-hal-delay-offsets.md) | 11-17 | running | HAL under delay: rebalance the action offsets |  |  |
 <!-- index:end -->
