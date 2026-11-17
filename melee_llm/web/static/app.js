@@ -16,6 +16,7 @@ const routes = [
   [/^\/ladder\/(?<name>[\w.-]+)$/, () => import("./pages/botwriter.js")],
   [/^\/play$/, () => import("./pages/play.js")],
   [/^\/training$/, () => import("./pages/training.js")],
+  [/^\/brute$/, () => import("./pages/brute.js")],
   [/^\/docs(\/(?<name>[\w-]+))?$/, () => import("./pages/docs.js")],
 ];
 

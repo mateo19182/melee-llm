@@ -18,6 +18,9 @@ Pages:
   - The renderer comes from `patches/slippilab.patch` and is built by `npm run build:live`.
 - **Launch**: pick both players from every registered spec, characters (checked per bot), stage, mode and number of games. Models come from the CLIProxy `/v1/models`. Jobs, their results and LLM token spend (with a list-price estimate) are in `data/web.sqlite` (gitignored); replays and decision logs of job N go to `replays/jobs/N/`.
 - **Games**: every `.slp` under `replays/` and the bot-writer ladders, with players and results. A game page embeds Slippi Lab next to the decision log: the current decision follows the replay, and clicking a decision jumps to the state the model saw.
+- **Brute** (`/brute`): what the frame-by-frame search of [optimal-play.md](optimal-play.md) found about perfect play, for Melee players, with animated positions.
+  - The clips are simulator traces in `static/brute/clips.json`, written and checked by `scripts/optimal_play_animations.py` and drawn by `static/brute/player.js`.
+  - The "search in progress" block at the end reads `static/brute/status.json` on every page load: edit that file to report on the search (`state` is `not_started`, `running` or `done`; `summary`, `plan`, `details` as label and value pairs, `findings` as a list of sentences, `updated`). No restart is needed.
 - **Arena**, **Coach** (pilot summaries), **Bot-writer** (sessions with cost, time and bot source; ladder boards), **Play vs bot** (placeholder for netplay).
 
 The frontend is plain ES modules with no build step (`melee_llm/web/static/`), with one stylesheet, `style.css`. It is styled after Melee's menus; the fonts (Archivo and Barlow, SIL OFL) are vendored in `static/vendor/fonts/`.

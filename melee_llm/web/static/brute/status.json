@@ -1,0 +1,12 @@
+{
+  "state": "not_started",
+  "updated": "2026-11-17",
+  "title": "Can the attacker take the stage from a retreating Fox for free?",
+  "summary": "The search has not started yet. It is being set up.",
+  "plan": "Search the attacker's lines against a defender who gives ground and avoids every position already found to be a guess, at a lookahead of 8 frames or more, with more moves allowed for both sides.",
+  "details": [
+    {"label": "Positions searched", "value": "0"},
+    {"label": "Result so far", "value": "none"}
+  ],
+  "findings": []
+}

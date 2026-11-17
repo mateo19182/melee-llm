@@ -337,8 +337,8 @@ pick at the same time, knowing everything up to the previous frame. Each positio
 (`matrix.py`); pure strategies that hold even when read settle a position without a matrix. All moves last one
 frame. The payoff is the chance that the attacker lands a clean first hit.
 
-Animated, frame by frame, from simulator traces: [animations/optimal-play.html](animations/optimal-play.html)
-(regenerate with `scripts/optimal_play_animations.py`).
+Animated, frame by frame, from simulator traces: the [Brute page](https://melee.m19182.dev/brute)
+(`melee_llm/web/static/pages/brute.js`; regenerate the clips with `scripts/optimal_play_animations.py`).
 
 **Two menu bugs found on the way, which weaken sections 9 to 12 for the defender.** (1) The "jump" out of shield
 in `force.py` and in the shield-trap probe was X alone, which only drops the shield; a jump out of shield needs
