@@ -60,6 +60,7 @@ Open http://m19182:8767/list. Port 8766 is taken by another service on this host
 - [Netplay](docs/netplay.md): play our bots yourself over Slippi Direct Connect from another machine.
 - [Research](docs/research.md): background on Melee, the history of its bots, tooling, community and people.
 - [Acting under delay](docs/delay.md): how RL and Melee bots handle input delay, and what it means for our Yoshi.
+- [How top Yoshis play](docs/yoshi.md): the character, aMSa's play, the matchups we meet on stomped, and what survives input delay.
 - [Simulator](docs/simulator.md): a decomp-based simulator for games without Dolphin (`--mode sim`), checked frame for frame against Dolphin and libmelee.
 - [Learned bots](docs/bots.md) (HAL, Faynt, MIMIC, Phillip): ladder opponents and the body an LLM coach steers.
 
