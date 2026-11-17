@@ -25,7 +25,7 @@ Tested on 2026-11-14 at upstream commit `eea7b5fb`. It has **no license file**, 
 
 ## Our patch: in-place checkpoint and rollback
 
-melee-llm installs our fork [melee-brute](https://github.com/mateo19182/melee-brute) instead of upstream melee-sim-light (`pyproject.toml`), built with upstream's optimised `python-release` profile. The patch adds four calls (`msl_batch_checkpoint_size`, `_checkpoint`, `_rollback`, `_diff_pages`); nothing existing changes, and code that doesn't use them behaves as before. `melee_brute/rollback.py` wraps them: a rollback takes about 9 µs against 300 µs for the library's lane copy. Details and the search built on it: [optimal-play.md](optimal-play.md), section 11.
+melee-llm installs our fork [melee-brute](https://github.com/mateo19182/melee-brute) instead of upstream melee-sim-light (`pyproject.toml`), built with upstream's optimised `python-release` profile. melee-brute adds exact take-back to the simulator (write-protected memory, about 5 µs a checkpoint or rollback against 300 µs for the library's lane copy) and a forced-win search in C; `melee_llm/solver/takeback.py` is the small wrapper our Python searches use. Details and the search built on it: [optimal-play.md](optimal-play.md), section 11.
 
 ## Gaps
 

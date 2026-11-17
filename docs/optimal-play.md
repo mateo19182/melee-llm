@@ -281,7 +281,7 @@ Probes: `scripts/solver_probes/` (run with `PYTHONPATH=. python scripts/solver_p
 
 ### 11. A patched simulator, and the first position where the defender has to guess [sim]
 
-**The patch.** An in-place checkpoint and rollback of one match, added to melee-sim-light. It now lives in our fork [melee-brute](https://github.com/mateo19182/melee-brute), which melee-llm installs instead of upstream (`melee_brute/rollback.py`).
+**The patch.** An in-place checkpoint and rollback of one match, added to melee-sim-light. It now lives in our fork [melee-brute](https://github.com/mateo19182/melee-brute), which melee-llm installs instead of upstream. Since then melee-brute takes moves back exactly by write-protecting the match's memory, with nothing to learn or check (`melee_llm/solver/takeback.py` wraps it).
 - A frame changes about 3 KB of the match's 3.2 MB of memory, in a few dozen 4 KiB pages, always the same ones (71 pages after 3,000 frames of random inputs). The library's own lane copy moves everything and re-links every pointer; a rollback copies back only those pages.
 - **Rollback 8.7 µs and checkpoint 8.3 µs, against about 300 µs for the lane copy.** A rollback followed by the same inputs reproduced the same savestate byte for byte in 200 of 200 random trials.
 - Exactness is checked on every run: a rollback never restores the other pages, so a page that changed unexpectedly stays changed, and a final comparison with the starting state finds it. No run below reported one.

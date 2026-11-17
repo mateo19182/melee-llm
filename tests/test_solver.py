@@ -67,7 +67,6 @@ def test_force_menus_follow_the_fighter_state():
 
 def test_rollback_reproduces_the_game_exactly():
     """Needs the simulator's game data."""
-    from melee_brute import rollback
     if not world.available():
         pytest.skip("patched melee-sim-light with game data not installed")
     from melee_llm.solver import force
@@ -290,3 +289,18 @@ def test_fortress_marked_positions_count_as_lost_and_a_crack_takes_the_game_back
     # in a game the defender then steps around the marked position instead of waiting into it
     r = fortress.play(other, fortress.attacker("dash:0"), 3, 3, root, learn=str(tmp_path / "bad.jsonl"))
     assert r["inputs"][0][1] != "wait" or r["cracks"]
+
+
+def test_squeeze_roots_and_rules_say_what_they_claim():
+    """Needs the simulator's game data. A walking Fox 13.5 away mid-stage: six frames on, shielding is not safe
+    (the door is a rule) and stepping away is; the three conditions build the zones they describe."""
+    if not world.available():
+        pytest.skip("patched melee-sim-light with game data not installed")
+    from melee_llm.solver import squeeze
+    state, at = squeeze.root("walk", 14.0, 60.0)
+    assert 13 < at["gap"] < 14 and 55 < at["room"] < 65 and at["actions"][1] == 14 and at["facing"] == [1, 0]
+    for condition, zones in (("free", 2), ("hold", 3), ("edge", 3)):
+        assert squeeze.rules(condition, at["x2"], 3.0).data.zone_count == zones
+    row = squeeze._job({"ask": {}, "at": at, "state": state, "condition": "free", "frames": 6, "give": 3.0,
+                        "table_mb": 64})
+    assert "out" in row["safe"] and "shield" in row["beaten"] and "spotdodge" in row["beaten"]

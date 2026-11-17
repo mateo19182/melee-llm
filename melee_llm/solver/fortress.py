@@ -82,6 +82,7 @@ class Fortress(nash.Nash):
     def load(self, state: bytes, last: tuple = (N, N)) -> None:
         """Put the match in `state`, reached with `last` as the previous frame's inputs."""
         self.env.restore(0, state)
+        self.rb.rebase()
         self.env.reset_cursor()
         self.observe()
         self.last = last
