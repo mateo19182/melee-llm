@@ -1,5 +1,7 @@
 // Frame-by-frame player for the simulator traces in clips.json (written by scripts/optimal_play_animations.py).
 // One player shows one scene: its clips as tabs, or as the cells of a solved guess (scene.grid) with both mixes.
+// A scene with a `setup` clip also offers the lead-in from the match start: a thinned recording (clip.frames says
+// which match frame each row is) drawn on the whole stage and played fast.
 // Each Fox is drawn in his true pose (action and animation frame) at the simulator's coordinates by Slippi Lab's
 // character renderer (/slippilab-live.js, built from patches/slippilab.patch), with its shield bubble and reflector,
 // on Final Destination. Reach ticks, hit bursts and labels are drawn here. The poses are not the game's hitboxes.
@@ -56,11 +58,18 @@ export function mountPlayer(root, scene, D, signal) {
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   let clip = scene.clips[0], events = [], i = 0, playing = false, timer = 0, fps = 8, auto = !reduced;
   let R = null;
-  let lo = 1e9, hi = -1e9, top = 0; // one view for the whole scene, so switching clips does not move the picture
-  scene.clips.forEach((c) => c.rows.forEach((r) => r.forEach((p) => { lo = Math.min(lo, p[0]); hi = Math.max(hi, p[0]); top = Math.max(top, p[1]); })));
-  const view = { x0: lo - 9, x1: Math.max(hi + 7, D.ledge + 5), up: Math.max(20, top + 19) };
+  const viewOf = (clips) => {
+    let lo = 1e9, hi = -1e9, top = 0;
+    clips.forEach((c) => c.rows.forEach((r) => r.forEach((p) => { lo = Math.min(lo, p[0]); hi = Math.max(hi, p[0]); top = Math.max(top, p[1]); })));
+    return { x0: lo - 9, x1: Math.max(hi + 7, D.ledge + 5), up: Math.max(20, top + 19) };
+  };
+  const all = scene.setup ? [...scene.clips, scene.setup] : scene.clips;
+  // one view for the scene's clips, so switching between them does not move the picture; the lead-in has its own
+  const views = new Map(scene.clips.map((c) => [c, viewOf(scene.clips)]));
+  if (scene.setup) views.set(scene.setup, viewOf([scene.setup]));
+  let view = views.get(clip);
   // The pose of an action that turns Fox around is drawn facing the way he faced when it began.
-  scene.clips.forEach((c) => [0, 1].forEach((p) => {
+  all.forEach((c) => [0, 1].forEach((p) => {
     let began = 0;
     c.starts = c.starts || [];
     c.rows.forEach((r, k) => {
@@ -69,7 +78,7 @@ export function mountPlayer(root, scene, D, signal) {
       (c.starts[k] ||= [])[p] = began ? 1 : -1;
     });
   }));
-  const frameNo = (k) => k - clip.lead;
+  const frameNo = (k) => clip.frames ? clip.frames[k] : k - clip.lead;
 
   root.classList.add("bp");
   const tabs = el("div", scene.grid ? "bp-grid" : "bp-tabs");
@@ -84,12 +93,11 @@ export function mountPlayer(root, scene, D, signal) {
     scene.clips.forEach((c, k) => {
       if (k % g.cols.length === 0) { const r = g.rows[k / g.cols.length]; tabs.append(el("div", "bp-h bp-row bp-c1", `${r.label}<i>${r.p}%</i>`)); }
       const b = el("button", `bp-cell ${c.value === 1 ? "v1" : c.value === 0 ? "v0" : "vm"}`, `<b>${c.tag}</b><span>red scores ${c.value}</span>`);
-      b.onclick = pick(k); tabs.append(b); tabBtns.push(b);
+      b.onclick = pick(k); b.dataset.k = k; tabs.append(b); tabBtns.push(b);
     });
   } else if (scene.clips.length > 1) {
-    scene.clips.forEach((c, k) => { const b = el("button", "small", c.title); b.onclick = pick(k); tabs.append(b); tabBtns.push(b); });
+    scene.clips.forEach((c, k) => { const b = el("button", "small", c.title); b.onclick = pick(k); b.dataset.k = k; tabs.append(b); tabBtns.push(b); });
   }
-  tabBtns.forEach((b) => { b.type = "button"; b.setAttribute("role", "tab"); });
   const caption = el("p", "bp-caption");
   const canvas = el("canvas"); canvas.setAttribute("role", "img");
   const beat = el("div", "bp-beat", '<div class="bp-frame"></div><div class="bp-note" aria-live="off"></div>');
@@ -108,15 +116,22 @@ export function mountPlayer(root, scene, D, signal) {
   const [prevB, playB, nextB] = ctl.querySelectorAll("button");
   const range = ctl.querySelector("input"), track = ctl.querySelector(".bp-track"), speed = ctl.querySelector("select");
   if (tabBtns.length) root.append(tabs);
+  if (scene.setup) {
+    const last = scene.setup.frames.at(-1);
+    const b = el("button", "bp-setup", `<b>▶ From the match start</b><span>how play gets to this position: ${last} frames, sped up</span>`);
+    b.onclick = pick(scene.clips.length); b.dataset.k = scene.clips.length;
+    root.append(b); tabBtns.push(b);
+  }
+  tabBtns.forEach((b) => { b.type = "button"; b.setAttribute("role", "tab"); });
   root.append(caption, canvas, beat, hud, ctl);
   const ctx = canvas.getContext("2d");
 
   function select(k) {
-    clip = scene.clips[k]; events = eventsOf(clip, D.ledge); i = 0;
+    clip = all[k]; view = views.get(clip); events = eventsOf(clip, D.ledge); i = 0;
     fps = clip.fps || 8; speed.value = fps;
-    tabBtns.forEach((b, j) => { b.setAttribute("aria-selected", j === k); b.classList.toggle("on", j === k); });
-    const bad = events.length > 0;
-    const res = bad ? events.map((e) => e.hit ? `${names[e.p]} takes ${e.text} on frame ${frameNo(e.i)}.`
+    tabBtns.forEach((b) => { const on = +b.dataset.k === k; b.setAttribute("aria-selected", on); b.classList.toggle("on", on); });
+    const bad = events.length > 0, setup = clip === scene.setup;
+    const res = setup ? "" : bad ? events.map((e) => e.hit ? `${names[e.p]} takes ${e.text} on frame ${frameNo(e.i)}.`
       : `${names[e.p]} slides off the stage on frame ${frameNo(e.i)}.`).join(" ") : "Nobody is hit.";
     caption.innerHTML = (clip.caption ? clip.caption + " " : "") + `<span class="bp-result${bad ? " hit" : ""}">${res}</span>`;
     canvas.setAttribute("aria-label", `${clip.title}. ${clip.caption} ${res}`);

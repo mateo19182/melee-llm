@@ -5,8 +5,13 @@ health and the inputs pressed. The lines are not scripted: they are walked out o
 `fortress.Fortress`), then replayed and recorded. Each clip is checked against what docs/optimal-play.md (sections
 13 and 14) says before it is written; a mismatch stops the script. P1 (red) attacks, P2 (blue) defends.
 
+A scene whose position is placed by `force.corner` also gets a `setup` clip: the same inputs replayed from the
+match start, so the page can show how the position is reached and which part of that is staging. `--solver`
+turns the raw outputs of section 15 (squeeze-8.jsonl and the net-*.txt solves) into brute/road.json.
+
     MSL_DATA_DIR=vendor/melee-sim-light/data PYTHONPATH=. uv run python scripts/optimal_play_animations.py
     ... scripts/optimal_play_animations.py --only door ledge    # redo some scenes, keep the rest of the file
+    ... scripts/optimal_play_animations.py --only setup --solver data/solver   # only the lead-ins and the road
 
 All scenes take about 12 minutes on one core and stay under 2 GB.
 """
@@ -14,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 import melee
@@ -24,6 +30,7 @@ from melee_llm.solver.game import A, B, R, Sim, X, Z
 from melee_llm.solver.matrix import solve as solve_matrix
 
 OUT = Path(__file__).resolve().parent.parent / "melee_llm" / "web" / "static" / "brute" / "clips.json"
+EDGE = 85.57
 N = (0, 0, 0, 0)
 USMASH = (A, 0, 80, 0)
 WALK, FLICK = (0, 30, 0, 0), (0, -80, 0, 0)
@@ -31,7 +38,7 @@ BUTTONS = ((A, "A"), (B, "B"), (X, "X"), (Z, "Z"), (R, "R"))
 LABELS = {14: "standing", 15: "walking", 16: "walking", 17: "walking", 18: "turning", 20: "dash", 24: "jumpsquat",
           25: "short hop", 42: "landing", 44: "jab", 63: "up smash", 178: "shield", 179: "shield", 181: "shield, hit",
           182: "shield", 180: "dropping shield", 212: "grab", 233: "roll in", 234: "roll away", 235: "spotdodge",
-          245: "teetering on the ledge", 360: "shine", 361: "shine (held)", 365: "shine", 366: "shine (held)"}
+          245: "teetering on the ledge", 246: "teetering on the ledge", 360: "shine", 361: "shine (held)", 365: "shine", 366: "shine (held)"}
 EXITS = ("release", "jump_oos", "roll_in", "roll_out", "shield_grab", "spotdodge")
 SAY = {"wait": "waits", "out": "steps away", "shine": "shines", "shield": "shields"}
 REACH = [10.7, "shine 10.7"]
@@ -110,6 +117,13 @@ class Clip:
         return {"id": key, "title": title, "caption": caption, "lead": self.lead, "rows": self.rows,
                 "notes": sorted(notes.items()), "marks": list(marks), **more}
 
+    def thinned(self, keep: set[int], every: int = 3, tail: int = 12) -> dict:
+        """A long recording from the match start, for playing fast: every `every`th frame, the frames in `keep`
+        and the last `tail`. `frames` says which match frame each row is."""
+        last = len(self.rows) - 1
+        frames = [f for f in range(last + 1) if f % every == 0 or f in keep or f > last - tail]
+        return {"frames": frames, "rows": [self.rows[f] for f in frames]}
+
 
 def expect(clip: Clip, hits: list[tuple[int, int, float]], what: str) -> None:
     got = clip.hits()
@@ -181,10 +195,103 @@ def grid(att, row, dfn, col, value: float, frames: int, m: np.ndarray, want: dic
              "value": got["value"], "frames": frames, "cells": cells}, list(mix1), list(mix2))
 
 
+def lead_in(sim: Sim, gap: float, ledge: float, hop: int = 0, shield: int = 0, *, caption: str, end: str,
+            want: tuple[int, float]) -> dict:
+    """How `force.corner` reaches its position, recorded from the match start: the same inputs in the same order,
+    checked against its savestate. `want` is the match frame and the gap it must end on."""
+    c = Clip(sim, sim.start())
+    x2 = lambda: float(sim.players()[1]["pos_x"])
+    assert x2() < EDGE - ledge, "corner() walks P2 toward the ledge from his spawn"
+    spawn = x2()
+    while x2() < EDGE - ledge:
+        c.step(N, (0, 30, 0, 0))
+    walked = len(c.rows) - 1
+    c.step(n=20).step(N, (0, -25, 0, 0), 3).step(n=25)
+    faced, room = len(c.rows) - 1, EDGE - x2()
+    while sim.gap() > gap + 1.0:
+        c.step((0, 30, 0, 0), N)
+    released, let_go = len(c.rows) - 1, sim.gap()
+    c.step(n=30)
+    stood, standing = len(c.rows) - 1, sim.gap()
+    for f in range(hop):
+        c.step((X, 40, 0, 0) if f == 0 else (0, 40, 0, 0), N)
+    c.step(N, (R, 0, 0, 255), shield)
+    state, last = sim.save(), len(c.rows) - 1
+    seen = (last, round(sim.gap(), 2))
+    if state != force.corner(sim, gap, ledge, hop, shield) or seen != want:
+        raise SystemExit(f"MISMATCH in the lead-in to corner({gap}, {ledge}, {hop}, {shield}): ends {seen}, wanted {want}")
+    expect(c, [], f"lead-in from the match start to corner({gap}, {ledge}, {hop}, {shield}): frame {last}, gap {seen[1]}")
+    where = "on the ledge itself" if room < 0.05 else f"{room:.1f} units from the ledge"
+    notes = {0: "Match start: both Foxes at their spawns, 120 apart.",
+             1: f"Staging, not play: blue walks {x2() - spawn:.1f} units toward the ledge behind him. Nothing makes him.",
+             walked + 1: f"Staging: blue stops and turns round to face red. He is {where}.",
+             faced + 1: f"Red walks in for {released - faced} frames. Blue stands still and lets him.",
+             released + 1: f"Red lets go of the stick {let_go:.2f} away and slides to a stop, {standing:.2f} away.",
+             last: end}
+    if hop:
+        notes[stood + 1] = f"From {standing:.2f} away red short-hops toward blue. Blue still does not move."
+    if shield:
+        notes[stood + 1] = f"Blue raises his shield. Red is standing {standing:.2f} away, free to act."
+    return {"id": "setup", "title": "From the match start", "caption": caption, "lead": 0, "notes": sorted(notes.items()),
+            "marks": [], "fps": 60, **c.thinned(set(notes)),
+            "facts": {"frames": last, "walked": walked, "faced": faced, "released": released, "stood": stood,
+                      "blue_walks": round(x2() - spawn, 2), "room": round(room, 2), "let_go": round(let_go, 2),
+                      "standing": round(standing, 2)}}
+
+
+SETUPS = {  # scene -> corner() arguments, the caption, the last note, and the (frame, gap) the lead-in ends on
+    "standoff": ((14, 12), "How the search position is reached from the match start, at three times real speed. "
+                 "Blue first walks toward the ledge and turns round: that is staging, so that he has little room "
+                 "behind him. Then red walks in and stops, and blue lets him.",
+                 "Frame 324: the position searched. 12.59 apart, both standing.", (324, 12.59)),
+    "door": ((15.5, 12, 0, 12), "How the search position is reached from the match start, at three times real speed. "
+             "Blue walks toward the ledge and turns round (staging). Red walks in and stops 14.39 away. Then blue "
+             "raises his shield and holds it for 12 frames. Red has done nothing to make him.",
+             "Frame 333: the position searched. Blue has held shield for 12 frames, red stands 14.39 away.", (333, 14.39)),
+    "hop5": ((11.5, 12, 5), "How the search position is reached from the match start, at three times real speed. "
+             "Blue walks toward the ledge and turns round (staging). Red walks in and stops 10.19 away, already "
+             "inside shine range, and blue does nothing. Red then short-hops, and blue still does nothing.",
+             "Frame 333: the position searched. Red is 5 frames into the hop, 9.42 away and 4.0 up.", (333, 9.42)),
+    "coin": ((11.5, 12, 9), "How the search position is reached from the match start, at three times real speed. "
+             "The same staging as the hop five frames in, with blue standing still for four frames more.",
+             "Frame 337: the position searched. Red is 9 frames into the hop, 7.76 away and 9.2 up.", (337, 7.76)),
+    "ledge": ((10, 1), "How the search position is reached from the match start, at three times real speed. Blue "
+              "walks himself to the ledge and turns round: nobody pushed him there. Red then walks in and stops "
+              "8.52 away, inside shine range, and blue lets him.",
+              "Frame 365: the position searched. Blue on the ledge, red standing 8.52 away.", (365, 8.52)),
+}
+
+
+def road(solver: Path) -> dict:
+    """Section 15's raw outputs as the page reads them: every cell of the mid-stage map (the defender's safe first
+    inputs for 8 frames against an attacker who sees each one before answering) and the exact net solves."""
+    rows = [json.loads(line) for line in (solver / "squeeze-8.jsonl").read_text().splitlines()]
+    free = [r for r in rows if r["ask"]["condition"] == "free"]
+    hold = {(r["ask"]["kind"], r["ask"]["gap"]): r["safe"] for r in rows if r["ask"]["condition"] == "hold"}
+    if len(rows) != 90 or len(free) != 45 or {r["ask"]["frames"] for r in rows} != {8} or {r["at"]["room"] for r in rows} != {61.82}:
+        raise SystemExit("MISMATCH in squeeze-8.jsonl: expected the 90 mid-stage jobs of section 15, 8 frames")
+    cells = sorted(({"kind": r["ask"]["kind"], "gap": r["at"]["gap"], "safe": r["safe"],
+                     "held": hold[r["ask"]["kind"], r["ask"]["gap"]] == r["safe"]} for r in free),
+                   key=lambda c: (("stand", "walk", "dash").index(c["kind"]), -c["gap"]))
+    net = []
+    for path in sorted(solver.glob("net-*.txt")):
+        text = path.read_text()
+        m = re.match(r"gap ([\d.]+), .*\((\w+) against (\w+)\), (\d+) frames: value ([+-][\d.]+) .*\[([\d,]+) positions", text)
+        mix = [json.loads(x.replace("'", '"')) for x in re.findall(r"P[12] plays (\{.*\})", text)]
+        net.append({"file": path.name, "gap": float(m[1]), "attacker": m[2].lower(), "defender": m[3].lower(), "frames": int(m[4]),
+                    "value": float(m[5]), "p1": mix[0], "p2": mix[1], "positions": int(m[6].replace(",", ""))})
+    out = {"frames": 8, "jobs": len(rows), "positions": sum(r["positions"] for r in rows), "room": 61.82,
+           "give": max(r["ask"]["give"] for r in rows), "cells": cells, "net": net}
+    print(f"ok  road: {len(cells)} cells, {out['positions']:,} positions, {len(net)} net solves "
+          f"({', '.join(f'{n['attacker']} {n['gap']}: {n['value']:+g}' for n in net)})")
+    return out
+
+
 def standoff(sim: Sim) -> list[dict]:
     wait = Clip(sim, force.corner(sim, 14, 12)).start().step(n=30)
     expect(wait, [], "standoff, both wait 30 frames")
     assert wait.gap() == 12.59, wait.gap()
+    room = round(EDGE - wait.frame(0)[1][0], 1)
 
     close = force.corner(sim, 8, 12)
     clank = Clip(sim, close).step(n=6).start().moves("shine", "shine").step(n=16)
@@ -195,7 +302,7 @@ def standoff(sim: Sim) -> list[dict]:
     expect(early, [(1, 2, 5.0)], "shine one frame earlier")
     g = clank.gap()
     return [
-        wait.data("wait", "Both wait", "Two Foxes 12.59 units apart, blue with his back 12 units from the ledge. "
+        wait.data("wait", "Both wait", f"Two Foxes 12.59 units apart, blue with his back {room} units from the ledge. "
                   "The tick under the stage is how far red's shine reaches a standing Fox: blue is outside it. "
                   "Searched 8 frames deep, red's chance of a clean first hit is 0, and the best play for both is "
                   "this: nothing.", {1: "Both wait. Whatever either starts, the other sees one frame later."}, [REACH]),
@@ -421,7 +528,8 @@ def hop5(sim: Sim, verbose: bool) -> list[dict]:
             show(c, f"hop 5, blue {d}: {line} hits {c.hits()}")
         if hits is not None:
             expect(c, hits, f"hop 5, P2 {d}: P1 plays {[a for a, _ in line]}")
-        clips.append(c.data(d, title, cap, {-8: "Red short-hops at the cornered blue.",
+        clips.append(c.data(d, title, cap, {-8: "Red stands 10.19 from blue, who has his back to the ledge.",
+                                            -4: "Red short-hops toward blue. Blue stands still.",
                                             0: "Red is 5 frames into the hop, 9.42 away and 4.0 up.", **notes}))
     del S
     return clips
@@ -484,7 +592,8 @@ def coin(sim: Sim) -> tuple[list[dict], dict]:
         c.step(n=10 if text[a, d][2] else 0)  # an unhit line stops where the search does
         title, cap, hits, notes = text[a, d]
         expect(c, hits, f"coin flip, P1 {a} / P2 {'step away' if d == 'out' else d}: {line}")
-        notes = {-12: "Red short-hops at the cornered blue.", 0: "Red is 9 frames into the hop, 7.8 away and 9.2 up. "
+        notes = {-12: "Red stands 10.19 from blue, who has his back to the ledge.",
+                 -8: "Red short-hops toward blue. Blue stands still.", 0: "Red is 9 frames into the hop, 7.8 away and 9.2 up. "
                  "Both now choose at once.", **notes}
         v = int(value[("wait", "shine").index(a), ("out", "shine").index(d)])
         clips.append(c.data(f"{a}-{d}", title, cap, notes, value=v, tag="red hits: 5%" if v else "nobody hit"))
@@ -553,7 +662,7 @@ def retreat(sim: Sim, s170: bytes) -> list[dict]:
     c = Clip(sim, s170).at(170).step(WALK, N, 12).step(WALK, (0, 80, 0, 0), 2).step(WALK, N, 30)
     expect(c, [], "retreat: P2 dashes back at 13.71 while P1 keeps walking")
     x0, x1 = c.frame(182)[1][0], c.rows[-1][1][0]
-    seen = [c.gap(182), round(x1 - x0, 2), round(85.57 - x1, 2)]
+    seen = [c.gap(182), round(x1 - x0, 2), round(EDGE - x1, 2)]
     if seen != [13.71, 21.62, 3.95]:
         raise SystemExit(f"MISMATCH in the retreat: gap before it, distance covered and room left are {seen}")
     stop = next(f for f in range(183, 215) if c.frame(f)[1][2] == 14)
@@ -599,12 +708,14 @@ def ledge(sim: Sim, verbose: bool) -> tuple[list[dict], dict]:
     return clips, g
 
 
-SCENES = ("standoff", "reach", "door", "hop5", "coin", "walk", "turn", "retreat", "ledge")
+SCENES = ("standoff", "reach", "walk", "turn", "door", "hop5", "coin", "retreat", "ledge")
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--only", nargs="+", choices=SCENES, help="redo these scenes and keep the others as they are in the file")
+    ap.add_argument("--only", nargs="+", choices=SCENES + ("setup",),
+                    help="redo these scenes and keep the others as they are in the file; `setup` redoes only the lead-ins")
+    ap.add_argument("--solver", type=Path, help="folder with squeeze-8.jsonl and net-*.txt: write road.json from them")
     ap.add_argument("--show", action="store_true", help="print every new clip frame by frame")
     ap.add_argument("--out", type=Path, default=OUT, help="the file to write (default: the one the page reads)")
     args = ap.parse_args()
@@ -637,12 +748,21 @@ def main() -> None:
         made["ledge"] = {"clips": clips, "grid": g}
     kept = {s["id"]: s for s in old["scenes"]}
     scenes = [{"id": k, **made[k]} if k in made else kept[k] for k in SCENES if k in made or k in kept]
-    actions = {str(a): label(a) for s in scenes for c in s["clips"] for row in c["rows"] for a in (row[0][2], row[1][2])}
-    data = {"ledge": 85.57, "names": ["Red · attacker", "Blue · defender"], "actions": actions, "scenes": scenes}
+    for scene in scenes:  # cheap replays, so always redone
+        if scene["id"] in SETUPS:
+            args_, caption, end, want = SETUPS[scene["id"]]
+            scene["setup"] = lead_in(sim, *args_, caption=caption, end=end, want=want)
+    actions = {str(a): label(a) for s in scenes for c in s["clips"] + ([s["setup"]] if "setup" in s else [])
+               for row in c["rows"] for a in (row[0][2], row[1][2])}
+    data = {"ledge": EDGE, "names": ["Red · attacker", "Blue · defender"], "actions": actions, "scenes": scenes}
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(data, separators=(",", ":")) + "\n")
     print(f"wrote {sum(len(s['clips']) for s in scenes)} clips in {len(scenes)} scenes, {args.out.stat().st_size // 1024} KB, "
           f"into {args.out}")
+    if args.solver:
+        path = args.out.parent / "road.json"
+        path.write_text(json.dumps(road(args.solver), separators=(",", ":")) + "\n")
+        print(f"wrote {path}")
 
 
 if __name__ == "__main__":
