@@ -393,7 +393,7 @@ async def api_doc(request: Request) -> Response:
 
 
 SPA = ["/", "/bench", "/bench/{id:path}", "/live", "/matches", "/matches/{id}", "/launch", "/jobs", "/job/{id}", "/games", "/game/{id}", "/arena", "/coach", "/botwriter",
-       "/botwriter/{id}", "/ladder/{name}", "/play", "/training", "/docs", "/docs/{name}"]
+       "/botwriter/{id}", "/ladder/{name}", "/play", "/training", "/brute", "/docs", "/docs/{name}"]
 
 routes = [
     *[Route(p, index) for p in SPA],

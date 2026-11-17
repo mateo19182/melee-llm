@@ -1,34 +1,40 @@
-"""Record the simulator traces behind docs/animations/optimal-play.html and embed them in that file.
+"""Record the simulator traces behind the Brute page (melee_llm/web/static/brute/clips.json).
 
-Every clip is a frame-by-frame recording of two Foxes in melee-sim-light: positions, action, facing, percent,
-shield health and the inputs pressed. The attacker's lines in the shield and hop scenes are not scripted: they are
-walked out of the solver (`nash.Nash.forced`), then replayed and recorded. Each clip is checked against what
-docs/optimal-play.md (section 13) says before it is written; a mismatch stops the script.
+Every clip is a frame-by-frame recording of two Foxes in melee-brute: positions, action, facing, percent, shield
+health and the inputs pressed. The lines are not scripted: they are walked out of the solver (`nash.Nash.forced`,
+`fortress.Fortress`), then replayed and recorded. Each clip is checked against what docs/optimal-play.md (sections
+13 and 14) says before it is written; a mismatch stops the script. P1 (red) attacks, P2 (blue) defends.
 
     MSL_DATA_DIR=vendor/melee-sim-light/data PYTHONPATH=. uv run python scripts/optimal_play_animations.py
+    ... scripts/optimal_play_animations.py --only door ledge    # redo some scenes, keep the rest of the file
+
+All scenes take about 12 minutes on one core and stay under 2 GB.
 """
 from __future__ import annotations
 
+import argparse
 import json
-import re
 from pathlib import Path
 
 import melee
 import numpy as np
 
-from melee_llm.solver import force, nash
-from melee_llm.solver.game import A, B, R, X, Z, Sim
+from melee_llm.solver import force, fortress, nash
+from melee_llm.solver.game import A, B, R, Sim, X, Z
 from melee_llm.solver.matrix import solve as solve_matrix
 
-HTML = Path(__file__).resolve().parent.parent / "docs" / "animations" / "optimal-play.html"
+OUT = Path(__file__).resolve().parent.parent / "melee_llm" / "web" / "static" / "brute" / "clips.json"
 N = (0, 0, 0, 0)
 USMASH = (A, 0, 80, 0)
+WALK, FLICK = (0, 30, 0, 0), (0, -80, 0, 0)
 BUTTONS = ((A, "A"), (B, "B"), (X, "X"), (Z, "Z"), (R, "R"))
-LABELS = {14: "standing", 18: "turning", 20: "dash", 24: "jumpsquat", 25: "short hop", 42: "landing", 44: "jab",
-          63: "up smash", 178: "shield", 179: "shield", 182: "shield", 180: "dropping shield", 212: "grab",
-          233: "roll in", 234: "roll away", 235: "spotdodge", 360: "shine", 361: "shine (held)", 365: "shine",
-          366: "shine (held)"}
+LABELS = {14: "standing", 15: "walking", 16: "walking", 17: "walking", 18: "turning", 20: "dash", 24: "jumpsquat",
+          25: "short hop", 42: "landing", 44: "jab", 63: "up smash", 178: "shield", 179: "shield", 181: "shield, hit",
+          182: "shield", 180: "dropping shield", 212: "grab", 233: "roll in", 234: "roll away", 235: "spotdodge",
+          245: "teetering on the ledge", 360: "shine", 361: "shine (held)", 365: "shine", 366: "shine (held)"}
 EXITS = ("release", "jump_oos", "roll_in", "roll_out", "shield_grab", "spotdodge")
+SAY = {"wait": "waits", "out": "steps away", "shine": "shines", "shield": "shields"}
+REACH = [10.7, "shine 10.7"]
 
 
 def label(action: int) -> str:
@@ -95,9 +101,14 @@ class Clip:
         a, b = self.frame(f)
         return round(b[0] - a[0], 2)
 
-    def data(self, key: str, title: str, caption: str, notes: dict[int, str], marks=()) -> dict:
+    def at(self, frame: int) -> "Clip":
+        """Row 0 is match frame `frame`: frames are then counted from the match start."""
+        self.lead = -frame
+        return self
+
+    def data(self, key: str, title: str, caption: str, notes: dict[int, str], marks=(), **more) -> dict:
         return {"id": key, "title": title, "caption": caption, "lead": self.lead, "rows": self.rows,
-                "notes": sorted(notes.items()), "marks": list(marks)}
+                "notes": sorted(notes.items()), "marks": list(marks), **more}
 
 
 def expect(clip: Clip, hits: list[tuple[int, int, float]], what: str) -> None:
@@ -110,7 +121,8 @@ def expect(clip: Clip, hits: list[tuple[int, int, float]], what: str) -> None:
 def walk(S: nash.Nash, first: tuple[str, str], frames: int, attacking: bool) -> list[tuple[str, str]]:
     """Play `first`, then follow the pure line the solver proves: P1's forced hit (`attacking`), preferring the
     shine as soon as it is forced, or P2's safe defence against a P1 who waits. The other side takes the answer
-    that keeps the game going, waiting if he can. Returns the pairs of moves, ending at the hit or the horizon."""
+    that needs no new input: he waits, or keeps his shield up. Returns the pairs of moves, ending at the hit or
+    the horizon."""
     S.rb.checkpoint(0)
     S.joint(*first)
     line, depth = [first], 1
@@ -134,14 +146,8 @@ def walk(S: nash.Nash, first: tuple[str, str], frames: int, attacking: bool) -> 
                     break
             if ok:
                 picks.append(x)
-        pick = next((m for m in (("shine", "wait") if attacking else ()) if m in picks), picks[0])
-        alive = []
-        for y in theirs:
-            S.joint(*((pick, y) if attacking else (y, pick)))
-            if S.leaf() is None:
-                alive.append(y)
-            S.back(depth)
-        ans = "wait" if "wait" in alive or not alive else alive[0]
+        pick = next((m for m in (("shine", "wait") if attacking else ("wait", "hold_b", "out")) if m in picks), picks[0])
+        ans = "wait" if "wait" in theirs else "shield" if "shield" in theirs else theirs[0]
         pair = (pick, ans) if attacking else (ans, pick)
         S.joint(*pair)
         line.append(pair)
@@ -149,6 +155,30 @@ def walk(S: nash.Nash, first: tuple[str, str], frames: int, attacking: bool) -> 
         frames -= 1
     S.back(0)
     return line
+
+
+def show(clip: Clip, what: str) -> None:
+    """The frames that matter, one per line, for writing and checking the captions."""
+    print(f"    {what}")
+    for i in range(max(0, clip.lead if clip.lead > 0 else len(clip.rows) - 24), len(clip.rows)):
+        a, b = clip.rows[i]
+        print(f"      f{i - clip.lead:>4} gap {b[0] - a[0]:6.2f}  P1 {label(a[2]):<16}{a[3]:>3} y{a[1]:5.1f} {a[5]:>4}% [{a[9]:<2} {a[10]:>3} {a[11]:>3}]"
+              f"   P2 {label(b[2]):<16}{b[3]:>3} x{b[0]:6.2f} y{b[1]:5.1f} {b[5]:>4}% [{b[9]:<2} {b[10]:>3} {b[11]:>3}]")
+
+
+def grid(att, row, dfn, col, value: float, frames: int, m: np.ndarray, want: dict) -> tuple[dict, list, list]:
+    """The mixed strategy of a solved position as the page shows it, checked against `want`: the value and both
+    mixes in percent. Returns the grid and the moves each side mixes over."""
+    mix1 = {a: round(float(p) * 100) for a, p in zip(att, row) if p > 1e-6}
+    mix2 = {d: round(float(p) * 100) for d, p in zip(dfn, col) if p > 1e-6}
+    got = {"value": round(value, 4), "p1": mix1, "p2": mix2}
+    if got != want:
+        raise SystemExit(f"MISMATCH in a mixed strategy: expected {want}, the solver gave {got}")
+    print(f"ok  mix to {frames} frames: {got}")
+    cells = [[round(float(m[att.index(a), dfn.index(d)]), 3) for d in mix2] for a in mix1]
+    return ({"rows": [{"label": f"red {SAY[a]}", "p": p} for a, p in mix1.items()],
+             "cols": [{"label": f"blue {SAY[d]}", "p": p} for d, p in mix2.items()],
+             "value": got["value"], "frames": frames, "cells": cells}, list(mix1), list(mix2))
 
 
 def standoff(sim: Sim) -> list[dict]:
@@ -165,17 +195,19 @@ def standoff(sim: Sim) -> list[dict]:
     expect(early, [(1, 2, 5.0)], "shine one frame earlier")
     g = clank.gap()
     return [
-        wait.data("wait", "Both wait", "Two Foxes 12.59 units apart, orange with his back 12 units from the ledge. "
-                  "Solved 8 frames deep, blue's chance of landing a clean first hit is 0, and the best play for "
-                  "both is this: nothing.", {1: "Both wait. Whatever either starts, the other sees one frame later."}),
+        wait.data("wait", "Both wait", "Two Foxes 12.59 units apart, blue with his back 12 units from the ledge. "
+                  "The tick under the stage is how far red's shine reaches a standing Fox: blue is outside it. "
+                  "Searched 8 frames deep, red's chance of a clean first hit is 0, and the best play for both is "
+                  "this: nothing.", {1: "Both wait. Whatever either starts, the other sees one frame later."}, [REACH]),
         clank.data("clank", "Same-frame shines", f"Up close ({g} units) both press shine on the same frame. The two "
                    "hitboxes clank: both freeze for 4 frames and nobody takes damage.",
                    {-6: "Standing in each other's shine range.", 1: "Frame 1: both shine. The hitboxes meet.",
-                    2: "Clank: 4 frames of freeze, 0% to both.", 5: "Both are left holding the reflector. Nothing happened."}),
-        early.data("early", "One frame earlier", "Same spot, but blue presses one frame before orange. The shine "
-                   "hits on the frame it is pressed, so orange's shine never comes out: 5%.",
-                   {-6: "Standing in each other's shine range.", 1: "Frame 1: blue shines. It hits at once: 5%.",
-                    2: "Frame 2: orange presses shine too, but he is already hit."}),
+                    2: "Clank: 4 frames of freeze, 0% to both.", 5: "Both are left holding the reflector. Nothing happened."},
+                   [REACH]),
+        early.data("early", "One frame earlier", "Same spot, but red presses one frame before blue. The shine "
+                   "hits on the frame it is pressed, so blue's shine never comes out: 5%.",
+                   {-6: "Standing in each other's shine range.", 1: "Frame 1: red shines. It hits at once: 5%.",
+                    2: "Frame 2: blue presses shine too, but he is already hit."}, [REACH]),
     ]
 
 
@@ -195,42 +227,129 @@ def reach(sim: Sim) -> list[dict]:
     roll.moves("wait", "roll_out").moves("shine", "wait").step(n=14)
     expect(roll, [(2, 2, 5.0)], "shine at a Fox starting a roll away from 12.59")
     return [
-        miss.data("miss", "Standing, 12.6 away", "Blue shines at a standing Fox from 12.59 units. It comes out on "
+        miss.data("miss", "Standing, 12.6 away", "Red shines at a standing Fox from 12.59 units. It comes out on "
                   "frame 1 and touches nothing.", {-6: "12.59 apart: outside shine range.", 1: "Frame 1: shine. No hit.",
-                                                    2: "Blue is now stuck in the shine for a few frames."}, marks),
+                                                    2: "Red is now stuck in the shine for a few frames."}, marks),
         hit.data("hit", f"Standing, {hit.gap():.1f} away", f"One step closer, at {hit.gap()} units, the same shine hits "
                  f"for 5%. From {edge.gap()} it still misses: the reach against a standing Fox is about 10.7.",
                  {-6: f"{hit.gap()} apart: inside shine range.", 1: "Frame 1: shine. 5%."}, marks),
-        squat.data("squat", "Jumpsquat, 12.6 away", "Back at 12.59. Orange presses jump; for 3 frames he crouches on "
-                   "the ground before leaving it. In that crouch the shine reaches him.",
-                   {-6: "12.59 apart again.", 1: "Frame 1: orange starts a jump (jumpsquat).",
-                    2: "Frame 2: blue shines. It reaches: 5%."}, marks),
-        roll.data("roll", "Roll start, 12.6 away", "Orange rolls away out of shield from 12.59. In the first frames "
+        squat.data("squat", "Jumpsquat, 12.6 away", "Back at 12.59. Blue presses jump; for 3 frames he crouches on "
+                   "the ground before leaving it (the jumpsquat). In that crouch the shine reaches him.",
+                   {-6: "12.59 apart again.", 1: "Frame 1: blue starts a jump (jumpsquat).",
+                    2: "Frame 2: red shines. It reaches: 5%."}, marks),
+        roll.data("roll", "Roll start, 12.6 away", "Blue rolls away out of shield from 12.59. In the first frames "
                   "of the roll the shine reaches him too, before he has moved or become intangible.",
-                  {-6: "Orange in shield, 12.59 away.", 1: "Frame 1: orange starts rolling away.",
-                   2: "Frame 2: blue shines. It reaches: 5%."}, marks),
+                  {-6: "Blue in shield, 12.59 away.", 1: "Frame 1: blue starts rolling away.",
+                   2: "Frame 2: red shines. It reaches: 5%."}, marks),
     ]
 
 
-def door(sim: Sim) -> list[dict]:
-    lead = 8
-    pre = force.corner(sim, 14, 12, 0, 12 - lead)
-    root = force.corner(sim, 14, 12, 0, 12)
-    S = nash.Nash(root, 10)
-    text = {
-        "release": ("Let go", "Orange lets go of the shield. Dropping it takes several frames in which he can do "
-                    "nothing, and the shine reaches him there. Blue sees it on frame 2 and shines: 5%."),
-        "jump_oos": ("Jump", "Orange jumps out of shield. The jump starts with 3 frames of crouch on the ground, "
-                     "and blue's shine reaches that crouch from 12.59: 5% before orange leaves the floor."),
-        "roll_in": ("Roll in", "Orange rolls toward blue. Blue turns his back first, which is how the solver makes "
-                    "the shine reach here, then shines the start of the roll: 5%."),
-        "roll_out": ("Roll away", "Orange rolls toward the ledge. The roll takes time to get going; blue shines "
-                     "its first frames from where he stands: 5%."),
-        "shield_grab": ("Shield grab", "Orange grabs out of shield. The grab cannot reach 12.59 units. Blue waits "
-                        "while it comes out and shines on frame 7, the frame the solver finds: 5%."),
-    }
-    seen = {"release": "he dropped the shield", "jump_oos": "the jumpsquat", "roll_in": "the roll",
-            "roll_out": "the roll", "shield_grab": "the grab"}
+# Per clip: title, caption, the hits the simulator must give (frame, player, percent), notes by frame[, grid tag].
+DOOR_TEXT = {
+    "release": ("Let go", "Blue lets go of the shield. Dropping it takes several frames in which he can do nothing. "
+                "Red sees it on frame 2, turns around (that is how the search makes the shine reach from here) and "
+                "shines on frame 3: 5%.", [(3, 2, 5.0)],
+                {1: "Frame 1: blue lets go of the shield.", 2: "Frame 2: red has seen it, and turns around.",
+                 3: "Frame 3: red shines. 5%."}),
+    "jump_oos": ("Jump", "Blue jumps out of shield. A jump starts with 3 frames of crouch on the ground (the "
+                 "jumpsquat). Red sees it and shines on frame 2, and the shine reaches that crouch even from 14.39: "
+                 "5% before blue leaves the floor.", [(2, 2, 5.0)],
+                 {1: "Frame 1: blue jumps out of shield (jumpsquat).", 2: "Frame 2: red has seen it, and shines. 5%."}),
+    "roll_in": ("Roll in", "Blue rolls toward red. The shine would miss this one, so red jabs instead: the jab "
+                "comes out a frame later and catches the start of the roll. 4%.", [(3, 2, 4.0)],
+                {1: "Frame 1: blue starts rolling in.", 2: "Frame 2: red has seen it, and jabs.",
+                 3: "Frame 3: the jab lands. 4%."}),
+    "roll_out": ("Roll away", "Blue rolls toward the ledge. The roll takes time to get going. Red turns around "
+                 "and shines its first frames from where he stands: 5%.", [(3, 2, 5.0)],
+                 {1: "Frame 1: blue starts rolling away.", 2: "Frame 2: red has seen it, and turns around.",
+                  3: "Frame 3: red shines. 5%."}),
+    "shield_grab": ("Shield grab", "Blue grabs out of shield. The grab cannot reach 14.39 units. Red waits while "
+                    "it comes out and shines on frame 7, the frame the search finds: 5%.", [(7, 2, 5.0)],
+                    {1: "Frame 1: blue grabs out of shield.", 2: "Red waits: the grab cannot reach him.",
+                     7: "Frame 7: red shines the outstretched arm. 5%."}),
+}
+HOP5_TEXT = {
+    "wait": ("Blue waits", "Red shines on the first frame. Blue did nothing, and the shine is already there: 5%.",
+             [(1, 2, 5.0)], {1: "Frame 1: red shines. 5%."}),
+    "out": ("Blue steps away", "Blue turns to run. The shine is out on the same frame, before he has moved: 5%.",
+            [(1, 2, 5.0)], {1: "Frame 1: red shines as blue turns to run. 5%."}),
+    "jab": ("Blue jabs", "Blue jabs. A jab needs a frame to come out and the shine does not: 5%.",
+            [(1, 2, 5.0)], {1: "Frame 1: red shines before the jab is out. 5%."}),
+    "hop": ("Blue jumps", "Blue jumps. He is still crouching on the ground (the jumpsquat) when the shine arrives: 5%.",
+            [(1, 2, 5.0)], {1: "Frame 1: red shines blue's jumpsquat. 5%."}),
+    "shine": ("Blue shines too", "The one answer that survives the first frame: blue shines as well, and neither "
+              "can be hit. But red is in the air, so he can jump out of his shine with his second jump and shine "
+              "again from higher up. Blue, on the ground, is still holding his: 5% on frame 10.", [(10, 2, 5.0)],
+              {1: "Frame 1: both shine. Neither can be hit on that frame.", 2: "Both hold the reflector.",
+               9: "Frame 9: red jumps out of his shine.", 10: "Frame 10: red shines again. 5%."}),
+}
+TURN_TEXT = {
+    ("wait", "wait"): ("Both wait", "Nothing happens on this frame, but blue is not out of it. Red's turn slides "
+                       "him closer, and one frame later blue faces another guess: red's chance over the remaining "
+                       "7 frames is 0.5. The clip stops there.", [],
+                       {185: "Frame 185: 12.39 apart. Blue has to guess again.", 187: "The clip ends here: the "
+                        "position is still a guess, not a safe one."}, "guess again (0.5)"),
+    ("wait", "out"): ("Red waits, blue steps away", "Blue turns to leave and red does nothing. Blue then plays "
+                      "the first input the search proves safe for him here, a jab. Nobody is hit in the 8 frames "
+                      "searched.", [],
+                      {185: "Frame 185: blue jabs, the input the search proves safe.", 191: "Frame 191: the search "
+                       "ends here. Nobody hit."}, "nobody hit"),
+    ("wait", "shine"): ("Red waits, blue shines", "Blue shines. Red's turn has slid him to 12.75 and a turning Fox "
+                        "is hit from further away than a standing one: blue lands the first hit, 5% to red. "
+                        "Blue's own guesses hit too.", [(184, 1, 5.0)],
+                        {184: "Frame 184: blue shines. It reaches red in his turn: 5% to red."}, "blue hits: 5%"),
+    ("out", "wait"): ("Red steps away, blue waits", "Red dashes out again and blue stays put. Nobody is hit. Red "
+                      "can walk back in and ask the same question again.", [],
+                      {184: "Frame 184: red dashes away. Blue waits.", 191: "Frame 191: the search ends here. Nobody hit."},
+                      "nobody hit"),
+    ("out", "out"): ("Both step away", "Both leave. Nobody is hit.", [],
+                     {184: "Frame 184: red dashes away, blue turns to leave.", 191: "Frame 191: the search ends "
+                      "here. Nobody hit."}, "nobody hit"),
+    ("out", "shine"): ("Red steps away, blue shines", "Blue shines, but red has dashed out of reach and the shine "
+                       "touches nothing. Blue is stuck holding it. Red turns back and jabs from outside shine "
+                       "range: 4%.", [(191, 2, 4.0)],
+                       {184: "Frame 184: blue shines. Red has dashed away: no hit.", 187: "Frame 187: red turns back. "
+                        "Blue is still in his shine.", 189: "Frame 189: red jabs.", 191: "Frame 191: the jab lands. 4%."},
+                       "red hits: 4%"),
+    ("shine", "wait"): ("Red shines, blue waits", "Red shines from 12.75. Against a standing Fox that is out of "
+                        "reach, and blue stood still: no hit. Blue stays safe for the 8 frames searched.", [],
+                        {184: "Frame 184: red shines. Blue is standing, out of reach: no hit.",
+                         191: "Frame 191: the search ends here. Nobody hit."}, "nobody hit"),
+    ("shine", "out"): ("Red shines, blue steps away", "Blue turns to leave. A turning Fox is hit from further away "
+                       "than a standing one, and red's shine is out on the same frame: 5%.", [(184, 2, 5.0)],
+                       {184: "Frame 184: red shines as blue turns to leave. 5%."}, "red hits: 5%"),
+    ("shine", "shine"): ("Both shine", "Both shine on the same frame. The hitboxes clank: both freeze for 4 frames "
+                         "and nobody takes damage.", [],
+                         {184: "Frame 184: both shine. Clank: 0% to both.", 191: "Frame 191: the search ends "
+                          "here. Nobody hit."}, "clank, nobody hit"),
+}
+LEDGE_TEXT = {
+    ("shine", "wait"): ("Red shines, blue waits", "Blue is inside red's shine range and did nothing: 5%.",
+                        [(1, 2, 5.0)], {1: "Frame 1: red shines. 5%."}, "red hits: 5%"),
+    ("shine", "shine"): ("Both shine", "Both shine on the same frame. The hitboxes clank: both freeze for 4 frames "
+                         "and nobody takes damage.", [],
+                         {1: "Frame 1: both shine. Clank: 0% to both.", 8: "Frame 8: the search ends here. Nobody hit."},
+                         "clank, nobody hit"),
+    ("shield", "wait"): ("Red shields, blue waits", "Red put his shield up for nothing. Nobody is hit.", [],
+                         {1: "Frame 1: red shields. Blue waits.", 8: "Frame 8: the search ends here. Nobody hit."},
+                         "nobody hit"),
+    ("shield", "shine"): ("Red shields, blue shines", "Blue's shine lands on red's shield. Hitting a shield pushes "
+                          "the attacker back, and blue has no stage behind him: on frame 5 he slides off the ledge, "
+                          "still stuck in his shine. Our rules count leaving the stage as a loss; what happens "
+                          "after that was not played out.", [],
+                          {1: "Frame 1: blue shines into red's shield. Both freeze for 4 frames.",
+                           5: "Frame 5: the pushback slides blue off the stage. Counted as red's point.",
+                           10: "Blue starts to fall, still holding his shine."}, "blue slides off"),
+}
+
+
+def door(sim: Sim, verbose: bool) -> list[dict]:
+    """The widest gap at which every exit from shield is hit within 10 frames (section 13, Verification A)."""
+    lead, marks = 8, [REACH, [14.4, "door 14.4"]]
+    pre = force.corner(sim, 15.5, 12, 0, 12 - lead)
+    root = force.corner(sim, 15.5, 12, 0, 12)
+    assert round(sim.gap(), 2) == 14.39, sim.gap()
+    S = nash.Nash(root, 10, dodge=True)
     clips = []
     for ex in EXITS[:5]:
         line = walk(S, ("wait", ex), 10, True)
@@ -238,48 +357,78 @@ def door(sim: Sim) -> list[dict]:
         for a, d in line:
             c.moves(a, d)
         c.step(n=14)
-        f = len(line)
-        expect(c, [(f, 2, 5.0)], f"door, {ex}: P1 plays {[a for a, _ in line]}")
-        notes = {-lead: "Orange holds shield. Blue waits.", 1: f"Frame 1: orange leaves the shield ({text[ex][0].lower()}).",
-                 2: f"Frame 2: blue has now seen {seen[ex]}."}
-        if line[1][0] == "out":
-            notes[2] = "Frame 2: blue has seen the roll, and turns around."
-        if f > 3:
-            notes[3] = "Blue waits: the grab cannot reach him."
-        notes[f] = f"Frame {f}: blue shines. 5%." if f > 2 else "Frame 2: blue has seen it, and shines. 5%."
-        clips.append(c.data(ex, *text[ex], notes, [[12.6, "12.6"]]))
+        title, cap, hits, notes = DOOR_TEXT.get(ex, (ex, "", None, {}))
+        if verbose or hits is None:
+            show(c, f"door, {ex}: {line} hits {c.hits()}")
+        if hits is not None:
+            expect(c, hits, f"door, {ex}: P1 plays {[a for a, _ in line]}")
+        clips.append(c.data(ex, title, cap, {-lead: "Blue holds shield, 14.39 away. Red waits.", **notes}, marks))
     del S
 
     hit_on = {}
-    for press in range(6, 17):
+    for press in range(4, 20):
         c = Clip(sim, pre).step(N, nash.MOVES["shield"], lead).start().moves("wait", "spotdodge")
-        c.step(n=press - 2).step(USMASH, N).step(n=26 - press)
+        c.step(n=press - 2).step(USMASH, N).step(n=30 - press)
         h = c.hits()
         if h:
             assert h[0][1:] == (2, 18.0) and len(h) == 1, h
             hit_on[press] = h[0][0]
-            if press == 9:
-                dodge = c
-    want = {9: 16, 10: 17, 11: 17, 12: 18, 13: 19, 14: 20}
-    if {k: v for k, v in hit_on.items() if k in want} != want or min(hit_on) != 9:
-        raise SystemExit(f"MISMATCH in spotdodge: up smash pressed on frame -> hit on frame {hit_on}; docs say {want}")
-    print(f"ok  door, spotdodge: up smash pressed on frame -> 18% on frame {hit_on}")
+    print(f"ok  door, spotdodge at 14.39: up smash pressed on frame -> 18% on frame {hit_on}")
+    if not hit_on:
+        raise SystemExit("MISMATCH in spotdodge: no up smash timing hits it from 14.39")
+    press = min(hit_on)
+    dodge = Clip(sim, pre).step(N, nash.MOVES["shield"], lead).start().moves("wait", "spotdodge")
+    dodge.step(n=press - 2).step(USMASH, N).step(n=30 - press)
     alone = Clip(sim, root).start().moves("wait", "spotdodge").step(n=29)
     length = sum(alone.frame(f)[1][2] == 235 for f in range(1, 31))
-    assert length == 22 and dodge.frame(15)[1][8] == 1, f"the spotdodge lasts {length} frames"
-    print(f"ok  door, spotdodge: it lasts {length} frames, intangible through frame 15")
+    last_safe = max(f for f in range(1, 31) if dodge.frame(f)[1][8] == 1)
+    assert length == 22, f"the spotdodge lasts {length} frames"
+    print(f"ok  door, spotdodge: it lasts {length} frames, intangible through frame {last_safe}")
+    f = hit_on[press]
     clips.append(dodge.data(
-        "spotdodge", "Spotdodge", "Orange sidesteps on the spot and is intangible for most of it. Blue does not "
-        "chase: he starts an up smash on frame 9 so that it lands on frame 16, right as the intangibility ends. "
-        "18%, the most expensive exit.",
-        {-lead: "Orange holds shield. Blue waits.", 1: "Frame 1: orange spotdodges.",
-         2: "Orange is intangible (dashed). Blue has seen it and counts.", 9: "Frame 9: blue starts an up smash.",
-         16: "Frame 16: the intangibility ends and the up smash is there. 18%."}, [[12.6, "12.6"]]))
+        "spotdodge", "Spotdodge", "Blue sidesteps on the spot (a spotdodge) and cannot be hit for most of it. Red "
+        f"does not chase: he starts an up smash on frame {press} so that it lands on frame {f}, as the dodge wears "
+        "off. 18%, the most expensive exit.",
+        {-lead: "Blue holds shield, 14.39 away. Red waits.", 1: "Frame 1: blue spotdodges.",
+         2: "Blue cannot be hit (dashed outline). Red has seen it and counts.", press: f"Frame {press}: red starts an up smash.",
+         f: f"Frame {f}: the dodge has worn off and the up smash is there. 18%."}, marks))
     return clips
 
 
-def coin(sim: Sim) -> tuple[list[dict], bytes]:
-    """The four cells of the hop position, and its root for the last scene."""
+def hop5(sim: Sim, verbose: bool) -> list[dict]:
+    """Five frames into the hop the attacker's shine is a forced hit on a defender who does not shield."""
+    stand = force.corner(sim, 11.5, 12)
+    root = force.corner(sim, 11.5, 12, 5)
+
+    def start() -> Clip:
+        return Clip(sim, stand).step(n=3).step((X, 40, 0, 0), N).step((0, 40, 0, 0), N, 4).start()
+
+    c = start()
+    assert c.frame(0)[0][:3] == [66.42, 3.97, 25] and c.gap() == 9.42, c.frame(0)
+    S = nash.Nash(root, 24, no_shield=True)
+    if not S.forced(0, 10, True):
+        raise SystemExit("MISMATCH at hop frame 5: the solver finds no forced hit within 10 frames")
+    print(f"ok  hop frame 5: forced hit within 10 frames ({S.expansions:,} simulator steps)")
+    clips = []
+    for d in ("wait", "out", "jab", "hop", "shine"):
+        line = walk(S, ("shine", d), 10, True)
+        c = start()
+        for pa, pd in line:
+            c.moves(pa, pd)
+        c.step(n=12)
+        title, cap, hits, notes = HOP5_TEXT.get(d, (d, "", None, {}))
+        if verbose or hits is None:
+            show(c, f"hop 5, blue {d}: {line} hits {c.hits()}")
+        if hits is not None:
+            expect(c, hits, f"hop 5, P2 {d}: P1 plays {[a for a, _ in line]}")
+        clips.append(c.data(d, title, cap, {-8: "Red short-hops at the cornered blue.",
+                                            0: "Red is 5 frames into the hop, 9.42 away and 4.0 up.", **notes}))
+    del S
+    return clips
+
+
+def coin(sim: Sim) -> tuple[list[dict], dict]:
+    """The four cells of the hop position, and its mixed strategy."""
     stand = force.corner(sim, 11.5, 12)
     hop_in = (X, 40, 0, 0), (0, 40, 0, 0)
 
@@ -303,107 +452,197 @@ def coin(sim: Sim) -> tuple[list[dict], bytes]:
             cells[a, d] = walk(S, (a, d), 8, v == 1.0)
     del S
     sol = solve_matrix(value)
-    if value.tolist() != [[0, 1], [1, 0]] or abs(sol.value - 0.5) > 1e-9:
-        raise SystemExit(f"MISMATCH in the coin flip: cell values {value.tolist()}, game value {sol.value}")
-    print(f"ok  coin flip: cells (rows wait/shine, columns step back/shine) {value.tolist()}, value {sol.value:.2f}, "
-          f"P1 mixes {np.round(sol.row, 2).tolist()}, P2 mixes {np.round(sol.col, 2).tolist()}")
+    if value.tolist() != [[0, 1], [1, 0]]:
+        raise SystemExit(f"MISMATCH in the coin flip: cell values {value.tolist()}")
+    g, _, _ = grid(("wait", "shine"), sol.row, ("out", "shine"), sol.col, float(sol.value), 8, value,
+                   {"value": 0.5, "p1": {"wait": 50, "shine": 50}, "p2": {"out": 50, "shine": 50}})
 
     text = {
-        ("wait", "out"): ("Blue waits, orange steps back", "Blue keeps falling and orange turns and dashes for "
-                          "the ledge. Nobody is hit inside the 8 frames solved: orange guessed right.",
-                          [], {1: "Frame 1: blue waits. Orange turns to run.", 3: "Orange dashes away, out of reach.",
-                               8: "Frame 8: the solved horizon ends. Nobody hit."}),
-        ("wait", "shine"): ("Blue waits, orange shines", "Orange shines, but blue is too high: it misses upward. "
-                            "Orange is now stuck in his shine, and blue shines down onto him a frame later: 5%.",
-                            [(2, 2, 5.0)], {1: "Frame 1: orange shines. It cannot reach blue. Blue just waited.",
-                                            2: "Frame 2: blue shines from above. 5%."}),
-        ("shine", "out"): ("Blue shines, orange steps back", "Orange starts to turn and run, but blue's shine from "
+        ("wait", "out"): ("Red waits, blue steps away", "Red keeps falling and blue turns and dashes for "
+                          "the ledge. Nobody is hit inside the 8 frames searched: blue guessed right. The search "
+                          "ends with blue at the very edge of the stage; what comes after is not part of the result.",
+                          [], {1: "Frame 1: red waits. Blue turns to run.", 3: "Blue dashes away, out of reach.",
+                               8: "Frame 8: the search ends here, blue on the edge of the stage. Nobody hit."}),
+        ("wait", "shine"): ("Red waits, blue shines", "Blue shines, but red is too high: it misses upward. "
+                            "Blue is now stuck in his shine, and red shines down onto him a frame later: 5%.",
+                            [(2, 2, 5.0)], {1: "Frame 1: blue shines. It cannot reach red. Red just waited.",
+                                            2: "Frame 2: red shines from above. 5%."}),
+        ("shine", "out"): ("Red shines, blue steps away", "Blue starts to turn and run, but red's shine from "
                            "above is out on the same frame and catches him before he has moved: 5%.",
-                           [(1, 2, 5.0)], {1: "Frame 1: blue shines as orange turns to run. 5%."}),
-        ("shine", "shine"): ("Both shine", "Both shine on the same frame. Each is intangible on the first frame of "
-                             "his shine, so neither is hit, and orange is safe for the 8 frames solved.",
-                             [], {1: "Frame 1: both shine. Both are intangible: no hit.",
-                                  2: "Both hold the reflector. Blue drifts down.",
-                                  8: "Frame 8: the solved horizon ends. Nobody hit."}),
+                           [(1, 2, 5.0)], {1: "Frame 1: red shines as blue turns to run. 5%."}),
+        ("shine", "shine"): ("Both shine", "Both shine on the same frame. Each is intangible (cannot be hit) on the "
+                             "first frame of his shine, so neither is hit, and blue is safe for the 8 frames searched.",
+                             [], {1: "Frame 1: both shine. Neither can be hit on that frame.",
+                                  2: "Both hold the reflector. Red drifts down.",
+                                  8: "Frame 8: the search ends here. Nobody hit."}),
     }
     clips = []
     for (a, d), line in cells.items():
         c = start()
         for pa, pd in line:
             c.moves(pa, pd)
-        c.step(n=10 if text[a, d][2] else 2)
+        c.step(n=10 if text[a, d][2] else 0)  # an unhit line stops where the search does
         title, cap, hits, notes = text[a, d]
-        expect(c, hits, f"coin flip, P1 {a} / P2 {'step back' if d == 'out' else d}: {line}")
-        notes = {-12: "Blue short-hops at the cornered orange.", 0: "Blue is 9 frames into the hop, 7.8 away and 9.2 up. "
+        expect(c, hits, f"coin flip, P1 {a} / P2 {'step away' if d == 'out' else d}: {line}")
+        notes = {-12: "Red short-hops at the cornered blue.", 0: "Red is 9 frames into the hop, 7.8 away and 9.2 up. "
                  "Both now choose at once.", **notes}
-        clips.append({**c.data(f"{a}-{d}", title, cap, notes), "cell": [a, d], "value": int(value[("wait", "shine").index(a),
-                                                                                             ("out", "shine").index(d)])})
-    return clips, stand
+        v = int(value[("wait", "shine").index(a), ("out", "shine").index(d)])
+        clips.append(c.data(f"{a}-{d}", title, cap, notes, value=v, tag="red hits: 5%" if v else "nobody hit"))
+    return clips, g
 
 
-def checkmate(sim: Sim, stand: bytes) -> list[dict]:
-    """Hop, the defender shields at the coin-flip position, the attacker lands, the defender tries to jump out."""
-    c = Clip(sim, stand).step(n=3).start().step((X, 40, 0, 0), N).step((0, 40, 0, 0), N, 8)
-    air = c.frame(9)[0]
-    assert air[:3] == [68.08, 9.15, 25], air
-    shield = nash.MOVES["shield"]
-    while c.rows[-1][0][2] != 42 or c.rows[-1][0][3] < 9:  # until blue has landed and stopped sliding
-        c.step(N, shield)
-    landed = next(f for f in range(1, 60) if c.frame(f)[0][2] == 42)
-    held = len(c.rows) - 1 - c.lead
-    root = sim.save()
-    gap = round(c.rows[-1][1][0] - c.rows[-1][0][0], 2)
-    S = nash.Nash(root, 10)
-    forced = {}
-    for ex in EXITS:
-        S.rb.checkpoint(0)
-        S.joint("wait", ex)
-        forced[ex] = S.leaf() == 1.0 or (S.leaf() is None and S.forced(1, 9, True))
-        S.back(0)
-    print(f"ok  checkmate idea: blue lands on frame {landed}; on frame {held} he stands {gap} from the shield. "
-          f"Forced hit within 10 frames against each exit from there: {forced}")
-    if not all(forced[e] for e in EXITS[:5]):
-        raise SystemExit(f"MISMATCH in the checkmate idea: exits that are not hit after the landing: {forced}")
-    line = walk(S, ("wait", "jump_oos"), 10, True)
-    del S
-    sim.restore(root)
-    for a, d in line:
-        c.moves(a, d)
-    c.step(n=14)
-    f = held + len(line)
-    expect(c, [(f, 2, 5.0)], f"checkmate idea, jump out of shield on frame {held + 1}: P1 plays {[a for a, _ in line]}")
-    return [c.data("idea", "The whole line", "The line from a standing start: the hop, the shield it forces, the landing, "
-                   "and orange trying to jump out.", {
-        -3: "Orange is cornered, 12 units from the ledge. Blue stands 10.2 away.",
-        1: "Frame 1: blue short-hops toward him.",
-        4: "Blue rises. Orange has stood still so far: that part is assumed, not solved.",
-        9: "Frame 9: the coin-flip position. Without a shield orange loses half the time…",
-        10: "…so he shields. That is his only safe move here.",
-        landed: f"Frame {landed}: blue lands almost on top of the shield, and the two are pushed apart.",
-        landed + 5: f"Blue is free to act, {gap} from a shield. The door is shut.",
-        held + 1: f"Frame {held + 1}: orange tries to jump out.",
-        f: f"Frame {f}: blue shines the jumpsquat. 5%.",
-    })]
+def opening(sim: Sim) -> tuple[list[dict], bytes, bytes]:
+    """The walk from the match start that ends in the guess (section 14), and the states 170 and 183 frames in."""
+    start = sim.start()
+    c = Clip(sim, start).step(WALK, N, 170)
+    s170 = sim.save()
+    c.step(WALK, N, 12).step(FLICK, N)
+    s183 = sim.save()
+    expect(c, [], "opening: P1 walks 182 frames and flicks the stick away, P2 waits")
+    seen = [c.gap(0), c.gap(182), c.gap(183), c.frame(183)[0][2], c.frame(183)[0][3], c.frame(183)[1][2]]
+    if seen != [120.0, 13.71, 13.19, 18, 1, 14]:
+        raise SystemExit(f"MISMATCH in the opening line: gaps at frames 0, 182, 183 and the states are {seen}")
+    close = next(f for f in range(183) if c.gap(f) <= 16.7)
+    return [c.data("walk", "The walk in", "The match starts with the two Foxes 120 units apart. Red walks, never "
+                   "dashes, for 182 frames (3 seconds), and blue stands and watches. On frame 183 red flicks his "
+                   "stick away. That is the whole line.",
+                   {0: "Match start: both at their spawns, 120 apart.", 1: "Red walks in. Blue waits.",
+                    60: "Still far apart: nothing either does can reach yet.",
+                    close: "Inside 17 units. Blue's list of safe inputs is getting shorter.",
+                    182: "Frame 182: 13.71 apart. Stepping away is blue's last safe input here.",
+                    183: "Frame 183: red flicks the stick away. 13.19 apart, and blue has no safe input left."},
+                   [REACH], fps=60)], s170, s183
+
+
+def turn(sim: Sim, s170: bytes, s183: bytes, verbose: bool) -> tuple[list[dict], dict]:
+    """The guess after the walk in: the mixed strategy to 8 frames and one clip per pair of inputs in it."""
+    fz = fortress.Fortress(s183, 12, add1=fortress.WALK, last=(FLICK, N))
+    for h in (6, 8):
+        if fz.safe_moves(h):
+            raise SystemExit(f"MISMATCH after the walk in: the defender has safe inputs at {h} frames: {fz.safe_moves(h)}")
+    v6 = fz.mix(6)[4]
+    att, row, dfn, col, v = fz.mix(8)
+    _, _, m = fz.matrix(0, 8)
+    if abs(v6 - 0.25) > 1e-9:
+        raise SystemExit(f"MISMATCH after the walk in: value at 6 frames {v6}")
+    mix = {"wait": 50, "out": 25, "shine": 25}
+    g, rows, cols = grid(att, row, dfn, col, v, 8, m, {"value": 0.25, "p1": mix, "p2": mix})
+    clips = []
+    for i, a in enumerate(rows):
+        for j, d in enumerate(cols):
+            val = g["cells"][i][j]
+            line = walk(fz, (a, d), 8, val == 1.0) if val in (0.0, 1.0) else [(a, d)]
+            c = Clip(sim, s170).at(170).step(WALK, N, 12).step(FLICK, N)
+            for pa, pd in line:
+                c.moves(pa, pd)
+            c.step(n=10)
+            title, cap, hits, notes, tag = TURN_TEXT.get((a, d), (f"{a}/{d}", "", None, {}, ""))
+            if verbose or hits is None:
+                show(c, f"turn, red {a} / blue {d}: value {val}, {line} hits {c.hits()}")
+            if hits is not None:
+                expect(c, hits, f"turn, P1 {a} / P2 {d} (value {val}): {line}")
+            clips.append(c.data(f"{a}-{d}", title, cap, {
+                170: "Red walks in. Blue waits.", 183: "Frame 183: red flicks the stick away. 13.19 apart.",
+                184: "Frame 184: both choose at once.", **notes}, [REACH], value=val, tag=tag))
+    del fz
+    return clips, g
+
+
+def retreat(sim: Sim, s170: bytes) -> list[dict]:
+    """What the defender does instead: one dash back at 13.7, which costs him 21.6 units of stage."""
+    c = Clip(sim, s170).at(170).step(WALK, N, 12).step(WALK, (0, 80, 0, 0), 2).step(WALK, N, 30)
+    expect(c, [], "retreat: P2 dashes back at 13.71 while P1 keeps walking")
+    x0, x1 = c.frame(182)[1][0], c.rows[-1][1][0]
+    seen = [c.gap(182), round(x1 - x0, 2), round(85.57 - x1, 2)]
+    if seen != [13.71, 21.62, 3.95]:
+        raise SystemExit(f"MISMATCH in the retreat: gap before it, distance covered and room left are {seen}")
+    stop = next(f for f in range(183, 215) if c.frame(f)[1][2] == 14)
+    return [c.data("back", "Giving ground", "The same walk, but blue does not wait for the flick. At 13.71 apart he "
+                   "dashes back: two frames of stick, and the dash carries him 21.62 units. He is out of danger, "
+                   "and 3.95 units from the ledge.",
+                   {170: "Red walks in. Blue waits.", 182: "Frame 182: 13.71 apart, the last safe moment.",
+                    183: "Frame 183: blue dashes back.", 190: "Red keeps walking. Blue cannot be reached.",
+                    stop: "Blue stops 3.95 from the ledge. He has spent 21.62 units of stage.",
+                    stop + 6: "Red is still walking in. There is no room for a second dash like that."}, [REACH])]
+
+
+def ledge(sim: Sim, verbose: bool) -> tuple[list[dict], dict]:
+    """A defender standing on the ledge with the attacker 8.52 away: the mixed strategy and its four outcomes."""
+    root = force.corner(sim, 10, 1)
+    x2 = float(sim.players()[1]["pos_x"])
+    assert round(sim.gap(), 2) == 8.52 and round(x2, 2) == 85.57, (sim.gap(), x2)
+    fz = fortress.Fortress(root, 12)
+    fz.load(root)
+    if fz.safe_moves(8):
+        raise SystemExit(f"MISMATCH on the ledge: the defender has safe inputs at 8 frames: {fz.safe_moves(8)}")
+    att, row, dfn, col, v = fz.mix(8)
+    _, _, m = fz.matrix(0, 8)
+    g, rows, cols = grid(att, row, dfn, col, v, 8, m, {"value": 0.5, "p1": {"shine": 50, "shield": 50},
+                                                       "p2": {"wait": 50, "shine": 50}})
+    clips = []
+    for i, a in enumerate(rows):
+        for j, d in enumerate(cols):
+            val = g["cells"][i][j]
+            line = walk(fz, (a, d), 8, val == 1.0)
+            c = Clip(sim, root).start()
+            for pa, pd in line:
+                c.moves(pa, pd)
+            c.step(nash.MOVES["shield"] if a == "shield" and d == "shine" else N, N, 12)
+            title, cap, hits, notes, tag = LEDGE_TEXT.get((a, d), (f"{a}/{d}", "", None, {}, ""))
+            if verbose or hits is None:
+                show(c, f"ledge, red {a} / blue {d}: value {val}, {line} hits {c.hits()}")
+            if hits is not None:
+                expect(c, hits, f"ledge, P1 {a} / P2 {d} (value {val}): {line}")
+            clips.append(c.data(f"{a}-{d}", title, cap, {0: "Blue stands on the ledge. Red is 8.52 away. Both "
+                                                         "choose at once.", **notes}, [REACH], value=val, tag=tag))
+    del fz
+    return clips, g
+
+
+SCENES = ("standoff", "reach", "door", "hop5", "coin", "walk", "turn", "retreat", "ledge")
 
 
 def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--only", nargs="+", choices=SCENES, help="redo these scenes and keep the others as they are in the file")
+    ap.add_argument("--show", action="store_true", help="print every new clip frame by frame")
+    ap.add_argument("--out", type=Path, default=OUT, help="the file to write (default: the one the page reads)")
+    args = ap.parse_args()
+    todo = set(args.only or SCENES)
+    old = json.loads(args.out.read_text()) if args.only and args.out.exists() else {"scenes": []}
     sim = Sim()
-    coin_clips, stand = coin(sim)
-    scenes = [
-        {"id": "standoff", "clips": standoff(sim)},
-        {"id": "reach", "clips": reach(sim)},
-        {"id": "door", "clips": door(sim)},
-        {"id": "coin", "clips": coin_clips},
-        {"id": "idea", "clips": checkmate(sim, stand)},
-    ]
-    actions = {a: label(a) for s in scenes for c in s["clips"] for row in c["rows"] for a in (row[0][2], row[1][2])}
-    blob = json.dumps({"ledge": 85.57, "actions": actions, "scenes": scenes}, separators=(",", ":")).replace("</", "<\\/")
-    page = HTML.read_text()
-    new, n = re.subn(r'(<script type="application/json" id="traces">).*?(</script>)',
-                     lambda m: m.group(1) + blob + m.group(2), page, flags=re.S)
-    assert n == 1, "traces block not found in the page"
-    HTML.write_text(new)
-    print(f"wrote {sum(len(s['clips']) for s in scenes)} clips, {len(blob) // 1024} KB, into {HTML}")
+    made: dict[str, dict] = {}
+    if "standoff" in todo:
+        made["standoff"] = {"clips": standoff(sim)}
+    if "reach" in todo:
+        made["reach"] = {"clips": reach(sim)}
+    if "door" in todo:
+        made["door"] = {"clips": door(sim, args.show)}
+    if "hop5" in todo:
+        made["hop5"] = {"clips": hop5(sim, args.show)}
+    if "coin" in todo:
+        clips, g = coin(sim)
+        made["coin"] = {"clips": clips, "grid": g}
+    if todo & {"walk", "turn", "retreat"}:
+        clips, s170, s183 = opening(sim)
+        if "walk" in todo:
+            made["walk"] = {"clips": clips}
+        if "turn" in todo:
+            clips, g = turn(sim, s170, s183, args.show)
+            made["turn"] = {"clips": clips, "grid": g}
+        if "retreat" in todo:
+            made["retreat"] = {"clips": retreat(sim, s170)}
+    if "ledge" in todo:
+        clips, g = ledge(sim, args.show)
+        made["ledge"] = {"clips": clips, "grid": g}
+    kept = {s["id"]: s for s in old["scenes"]}
+    scenes = [{"id": k, **made[k]} if k in made else kept[k] for k in SCENES if k in made or k in kept]
+    actions = {str(a): label(a) for s in scenes for c in s["clips"] for row in c["rows"] for a in (row[0][2], row[1][2])}
+    data = {"ledge": 85.57, "names": ["Red · attacker", "Blue · defender"], "actions": actions, "scenes": scenes}
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(json.dumps(data, separators=(",", ":")) + "\n")
+    print(f"wrote {sum(len(s['clips']) for s in scenes)} clips in {len(scenes)} scenes, {args.out.stat().st_size // 1024} KB, "
+          f"into {args.out}")
 
 
 if __name__ == "__main__":
