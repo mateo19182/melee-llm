@@ -60,6 +60,7 @@ MENUS = {
 SHIELD_FULL = 60.0
 DOOR = 12.6
 _RELEASE, _DODGE = melee.Action.SHIELD_RELEASE.value, melee.Action.SPOTDODGE.value
+EDGE = 85.57  # Final Destination's ledges
 DODGE_SEEN, DODGE_REACH = 3, 16.8  # how early in the dodge, and from how far, the punish was measured
 _HELD = set(range(223, 229))  # pulled in, held or pummelled: a grab moves no percent, so it is read off the state
 
@@ -89,10 +90,10 @@ class Nash(force.Search):
 
     def __init__(self, root: bytes, frames: int, payoff: str = "hit", shield_cost: float = 0.0, tt_mb: int = 400,
                  no_shield: bool = False, trap: bool = False, grain: int = 1, add1: dict | None = None,
-                 add2: dict | None = None, dodge: bool = False, key=force._key):
+                 add2: dict | None = None, dodge: bool = False, edge: bool = False, key=force._key):
         super().__init__(root, max_depth=frames + 4, tt_mb=tt_mb)
         self.payoff, self.shield_cost, self.no_shield, self.door = payoff, shield_cost, no_shield, trap
-        self.dodge = dodge
+        self.dodge, self.edge = dodge, edge
         # The previous frame's inputs are part of a position: a button still held is not a new press, and the
         # stick's last place decides dash or walk. They are kept per checkpoint so a rollback restores them.
         self.last, self._lasts, self._mark = (N, N), {}, self.rb.checkpoint
@@ -130,6 +131,10 @@ class Nash(force.Search):
         if d1 == 0 and d2 == 0:
             if first and (self.door and self.shut(s) or self.dodge and self.dodged(s)):
                 return 1.0
+            if first and self.edge:  # `--edge`: whoever leaves the stage has lost the exchange
+                off1, off2 = (abs(float(q["pos_x"])) > EDGE for q in s)
+                if off1 or off2:
+                    return float(off2 and not off1) - (self.payoff == "net" and off1 and not off2)
             return None
         if self.payoff == "net":
             return float((d2 > 0 and d1 == 0) - (d1 > 0 and d2 == 0))
@@ -308,7 +313,7 @@ def solve(gap: float, ledge: float, frames: int, payoff: str = "hit", shield_cos
           shield: int = 0, workers: int = 28, tt_mb: int = 400, out: str | None = None, must_exit: bool = False,
           no_shield: bool = False, trap: bool = False, grain: int = 1, first: str | None = None,
           add1: dict | None = None, add2: dict | None = None, away: bool = False, pre: tuple[str, ...] = (),
-          dodge: bool = False) -> dict:
+          dodge: bool = False, edge: bool = False) -> dict:
     """`pre`: P1's inputs before the first decision, one move name per frame, P2 standing or holding his shield."""
     t0 = time.time()
     workers = force.fit_workers(workers, tt_mb)
@@ -331,7 +336,7 @@ def solve(gap: float, ledge: float, frames: int, payoff: str = "hit", shield_cos
     ask = {"gap": gap, "ledge": ledge, "frames": frames, "payoff": payoff, "shield_cost": shield_cost, "hop": hop,
            "shield": shield, "must_exit": must_exit, "no_shield": no_shield, "trap": trap, "grain": grain,
            "first": first, "ledge2": ledge, "menus": 2, "add1": add1, "add2": add2, "away": away, "pre": list(pre),
-           "dodge": dodge}
+           "dodge": dodge, "edge": edge}
     ask = json.loads(json.dumps(ask))  # as it reads back from the file
     old: dict[str, tuple[float, int]] = {}
     if out and os.path.exists(out):
@@ -345,7 +350,7 @@ def solve(gap: float, ledge: float, frames: int, payoff: str = "hit", shield_cos
     total = 0
     with mp.get_context("spawn").Pool(workers, initializer=_init,
                                       initargs=(root, frames, payoff, shield_cost, tt_mb, no_shield, trap, grain,
-                                                add1, add2, dodge)) as pool:
+                                                add1, add2, dodge, edge)) as pool:
         jobs = []
         for pair, v, nxt in pool.imap_unordered(_open, [(a, d) for a in att for d in dfn]):
             if v is not None:
@@ -396,6 +401,7 @@ def main() -> None:
     ap.add_argument("--trap", action="store_true", help="count P2 in shield next to a free P1 as P1's first hit")
     ap.add_argument("--grain", type=int, default=1, help="frames each input is held (2: half the depth, coarser reactions)")
     ap.add_argument("--first", help="fix P1's first input, to value one plan (for example hop)")
+    ap.add_argument("--edge", action="store_true", help="a fighter who leaves the stage has lost the exchange")
     ap.add_argument("--dodge", action="store_true",
                     help="count P2 early in a spotdodge beside a standing or just-shining P1 as P1's first hit")
     ap.add_argument("--away", action="store_true", help="P2 has his back to P1")
@@ -411,7 +417,7 @@ def main() -> None:
     pre = tuple(m for x in args.pre for m in [x.split(":")[0]] * int((x.split(":") + ["1"])[1]))
     r = solve(args.gap, args.ledge, args.frames, args.payoff, args.shield_cost, args.hop, args.shield, args.workers,
               args.tt_mb, args.out, args.must_exit, args.no_shield, args.trap, args.grain, args.first, add1, add2,
-              args.away, pre, args.dodge)
+              args.away, pre, args.dodge, args.edge)
     unit = {"hit": "chance of a clean first hit for P1", "net": "P1's clean first hits minus P2's",
             "percent": "percent for P1"}[args.payoff]
     print(f"gap {r['gap']}, P1 height {r['p1_y']} ({r['p1_state']} against {r['p2_state']}), {r['frames']} frames: value {r['value']:+.4f} ({unit})  "
