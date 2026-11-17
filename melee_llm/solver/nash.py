@@ -9,6 +9,8 @@ at the first hit or at the horizon, so the result is exact for the menus and the
 Two payoffs:
 - `hit`: 1 if P1 lands the first hit without being hit on that frame, else 0. The value is the chance of a clean
   first hit that P1 can force however P2 plays. 0 means P2 can never be made to guess.
+- `net`: +1 if P1 lands the first hit clean, -1 if P2 does, 0 for a trade or no hit. The value says who the
+  position favours: above 0, P1 hits first more often than he is hit, however P2 plays.
 - `percent`: percent P1 deals minus percent he takes at the first hit; with `--shield-cost c`, a position that
   reaches the horizon unhit is worth c per full shield of shield health P2 has lost more than P1.
 
@@ -83,6 +85,8 @@ def _menus(s, m1, m2, no_shield: bool):
 
 
 class Nash(force.Search):
+    shortcuts = True  # settle a position by a read-proof pure strategy where there is one (off: to test them)
+
     def __init__(self, root: bytes, frames: int, payoff: str = "hit", shield_cost: float = 0.0, tt_mb: int = 400,
                  no_shield: bool = False, trap: bool = False, grain: int = 1, add1: dict | None = None,
                  add2: dict | None = None, dodge: bool = False, key=force._key):
@@ -120,12 +124,15 @@ class Nash(force.Search):
         s = self.slots()
         d1 = float(s[0]["percent"]) - self.base[0] + 100 * (self.base[2] - int(s[0]["stocks"]))
         d2 = float(s[1]["percent"]) - self.base[1] + 100 * (self.base[3] - int(s[1]["stocks"]))
-        if self.payoff == "hit":  # a grab is a first hit too
+        first = self.payoff in ("hit", "net")
+        if first:  # a grab is a first hit too
             d1, d2 = d1 + (int(s[0]["action_id"]) in _HELD), d2 + (int(s[1]["action_id"]) in _HELD)
         if d1 == 0 and d2 == 0:
-            if self.payoff == "hit" and (self.door and self.shut(s) or self.dodge and self.dodged(s)):
+            if first and (self.door and self.shut(s) or self.dodge and self.dodged(s)):
                 return 1.0
             return None
+        if self.payoff == "net":
+            return float((d2 > 0 and d1 == 0) - (d1 > 0 and d2 == 0))
         return (1.0 if d2 > 0 and d1 == 0 else 0.0) if self.payoff == "hit" else d2 - d1
 
     def shut(self, s) -> bool:
@@ -180,28 +187,31 @@ class Nash(force.Search):
                 self.back(depth)
         return att, dfn, m
 
-    def forced(self, depth: int, frames: int, attacking: bool) -> bool:
-        """`attacking`: does P1 have inputs that land the clean first hit even if P2 sees each one before answering?
-        Otherwise: does P2 have inputs that avoid it even if P1 sees each one? Either settles the `hit` game."""
+    def forced(self, depth: int, frames: int, attacking: bool, who: int = 0) -> bool:
+        """About the clean first hit of player `who` (0: P1) on the other. `attacking`: does he have inputs that
+        land it even if the other sees each one before answering? Otherwise: does the other have inputs that
+        avoid it even if `who` sees each one? Either settles the `hit` game, and bounds the `net` one."""
         if frames <= 0:
             return not attacking
-        key = hash(self.where() + (attacking,))
+        key = hash(self.where() + (attacking, who))
         yes, no = (self.yes, self.no)
-        if frames >= yes.get(key, 10 ** 6):  # proven for P1 with fewer frames in hand
+        if frames >= yes.get(key, 10 ** 6):  # proven for the hitter with fewer frames in hand
             return attacking
         if frames <= no.get(key, -1):
             return not attacking
         att, dfn = self.menus()
-        mine, theirs = (att, dfn) if attacking else (dfn, att)
-        want = 1.0 if attacking else 0.0  # the leaf that settles a line for the side asked about
+        hitter, other = (att, dfn) if who == 0 else (dfn, att)
+        mine, theirs = (hitter, other) if attacking else (other, hitter)
+        won = 1.0 if who == 0 else -1.0  # the leaf where `who` landed it
         self.rb.checkpoint(depth)
         found = False
         for x in mine:
             ok = True
             for y in theirs:
-                self.joint(*((x, y) if attacking else (y, x)))
+                h, o = (x, y) if attacking else (y, x)
+                self.joint(*((h, o) if who == 0 else (o, h)))
                 v = self.leaf()
-                ok = self.forced(depth + 1, frames - self.grain, attacking) if v is None else v == want
+                ok = self.forced(depth + 1, frames - self.grain, attacking, who) if v is None else (v == won) == attacking
                 self.back(depth)
                 if not ok:
                     break
@@ -218,11 +228,20 @@ class Nash(force.Search):
         key = hash(self.where() + (frames,))
         if (v := self.values.get(key)) is not None:
             return v
-        if self.payoff == "hit":  # a pure strategy that holds even when read settles the position without a matrix
+        if not self.shortcuts:
+            pass
+        elif self.payoff == "hit":  # a pure strategy that holds even when read settles the position without a matrix
             if self.forced(depth, frames, False):
                 return 0.0
             if self.forced(depth, frames, True):
                 return 1.0
+        elif self.payoff == "net":  # each side safe from the other when read: nobody can be made to guess
+            if self.forced(depth, frames, False, 0) and self.forced(depth, frames, False, 1):
+                return 0.0
+            if self.forced(depth, frames, True, 0):
+                return 1.0
+            if self.forced(depth, frames, True, 1):
+                return -1.0
         _, _, m = self.matrix(depth, frames)
         lo, hi = float(m.min()), float(m.max())
         v = lo if hi - lo < 1e-12 else float(solve_matrix(m).value)
@@ -368,7 +387,7 @@ def main() -> None:
     ap.add_argument("--gap", type=float, default=14)
     ap.add_argument("--ledge", type=float, default=12)
     ap.add_argument("--frames", type=int, default=8)
-    ap.add_argument("--payoff", choices=("hit", "percent"), default="hit")
+    ap.add_argument("--payoff", choices=("hit", "net", "percent"), default="hit")
     ap.add_argument("--shield-cost", type=float, default=0.0)
     ap.add_argument("--hop", type=int, default=0)
     ap.add_argument("--shield", type=int, default=0)
@@ -393,7 +412,8 @@ def main() -> None:
     r = solve(args.gap, args.ledge, args.frames, args.payoff, args.shield_cost, args.hop, args.shield, args.workers,
               args.tt_mb, args.out, args.must_exit, args.no_shield, args.trap, args.grain, args.first, add1, add2,
               args.away, pre, args.dodge)
-    unit = "chance of a clean first hit for P1" if args.payoff == "hit" else "percent for P1"
+    unit = {"hit": "chance of a clean first hit for P1", "net": "P1's clean first hits minus P2's",
+            "percent": "percent for P1"}[args.payoff]
     print(f"gap {r['gap']}, P1 height {r['p1_y']} ({r['p1_state']} against {r['p2_state']}), {r['frames']} frames: value {r['value']:+.4f} ({unit})  "
           f"[{r['positions']:,} positions, {r['seconds']}s, {r['workers']} processes, "
           f"{r['resumed']} of {r['jobs']} jobs from an earlier run]")

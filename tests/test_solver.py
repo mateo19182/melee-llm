@@ -304,3 +304,23 @@ def test_squeeze_roots_and_rules_say_what_they_claim():
     row = squeeze._job({"ask": {}, "at": at, "state": state, "condition": "free", "frames": 6, "give": 3.0,
                         "table_mb": 64})
     assert "out" in row["safe"] and "shield" in row["beaten"] and "spotdodge" in row["beaten"]
+
+
+def test_the_net_payoff_is_the_same_with_and_without_its_shortcuts():
+    """Needs the simulator's game data. Attacker nine frames into a short hop above a Fox who may not shield:
+    both can land the first hit, so the value of `net` lies strictly between the two forced results."""
+    if not world.available():
+        pytest.skip("patched melee-sim-light with game data not installed")
+    from melee_llm.solver import force, nash
+    from melee_llm.solver.game import Sim
+    sim = Sim()
+    root = force.corner(sim, 11.5, 12, hop=9)
+    sim.world.close()
+    values = []
+    for shortcuts in (True, False):
+        s = nash.Nash(root, 4, payoff="net", no_shield=True)
+        s.shortcuts = shortcuts
+        values.append(s.value(0, 4))
+    assert abs(values[0] - values[1]) < 1e-9 and -1 < values[0] < 1
+    hit = nash.Nash(root, 4, no_shield=True).value(0, 4)
+    assert values[0] <= hit + 1e-9  # being hit only takes away from landing it
