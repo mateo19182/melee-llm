@@ -132,7 +132,7 @@ class Nash(force.Search):
             if first and (self.door and self.shut(s) or self.dodge and self.dodged(s)):
                 return 1.0
             if first and self.edge:  # `--edge`: whoever leaves the stage has lost the exchange
-                off1, off2 = (abs(float(q["pos_x"])) > EDGE for q in s)
+                off1, off2 = (abs(float(s[i]["pos_x"])) > EDGE for i in (0, 1))
                 if off1 or off2:
                     return float(off2 and not off1) - (self.payoff == "net" and off1 and not off2)
             return None

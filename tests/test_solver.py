@@ -324,3 +324,24 @@ def test_the_net_payoff_is_the_same_with_and_without_its_shortcuts():
     assert abs(values[0] - values[1]) < 1e-9 and -1 < values[0] < 1
     hit = nash.Nash(root, 4, no_shield=True).value(0, 4)
     assert values[0] <= hit + 1e-9  # being hit only takes away from landing it
+
+
+def test_with_edge_leaving_the_stage_loses_the_exchange():
+    """Needs the simulator's game data. A Fox at the ledge who dashes back runs off: P1's with `edge`, nothing
+    without it."""
+    if not world.available():
+        pytest.skip("patched melee-sim-light with game data not installed")
+    from melee_llm.solver import force, nash
+    from melee_llm.solver.game import Sim
+    sim = Sim()
+    root = force.corner(sim, 14, 0.5)
+    sim.world.close()
+    seen = {}
+    for edge in (True, False):
+        s = nash.Nash(root, 12, payoff="net", edge=edge)
+        for _ in range(12):
+            s.joint("wait", "out")
+            seen[edge] = s.leaf()
+            if seen[edge] is not None:
+                break
+    assert seen == {True: 1.0, False: None}
