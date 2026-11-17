@@ -35,7 +35,7 @@ The question for later experiments is whether at least a few opponents beat our 
 
 ## Result
 
-456 games finished; 32 more died with a Dolphin disconnect. Ratings are Bradley–Terry with CPU 9 at 0.
+160 games finished; 32 more died with a Dolphin disconnect. Ratings are Bradley–Terry with CPU 9 at 0.
 
 **Our best Yoshi, `hal:AMSA#0,return_target=40`, no delay** (wins of finished games):
 
