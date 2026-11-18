@@ -76,4 +76,22 @@ Strength, once trained: in the farm against the opponents of E24 at delay 10 and
 
 That is about eight times HAL in the farm and ninety times one Dolphin. The simulator, on one core, is now the limit: the model alone would allow 45,000 to 65,000. Size and memory length barely change the speed, so they can be chosen for strength.
 
+**Training** (20,000 updates each, on the 3090; held-out farm games, bits per frame; "delay 10" is the teacher's relabelled games at 10 frames, "no delay" the teacher's own games, "aMSa" eight batches of his held-out human games):
+
+| Student | Parameters | Memory | Minutes | Best at delay 10 (update) | Delay 10 at the end | No delay at the end | aMSa, no delay, at the end |
+|---|---|---|---|---|---|---|---|
+| `student-w256-c128` | 6.7M | 128 | 45.9 | 1.037 (12,000) | 1.051 | 1.155 | 1.225 |
+| `student-w384-c128` | 14.8M | 128 | 68.7 | 1.034 (10,000) | 1.097 | 1.145 | 1.220 |
+| `student-w256-c256` | 6.7M | 256 | 69.0 | 1.107 (6,000) | 1.295 | 1.143 | 1.138 |
+| `student-w384-c256` | 14.8M | 256 | 108.0 | 1.112 (6,000) | 1.581 | 1.190 | 1.143 |
+
+- **Every student overfits the delayed games.** Their held-out loss bottoms out and climbs while their training loss keeps falling (w384-c256 ends at 0.54 bits on its training farm windows against 1.58 held out). Losses on games without delay and on aMSa's games barely move after the minimum, so the overfitting is on the relabelled games: 972 in training, about 6.5M frames.
+- **Width does not help at this amount of data**: 14.8M ties 6.7M at its best and overfits sooner.
+- **256 frames of memory overfit sooner** (best at 6,000 updates instead of 10,000 to 12,000) but predict aMSa better (1.14 against 1.22). The two memories take their loss at different positions in the window, so the numbers are not strictly comparable.
+- `student-w384-c128` was trained before checkpoints were kept, so only its final weights exist.
+
+**Playing, first student.** The first `student-w256-c256` run, at its final (overfit) weights, 64 games each in the farm: 0 wins against HAL's Master Fox at delay 10, 9 against HAL as aMSa at delay 10, 4 against the Master Fox without delay. The teacher wins 34 of 96 against that Fox without delay (E24), so the student is a much weaker player than its teacher, and delay is not the cause. Farm folder: `/mnt/data/melee/farm/eval-student-w256-c256-first`.
+
+**Playing, best checkpoints:** running (`/mnt/data/melee/farm/eval-student-*`).
+
 ## Verdict
