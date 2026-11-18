@@ -5,7 +5,8 @@
 A player is a HAL spec as the league writes it: `hal:IDENTITY[,return_target=N][,temperature=T][,delay=N][,run=NAME]`
 and `/CHARACTER` (default Yoshi). The first player takes port 1 on even lanes and port 2 on odd ones; stages cycle
 over the six legal ones. Every game is played to its end (or the 8-minute timer), so short games are not
-over-counted. Players that share weights and delay share one model and one batch.
+over-counted. Players that share weights and delay share one model and one batch. Rules are stomped's: 4 stocks,
+8 minutes, no items, no UCF (--ucf turns it on, as on Slippi).
 
 With --out, DIR/results.jsonl gets one row per game (the league log's keys) and DIR/frames/ one .npz per game with
 every frame as the simulator adapter packs it: HAL's 71 observation columns, both controllers and the reward.
@@ -81,6 +82,12 @@ class Brain:
         class Adapter(PolicyBatchAdapter):
             def _ingest_one(self, slot, frame):  # upstream picks settings per port; here each seat has its own
                 self.default_settings = settings[slot]
+                # Upstream raises when the action the game reports differs from the one sent. Without UCF the
+                # simulator reports a few near-cardinal stick values differently, so skip the check, as
+                # melee_llm/bots/bot_hal.py does for live games.
+                state = self._states.get(slot)
+                if state is not None:
+                    state.expected_applied.pop(frame.frame_id, None)
                 return super()._ingest_one(slot, frame)
 
         self.adapter, self.seats = Adapter(policy, runtime, timing), seats
@@ -89,7 +96,7 @@ class Brain:
         return self.adapter._step({slot: rows[slot] for slot in self.seats if slot in rows})
 
 
-def play(a, b, games, lanes=64, out=None, compiled=True, seed=0):
+def play(a, b, games, lanes=64, out=None, compiled=True, seed=0, ucf=False):
     """Play `games` games of a against b. Returns the result rows; a's score is 1 for a win, 0.5 for a draw."""
     import melee
     from hal.controller import controller_to_action_vec
@@ -108,6 +115,7 @@ def play(a, b, games, lanes=64, out=None, compiled=True, seed=0):
     def match(lane, game):
         chars = (a.character, b.character) if a_port[lane] == 1 else (b.character, a.character)
         return NativeMatch(stage=int(melee.Stage[STAGES[game % len(STAGES)]].value), seed=seed + game, max_frame=TIMER,
+                           ucf_cardinals_1_0_enabled=ucf,
                            players=tuple(NativePlayer(port=i + 1, character=int(melee.Character[c].value))
                                          for i, c in enumerate(chars)))
 
@@ -189,8 +197,10 @@ def main():
     ap.add_argument("--out", type=Path)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--no-compile", action="store_true")
+    ap.add_argument("--ucf", action="store_true")
     args = ap.parse_args()
-    play(Player.parse(args.a), Player.parse(args.b), args.games, args.lanes, args.out, not args.no_compile, args.seed)
+    play(Player.parse(args.a), Player.parse(args.b), args.games, args.lanes, args.out, not args.no_compile, args.seed,
+         args.ucf)
 
 
 if __name__ == "__main__":
