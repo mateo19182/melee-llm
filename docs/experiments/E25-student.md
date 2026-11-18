@@ -5,7 +5,7 @@ date: 2026-11-18
 status: running
 result:
 verdict:
-runs:
+runs: student-w256-c128, student-w256-c256, student-w384-c128, student-w384-c256
 prs:
 follows: E24
 ---
@@ -39,6 +39,20 @@ Two causes. HAL's inference code handles each game separately in Python (a 71-fi
 Decided with Mateo on 2026-11-18: pending actions as input, Yoshi only, train 10M-class and 20M-class students, and compare 128 against 256 frames of memory.
 
 **Runtime.** `student.Cache` keeps the trunk's attention keys and values for every game in one tensor, so a new frame costs one token per game and nothing is done per game in Python.
+
+**Training data.** Everything is Yoshi, by stomped's rules (no UCF):
+- 1,440 farm games of the teacher (`hal:AMSA#0,return_target=40`): 360 each at 0, 9, 10 and 11 frames of delay, against HAL as a Master player on Fox (96), Captain Falcon, Falco, Marth and Jigglypuff (48 each), Sheik and Peach (24 each), and against HAL as aMSa (24). The mix follows who we meet on stomped ([yoshi.md](../yoshi.md)). About 9.6M frames, in `/mnt/data/melee/farm/student-1`. The teacher won 160 of 360 without delay and 31, 47 and 27 of 360 at 10, 9 and 11 frames.
+- aMSa's human games on Yoshi from HAL's dataset.
+
+**Training** (`train/haltrain/distill.py`). Every example is the game up to frame t, the d actions that followed, and a label for the action of frame t+d+1:
+- games played without delay (the teacher's and aMSa's): the label is the action that was played, and d is drawn from 0, 9, 10, 11. This is imitation at delay alignment, as slippi-ai does it;
+- games the teacher played with delay d: these hold the positions a delayed player gets into. The label is what the teacher would do seeing the present (`train/haltrain/relabel.py`), at the game's own d. This is the DIDA step of E23, with the student in place of the big model.
+
+Each update takes 64 windows of farm games and 64 of aMSa's; 20,000 updates; Muon on the trunk's matrices and AdamW on the rest, cosine decay. Every tenth farm game is held out. No return steering and no advantage weights in this first version.
+
+**The four students:** width 256 (6.7M) and width 384 (14.8M), each with 128 and with 256 frames of memory. Runs `student-w256-c128`, `student-w256-c256`, `student-w384-c128`, `student-w384-c256`.
+
+**Playing.** `haltrain.farm` seats a student with `student:RUN[,delay=N]`. Its inputs go through the same HAL code as training windows; checked equal, value for value, on 256 frames of a saved game.
 
 ## Judged by
 

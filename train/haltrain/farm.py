@@ -3,7 +3,8 @@
     python -m haltrain.farm "hal:AMSA#0,return_target=40,delay=10" hal:MASTER/FOX --games 64 [--lanes 64] [--out DIR]
 
 A player is a HAL spec as the league writes it: `hal:IDENTITY[,return_target=N][,temperature=T][,delay=N][,run=NAME]`
-and `/CHARACTER` (default Yoshi). The first player takes port 1 on even lanes and port 2 on odd ones; stages cycle
+and `/CHARACTER` (default Yoshi), or a student of ours (haltrain.distill): `student:RUN[,delay=N][,temperature=T]`,
+Yoshi only. The first player takes port 1 on even lanes and port 2 on odd ones; stages cycle
 over the six legal ones. Every game is played to its end (or the 8-minute timer), so short games are not
 over-counted. Players that share weights and delay share one model and one batch. Rules are stomped's: 4 stocks,
 8 minutes, no items, no UCF (--ucf turns it on, as on Slippi).
@@ -31,7 +32,7 @@ from . import HAL, REPO, WEIGHTS
 SIM = Path(os.environ.get("MELEE_SIM", "/mnt/data/melee/native/melee-brute"))
 os.environ.setdefault("HAL_NATIVE_LIBRARY", "/mnt/data/melee/native/libhal_native.so")
 sys.path.insert(0, str(SIM))
-RUNS = REPO / "data/train/runs"
+RUNS = Path("/mnt/data/melee/runs")  # data/train/runs in the live checkout is a link to it
 STAGES = ["BATTLEFIELD", "FINAL_DESTINATION", "YOSHIS_STORY", "DREAMLAND", "FOUNTAIN_OF_DREAMS", "POKEMON_STADIUM"]
 TIMER = 8 * 60 * 60  # frames; Slippi's 8-minute timer
 
@@ -45,15 +46,19 @@ class Player:
     temperature: float
     delay: int
     weights: Path
+    kind: str = "hal"
 
     @classmethod
     def parse(cls, name):
         spec, _, character = name.partition("/")
         kind, _, arg = spec.partition(":")
-        if kind != "hal":
-            raise ValueError(f"{name}: only hal: players run in the farm")
         identity, *options = arg.split(",")
         o = dict(x.split("=", 1) for x in options)
+        if kind == "student":
+            return cls(name, "YOSHI", "", None, float(o.get("temperature", 1.0)), int(o.get("delay", 0)),
+                       RUNS / identity / "last.pt", "student")
+        if kind != "hal":
+            raise ValueError(f"{name}: only hal: and student: players run in the farm")
         target = o.get("return_target", "p90")
         return cls(name, character or "YOSHI", identity, None if target == "p90" else float(target),
                    float(o.get("temperature", 1.0)), int(o.get("delay", 0)),
@@ -92,14 +97,78 @@ class Brain:
 
         self.adapter, self.seats = Adapter(policy, runtime, timing), seats
 
-    def act(self, rows):
-        return self.adapter._step({slot: rows[slot] for slot in self.seats if slot in rows})
+    def act(self, frame, rows):
+        from hal.controller import controller_to_action_vec
+
+        due = self.adapter._step({slot: rows[slot] for slot in self.seats if slot in rows})
+        return {slot: controller_to_action_vec(action) for slot, action in due.items()}
+
+
+def to_gpu(tensors):
+    """A dict of small tensors on the GPU, sent as one copy per (type, shape) instead of one per tensor."""
+    import torch
+
+    groups, out = {}, {}
+    for name, value in tensors.items():
+        groups.setdefault((value.dtype, value.shape), []).append(name)
+    for names in groups.values():
+        out.update(zip(names, torch.stack([tensors[n] for n in names]).cuda(non_blocking=True).unbind(0)))
+    return out
+
+
+class StudentBrain:
+    """A student playing every seat of one player in one batch, with nothing done per game in Python.
+
+    With d frames of delay it keeps a queue of the d actions it has chosen and not yet played. Each frame it plays
+    the oldest, and chooses the one that will be played d frames later from the frame it sees and the queue.
+    """
+
+    def __init__(self, weights, delay, seats):
+        import torch
+        from hal.inference.action_sequence_artifact import read_action_sequence_artifact
+
+        from .student import Cache, Student
+
+        saved = torch.load(weights, map_location="cuda")
+        artifact = read_action_sequence_artifact(WEIGHTS)
+        self.student = Student(artifact.model_config, artifact.vocabulary, **saved["shape"]).cuda().eval()
+        self.student.load_state_dict(saved["model"])
+        self.stats, self.delay = artifact.statistics, delay
+        self.seats = sorted(seats, key=lambda slot: (slot.port, slot.match))  # the order live_features returns
+        self.lanes = np.array([slot.match for slot in self.seats])
+        self.ports = np.array([slot.port for slot in self.seats])
+        self.temperature = next(iter(seats.values())).temperature
+        self.cache = Cache(self.student, len(self.seats))
+        self.neutral = self.student.body.codec.quantize(torch.zeros(14, device="cuda"))
+        self.queue = self.neutral.repeat(len(self.seats), self.student.max_delay, 1)
+        self.delays = torch.full((len(self.seats),), delay, device="cuda")
+
+    def act(self, frame, rows):
+        import torch
+
+        from .own import live_features
+
+        new_game = torch.from_numpy(frame.reset[self.lanes]).cuda()
+        if new_game.any():
+            self.cache.reset(new_game)
+            self.queue[new_game] = self.neutral
+        features = to_gpu(live_features(frame.records[self.lanes], self.ports, self.stats))
+        with torch.no_grad(), torch.autocast("cuda", torch.bfloat16):
+            hidden = self.cache.step(self.student, self.student.body.context_tokens(features)[:, 0])
+            chosen = self.student.sample(self.student.fused(hidden, self.queue, self.delays),
+                                         temperature=self.temperature)
+        if self.delay:
+            now = self.queue[:, 0].clone()
+            self.queue[:, :self.delay] = torch.cat([self.queue[:, 1:self.delay], chosen[:, None]], dim=1)
+        else:
+            now = chosen
+        vectors = self.student.body.codec.dequantize(now).float().cpu().numpy()
+        return dict(zip(self.seats, vectors))
 
 
 def play(a, b, games, lanes=64, out=None, compiled=True, seed=0, ucf=False):
     """Play `games` games of a against b. Returns the result rows; a's score is 1 for a win, 0.5 for a draw."""
     import melee
-    from hal.controller import controller_to_action_vec
     from hal.sim.native import NativeMatch, NativePlayer, NativeRolloutBatch
     from hal.sim.rollout import ObservationRow, Slot
 
@@ -109,8 +178,10 @@ def play(a, b, games, lanes=64, out=None, compiled=True, seed=0, ucf=False):
     for lane in range(lanes):
         for port in (1, 2):
             player = a if port == a_port[lane] else b
-            seats.setdefault((player.weights, player.delay), {})[Slot(lane, port)] = player
-    brains = [Brain(weights, delay, s, compiled) for (weights, delay), s in seats.items()]
+            seats.setdefault((player.kind, player.weights, player.delay), {})[Slot(lane, port)] = player
+    brains = [StudentBrain(weights, delay, s) if kind == "student" else Brain(weights, delay, s, compiled)
+              for (kind, weights, delay), s in seats.items()]
+    per_game = any(isinstance(brain, Brain) for brain in brains)  # HAL's adapter wants one record per seat
 
     def match(lane, game):
         chars = (a.character, b.character) if a_port[lane] == 1 else (b.character, a.character)
@@ -136,9 +207,9 @@ def play(a, b, games, lanes=64, out=None, compiled=True, seed=0, ucf=False):
 
         record(active)
         while active.any():
-            columns = {k: v.tolist() for k, v in frame.columns.items()}
+            columns = {k: v.tolist() for k, v in frame.columns.items()} if per_game else {}
             rows = {}
-            for lane in np.flatnonzero(active):
+            for lane in np.flatnonzero(active) if per_game else ():
                 flat = {k: v[lane] for k, v in columns.items()}
                 for port in (1, 2):
                     rows[Slot(int(lane), port)] = ObservationRow(
@@ -146,8 +217,8 @@ def play(a, b, games, lanes=64, out=None, compiled=True, seed=0, ucf=False):
                         reset=bool(frame.reset[lane]))
             actions = np.zeros((lanes, 2, 14), np.float32)
             for brain in brains:
-                for slot, action in brain.act(rows).items():
-                    actions[slot.match, slot.port - 1] = controller_to_action_vec(action)
+                for slot, action in brain.act(frame, rows).items():
+                    actions[slot.match, slot.port - 1] = action
             frame = sim.step(actions, active)
             frames += int(active.sum())
             record(active)

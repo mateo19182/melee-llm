@@ -43,14 +43,14 @@ def _parse(path):
     return sample
 
 
-def from_tape(path):
-    """HAL's per-frame columns for a game the farm saved (haltrain.farm --out): its 71 observation columns as they
-    are, and both controllers from the actions the simulator applied on each frame."""
+def from_records(records):
+    """HAL's per-frame columns from the simulator adapter's packed records: its 71 observation columns as they are,
+    and both controllers from the actions the simulator applied on each frame. `records` is one game over time (a
+    farm tape) or one frame over many games (live play): the columns are per row either way."""
     from hal.data.schema import MDS_PER_FRAME_DTYPES, Rank
     from hal.sim.native import OBSERVATION_FIELDS
     from hal.wire import ACTION_CHANNELS, ITEM_OWNER_NONE, MASK_INT32
 
-    records = np.load(path)["records"]
     words = records["columns"]
     sample = {name: np.ascontiguousarray(words[:, i]).view(np.dtype(MDS_PER_FRAME_DTYPES[name]))
               for i, name in enumerate(OBSERVATION_FIELDS)}
@@ -66,6 +66,32 @@ def from_tape(path):
         sample[f"p{port}_button_start"] = np.zeros(len(records), np.int32)
         sample[f"p{port}_rank"] = np.full(len(records), int(Rank.MASTER), np.uint8)
     return sample
+
+
+def from_tape(path):
+    """HAL's per-frame columns for a game the farm saved (haltrain.farm --out)."""
+    return from_records(np.load(path)["records"])
+
+
+def live_features(records, ports, stats, identity=AMSA):
+    """Model features [n, 1, ...] for one frame of n games, each seen from its `ports` entry (1 or 2), through the
+    same HAL code that prepares training windows. Rows come back grouped by port: all port-1 rows, then port 2."""
+    import torch
+    from hal.representation.features import ITEM_PLAYER_COLUMNS, ITEM_PLAYER_PROJECTION, preprocess
+    from hal.training.replay_windows import relabel_ego
+
+    sample, parts = from_records(records), []
+    for port in (1, 2):
+        rows = np.flatnonzero(ports == port)
+        if not len(rows):
+            continue
+        mine = {k: v[rows] for k, v in sample.items()}
+        mine[f"p{port}_player_id"] = np.full(len(rows), identity, np.int32)
+        mine[f"p{3 - port}_player_id"] = np.zeros(len(rows), np.int32)
+        columns = {k: v[:, None] for k, v in relabel_ego(mine, f"p{port}").items() if k in ITEM_PLAYER_PROJECTION.columns}
+        columns["ctx_pad"] = np.zeros(len(rows), np.int64)
+        parts.append(preprocess(columns, stats, extra=ITEM_PLAYER_COLUMNS, projection=ITEM_PLAYER_PROJECTION))
+    return {k: torch.cat([part[k] for part in parts]) for k in parts[0]}
 
 
 def extract(path, side):
