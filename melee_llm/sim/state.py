@@ -3,7 +3,8 @@
 What libmelee reads from a post-frame event, melee_sim reports in the same units (both come from the same
 fighter struct), so most fields copy across. On top of the raw values libmelee's Console adds: action
 frames re-indexed to start at 1 for zero-indexed actions, the moonwalk warning (needs the previous frame),
-`off_stage`, `distance`, projectiles from item slots, and each player's controller state from its inputs.
+`off_stage`, `distance`, projectiles from item slots, Fountain of Dreams' platform heights, and each player's
+controller state from its inputs.
 
 melee_sim does not report the ECB or the powershield flag; those keep libmelee's defaults (zeros, False).
 """
@@ -18,7 +19,7 @@ import melee
 import numpy as np
 from melee import enums, stages
 from melee.enums import Action
-from melee.gamestate import GameState, PlayerState, Projectile, UnknownAnimation, UnknownProjectileType
+from melee.gamestate import FoDPlatforms, GameState, PlayerState, Projectile, UnknownAnimation, UnknownProjectileType
 
 # melee_sim uses Slippi's external stage ids, libmelee its own enum
 SIM_STAGE = {
@@ -98,6 +99,9 @@ class StateBuilder:
             if follower["present"] and source < len(self.ports) and self.ports[source] in gs.players:
                 gs.players[self.ports[source]].nana = self._player(follower, self.ports[source], nana=True)
         gs.projectiles = [self._projectile(item) for item in obs["items"] if item["exists"]]
+        if self.stage is enums.Stage.FOUNTAIN_OF_DREAMS:  # libmelee reads these from Slippi's FoD platform events
+            fod = obs["stage"]["fod_platforms"]
+            gs.fod_platforms = FoDPlatforms(left=np.float32(fod["left"]), right=np.float32(fod["right"]))
         if len(gs.players) >= 2:
             a, b = (gs.players[p].position for p in sorted(gs.players)[:2])
             gs.distance = math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2)

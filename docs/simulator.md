@@ -70,6 +70,15 @@ uv run python -m melee_llm.match --mode sim --p1 baseline:rusher --p2 baseline:l
 - The game's RNG is not Dolphin's, so the same seed and inputs repeat exactly here but play out differently on Dolphin.
 - Timeouts are scored on the state at the timer, by stocks then percent. There is no Sudden Death.
 
+## Faynt farm: many Faynt games at once
+
+`train/faynt/farm.py` plays Faynt checkpoints against each other in one simulator batch per process, with one batched CUDA-graph model step per checkpoint. Each seat's input takes the live bot's path (simulator row → `StateBuilder` → slippi-ai `Parser`), and `python -m faynt.parity` checks it against libmelee's own parse of the Slippi events. On this machine 8 processes of 64 games run about 6,300 frames a second. Details and checks against Dolphin: [E28](experiments/E28-faynt-farm.md).
+
+```sh
+cd train && PYTHONPATH=. ../vendor/Faynt-Tournament/.venv/bin/python -m faynt.farm \
+    faynt:10M-Arena/YOSHI faynt:10M-Expert/YOSHI --games 512 --lanes 64 --workers 8 --ucf --out DIR
+```
+
 ## Next work
 
 Done: `--mode sim` for our agents and the learned bots, macro tests in the real game (`tests/test_macros.py`), and bot-writer practice in the simulator (`python -m melee_llm.botwriter.practice play ... --sim`, opt-in). Not started, roughly in order of value for effort:
