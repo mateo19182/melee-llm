@@ -53,4 +53,5 @@ Loss is validation loss, summed over the four controller heads. "vs CPU 9" is wi
 | [E23](E23-hal-dida-delay.md) | 11-17 | abandoned | Delay: imitate the no-delay model on our own delayed games | stopped after 167 of 288 games, before training; no result | superseded by the simulator game farm: the same loss, on games from the simulator and a small student |
 | [E24](E24-sim-farm.md) | 11-17 | done | Simulator game farm: speed, and agreement with Dolphin | 1,700 to 1,900 game frames a second at 64 lanes; at delay 10 the simulator gave 20 wins in 192, Dolphin 7 in 60 | the farm replaces Dolphin for generating games and for quick checks; Dolphin stays the judge |
 | [E25](E25-student.md) | 11-18 | running | Small student of HAL: design and speed |  |  |
+| [E26](E26-yoshi-technique.md) | 11-18 | done | Does HAL execute Yoshi's techniques like aMSa, and what does delay take away? | same aerials, double-jump cancels and L-cancels as aMSa; half his double-jump lands; parries against Fox drop from 0.17 to 0.02 a minute at delay 10 | delay takes Fox parries and some precision; the gap to aMSa in double-jump lands is there without delay too |
 <!-- index:end -->
