@@ -11,7 +11,8 @@ action of frame t+d+1. Three kinds of game supply them:
   the teacher would have done seeing the present (haltrain.relabel), and d is the delay the game was played at.
 
 Each update takes --batch windows of farm games and --batch of aMSa's. Every tenth farm game is held out.
-The student is saved as RUN_DIR/last.pt with its shape.
+The student is saved as RUN_DIR/last.pt with its shape, and at every validation as RUN_DIR/at-N/last.pt, which the
+farm plays as `student:RUN/at-N`.
 """
 import argparse
 import json
@@ -174,7 +175,12 @@ def main():
     log = open(a.run_dir / "log.jsonl", "a")
 
     def save(update):
-        torch.save({"model": student.state_dict(), "shape": shape, "update": update}, a.run_dir / "last.pt")
+        # one file per validation as well: the farm loss on held-out games turns up before training ends
+        saved = {"model": student.state_dict(), "shape": shape, "update": update}
+        torch.save(saved, a.run_dir / "last.pt")
+        if update:
+            (a.run_dir / f"at-{update}").mkdir(exist_ok=True)
+            torch.save(saved, a.run_dir / f"at-{update}" / "last.pt")
 
     def validate(update):
         student.eval()
