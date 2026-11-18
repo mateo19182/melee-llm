@@ -41,7 +41,7 @@ Decided with Mateo on 2026-11-18: pending actions as input, Yoshi only, train 10
 **Runtime.** `student.Cache` keeps the trunk's attention keys and values for every game in one tensor, so a new frame costs one token per game and nothing is done per game in Python.
 
 **Training data.** Everything is Yoshi, by stomped's rules (no UCF):
-- 1,440 farm games of the teacher (`hal:AMSA#0,return_target=40`): 360 each at 0, 9, 10 and 11 frames of delay, against HAL as a Master player on Fox (96), Captain Falcon, Falco, Marth and Jigglypuff (48 each), Sheik and Peach (24 each), and against HAL as aMSa (24). The mix follows who we meet on stomped ([yoshi.md](../yoshi.md)). About 9.6M frames, in `/mnt/data/melee/farm/student-1`. The teacher won 160 of 360 without delay and 31, 47 and 27 of 360 at 10, 9 and 11 frames.
+- 1,440 farm games of the teacher (`hal:AMSA#0,return_target=40`): 360 each at 0, 9, 10 and 11 frames of delay, against HAL as a Master player on Fox (96), Captain Falcon, Falco, Marth and Jigglypuff (48 each), Sheik and Peach (24 each), and against HAL as aMSa (24). The mix follows who we meet on stomped ([yoshi.md](../yoshi.md)). About 9.6M frames, in `/mnt/data/melee/farm/student-1`. The teacher won 171 of 360 without delay and 47, 35 and 27 of 360 at 9, 10 and 11 frames.
 - aMSa's human games on Yoshi from HAL's dataset.
 
 **Training** (`train/haltrain/distill.py`). Every example is the game up to frame t, the d actions that followed, and a label for the action of frame t+d+1:
