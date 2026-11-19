@@ -1,5 +1,6 @@
-"""Own-bot training runs (lane B): data/train/runs/<name>/, written by train/meleebot/train.py (behaviour cloning)
-or train/meleebot/rl/ppo.py (self-play RL, run.json kind "rl").
+"""Own-bot training runs: data/train/runs/<name>/, written by train/meleebot/train.py (behaviour cloning),
+train/meleebot/rl/ppo.py (self-play RL, run.json kind "rl") or train/farm/rl.py (Faynt-style PPO, kind "rl" and
+algo "faynt-ppo", with evals.jsonl from train/farm/rl_eval.py).
 
 run.json is written once at start (args, size, total steps); train.jsonl gets a point every 100 steps
 and log.jsonl one per validation. Runs started before run.json existed have their stdout in
@@ -59,9 +60,11 @@ def rl_run(d: Path, info: dict) -> dict:
     slps = sorted(Path(info["replays"]).glob("*.slp"), key=lambda p: p.stat().st_mtime) if info.get("replays") else []
     replays = [{"name": p.stem, "id": game_id(p), "time": p.stat().st_mtime} for p in slps[-12:][::-1]]
     last = points[-1] if points else {}
-    return {"name": d.name, "kind": "rl", "state": _state(updated, bool(iters and it >= iters)), "step": it,
-            "steps": None, "updated": updated, "frames_per_s": last.get("fps"), "params": info.get("params"),
-            "args": info.get("args"), "init": info.get("init"), "pool": info.get("pool"), "train": points,
+    steps = (info.get("args") or {}).get("steps") if info.get("algo") == "faynt-ppo" else None
+    return {"name": d.name, "kind": "rl", "algo": info.get("algo"), "state": _state(updated, bool(iters and it >= iters)),
+            "step": it, "steps": steps, "updated": updated, "frames_per_s": last.get("fps"), "params": info.get("params"),
+            "args": info.get("args"), "init": info.get("init"), "pool": info.get("pool"), "lanes": info.get("lanes"),
+            "envs": info.get("envs"), "seats": info.get("seats"), "train": points, "evals": _jsonl(d / "evals.jsonl"),
             "replays": replays, "n_replays": len(slps)}
 
 
@@ -69,11 +72,12 @@ def run(d: Path) -> dict:
     info = json.loads((d / "run.json").read_text()) if (d / "run.json").exists() else {}
     if info.get("kind") == "rl":
         return rl_run(d, info)
-    points = _jsonl(d / "train.jsonl")
+    points = [p for p in _jsonl(d / "train.jsonl") if "step" in p]
     legacy = {}
     if not points:
         points, legacy = _from_stdout(d.parent / f"{d.name}.out")
-    evals = _jsonl(d / "log.jsonl")
+    # other trainers (HAL fine-tunes, students) write log.jsonl in their own shape: keep only validation points
+    evals = [e for e in _jsonl(d / "log.jsonl") if "step" in e and "loss" in e]
     files = [p for p in (d / "train.jsonl", d / "log.jsonl", d.parent / f"{d.name}.out") if p.exists()]
     updated = max((p.stat().st_mtime for p in files), default=d.stat().st_mtime)
     step = max([p["step"] for p in points] + [e["step"] for e in evals] + [0])
@@ -92,5 +96,11 @@ def run(d: Path) -> dict:
 def runs() -> list[dict]:
     if not RUNS.exists():
         return []
-    out = [run(d) for d in RUNS.iterdir() if d.is_dir()]
+    out = []
+    for d in RUNS.iterdir():
+        if d.is_dir():
+            try:
+                out.append(run(d))
+            except (OSError, ValueError, KeyError, TypeError) as e:  # one unreadable run must not hide the others
+                print(f"training page: skipping {d.name}: {type(e).__name__}: {e}")
     return sorted(out, key=lambda r: (r["state"] != "running", -r["updated"]))

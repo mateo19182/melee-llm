@@ -83,6 +83,8 @@ cd train && PYTHONPATH=. ../vendor/Faynt-Tournament/.venv/bin/python -m farm.run
 
 The farm loads the simulator from the melee-brute checkout (`MELEE_SIM`), using its optimised library when `make python-release` has built it (bit-identical frames, E31).
 
+**RL in the farm** (`farm/rl.py`, E32): Faynt-style PPO of a Yoshi from Faynt 10M Arena, against itself and Phillip's anti-Yoshi agents, with the paper's leash settings. `farm/rl_eval.py` plays its checkpoints against fixed opponents. The web Training page charts both, and the run's lanes play live on All matches.
+
 Each seat reads what its live bot reads:
 - **Faynt and Phillip** get a libmelee `GameState` built from the simulator row (`melee_llm.sim.state`), parsed by slippi-ai's `Parser`. `--check` also rebuilds every frame from its Slippi events, as the live bots see Dolphin, and counts the seat-frames where the model would have read something else. Every field was equal in every check run so far.
 - **HAL** gets its `GameState` from the Slippi events, parsed by its own libmelee fork, because the fork builds HAL's observations from parsed event data.
