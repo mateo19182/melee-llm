@@ -26,6 +26,8 @@ Pages:
   - The "latest search" block near the end reads `static/brute/status.json` on every page load: edit that file to report on the search (`state` is `not_started`, `running` or `done`; `summary`, `plan`, `details` as label and value pairs, `findings` as a list of sentences, `updated`). No restart is needed.
 - **Arena**, **Coach** (pilot summaries), **Bot-writer** (sessions with cost, time and bot source; ladder boards), **Play vs bot** (placeholder for netplay).
 
+Search engines: `index.html` carries the title, description, Open Graph tags and a canonical URL, which the server points at the page being served (`/live` and `/docs` name `/` and `/docs/research`, the pages they show). `/robots.txt` allows everything and `/sitemap.xml` lists the top bar's pages and every doc. Cloudflare prepends its managed content signals to the robots file. The write-up sets its own tags in `writeup/build_page.py`.
+
 The frontend is plain ES modules with no build step (`melee_llm/web/static/`), with one stylesheet, `style.css`. It is styled after Melee's menus; the fonts (Archivo and Barlow, SIL OFL) are vendored in `static/vendor/fonts/`.
 
 ## Services

@@ -5,8 +5,9 @@ import { api, fmt, h, mount } from "../lib.js";
 export default async function docs(root, { name = "research", query }, signal) {
   const [list, doc] = await Promise.all([api("/api/docs"), api(`/api/docs/${name}`)]);
   if (signal.aborted) return;
+  const site = document.title;
   document.title = `${doc.title} · Melee × LLM`;
-  signal.addEventListener("abort", () => { document.title = "Melee × LLM"; });
+  signal.addEventListener("abort", () => { document.title = site; });
 
   const article = h("article.prose");
   article.innerHTML = doc.html;

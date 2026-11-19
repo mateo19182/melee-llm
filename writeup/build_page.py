@@ -17,6 +17,8 @@ from markdown_it import MarkdownIt
 HERE = Path(__file__).resolve().parent
 STATIC = HERE.parent / "melee_llm" / "web" / "static"
 
+URL = "https://melee.m19182.dev/writeup/"
+DESCRIPTION = "Melee bots are getting really good: ten years of them, how the best ones work, and one Elo scale for CPUs, learned bots and LLMs."
 # Only what an article needs on top of style.css: a reading column and plain prose elements.
 CSS = """
 .frame{max-width:920px}
@@ -68,7 +70,16 @@ def main() -> None:
     page = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{html.escape(title)}</title>
-<meta name="description" content="Melee bots are getting really good: ten years of them, how the best ones work, and one Elo scale for CPUs, learned bots and LLMs.">
+<meta name="description" content="{DESCRIPTION}">
+<meta name="author" content="Mateo Amado Ares">
+<link rel="canonical" href="{URL}">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Melee × LLM">
+<meta property="og:title" content="{html.escape(title)}">
+<meta property="og:description" content="{DESCRIPTION}">
+<meta property="og:url" content="{URL}">
+<meta property="og:image" content="{URL}media/site-bench.webp">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#070926">
 <link rel="icon" href="/static/img/smash-emblem.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/static/style.css">
@@ -79,7 +90,7 @@ def main() -> None:
 <div class="frame">
 <span class="frame-stripes" aria-hidden="true"></span>
 <div class="frame-title" aria-hidden="true">Write-up</div>
-<main><article class="post"><h1>{html.escape(title)}</h1>{sub}<div class="meta">Mateo Amado · {html.escape(meta.get("date", ""))}</div>
+<main><article class="post"><h1>{html.escape(title)}</h1>{sub}<div class="meta"><a href="https://blog.m19182.dev/">Mateo Amado</a> · {html.escape(meta.get("date", ""))}</div>
 {body}</article></main>
 </div>
 </body></html>

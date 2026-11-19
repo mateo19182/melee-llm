@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import time
 from pathlib import Path
 
@@ -26,6 +27,9 @@ from melee_llm.web import auth, docs, games, jobs, logs, registry, specs, traini
 
 STATIC = Path(__file__).parent / "static"
 SLIPPILAB = ROOT / "vendor/slippilab/dist"
+SITE = "https://melee.m19182.dev"
+# Routes that show the same page as another: "/" is the live view, and /docs opens the research doc.
+ALIASES = {"/live": "/", "/docs": "/docs/research"}
 HLS_UPSTREAM = os.environ.get("MELEE_HLS", "http://127.0.0.1:8888/live/")
 _hls = httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=5.0))
 
@@ -70,13 +74,32 @@ def static_version() -> str:
     return str(max(int(p.stat().st_mtime) for p in STATIC.rglob("*") if p.suffix in (".js", ".css")))
 
 
-async def index(_: Request) -> Response:
+def canonical(path: str) -> str:
+    return ALIASES.get(path, path)
+
+
+async def index(request: Request) -> Response:
     # The entry module and stylesheet load from /static/v<newest mtime>/, so every relative import is versioned too:
     # a deploy changes every URL, and those URLs can be cached forever.
     v = static_version()
     html = (STATIC / "index.html").read_text()
     html = html.replace('"/static/app.js"', f'"/static/v{v}/app.js"').replace('"/static/style.css"', f'"/static/v{v}/style.css"')
+    # index.html's canonical and og:url name the root; every SPA route serves it, so point them at this page.
+    html = html.replace(f'"{SITE}/"', f'"{SITE}{canonical(request.url.path)}"')
     return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
+
+
+async def robots(_: Request) -> Response:
+    return PlainTextResponse(f"User-agent: *\nAllow: /\nSitemap: {SITE}/sitemap.xml\n")
+
+
+async def sitemap(_: Request) -> Response:
+    """The top bar's pages and every doc."""
+    nav = re.search(r'<nav id="nav">.*?</nav>', (STATIC / "index.html").read_text(), re.S)[0]
+    paths = ["/", *(canonical(p) for p in re.findall(r'href="([^"]+)"', nav)), *(f"/docs/{d['name']}" for d in docs.listing())]
+    urls = "".join(f"<url><loc>{SITE}{p}</loc></url>" for p in dict.fromkeys(paths))
+    return Response(f'<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{urls}</urlset>\n',
+                    media_type="application/xml")
 
 
 async def slippilab(_: Request) -> Response:
@@ -397,6 +420,8 @@ SPA = ["/", "/bench", "/bench/{id:path}", "/live", "/matches", "/matches/{id}", 
 
 routes = [
     *[Route(p, index) for p in SPA],
+    Route("/robots.txt", robots),
+    Route("/sitemap.xml", sitemap),
     Route("/login", login),
     Route("/logout", logout),
     Route("/api/me", api_me),
