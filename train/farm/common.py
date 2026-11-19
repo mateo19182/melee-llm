@@ -25,6 +25,11 @@ SIM = Path(os.environ.get("MELEE_SIM", "/mnt/data/melee/native/melee-brute"))
 for _p in (str(REPO), str(SIM)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
+# melee_sim falls back to the -O0 build; the optimised one (`make python-release` in SIM) plays bit-identical frames
+# about 5x faster (E31).
+_RELEASE = SIM / "build/melee_core/python-release/libmelee_core.so"
+if _RELEASE.is_file():
+    os.environ.setdefault("MSL_CORE_LIBRARY", str(_RELEASE))
 
 
 @dataclasses.dataclass

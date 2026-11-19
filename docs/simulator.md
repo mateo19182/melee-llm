@@ -52,6 +52,8 @@ uv run python -m melee_llm.match --mode sim --p1 baseline:rusher --p2 baseline:l
 
 **Exactness against libmelee** (`sim/parity.py`). 40 random replays of ours between controller-driven players gave 152,375 compared frames. Every field matched except `hitstun_frames_left`: outside hitstun, libmelee reports whatever Melee keeps in that shared slot and the simulator reports 0. A game stays in sync until the first random choice that comes out differently: 15 of the 40 games never diverged.
 
+**Exactness against Dolphin** (E31). With each replay's recorded inputs and random seeds, melee-brute's own validator reproduces 406 of 411 of our Dolphin bot games and 36 of 40 random human ranked games frame for frame to the end. What differs in normal play is only the random number stream.
+
 **Learned bots in it.**
 - **Events against Dolphin** (`python -m melee_llm.sim.slippi REPLAY.slp`): 10 replays, 30,735 frames before divergence, and every field libmelee or HAL reads is exact.
 - **Not exact:** fields the simulator doesn't report are written as 0 (last attack, combo count, L-cancel status, animation index and others), and a few are approximated; `sim/slippi.py` lists them. Nothing we feed reads them.
@@ -76,8 +78,10 @@ uv run python -m melee_llm.match --mode sim --p1 baseline:rusher --p2 baseline:l
 
 ```sh
 cd train && PYTHONPATH=. ../vendor/Faynt-Tournament/.venv/bin/python -m farm.run \
-    faynt:10M-Arena/YOSHI phillip:fox_d18_vs_yoshi_v3/FOX --games 256 --lanes 64 --workers 4 --ucf --out DIR
+    faynt:10M-Arena/YOSHI phillip:fox_d18_vs_yoshi_v3/FOX --games 256 --lanes 64 --workers 4 --out DIR
 ```
+
+The farm loads the simulator from the melee-brute checkout (`MELEE_SIM`), using its optimised library when `make python-release` has built it (bit-identical frames, E31).
 
 Each seat reads what its live bot reads:
 - **Faynt and Phillip** get a libmelee `GameState` built from the simulator row (`melee_llm.sim.state`), parsed by slippi-ai's `Parser`. `--check` also rebuilds every frame from its Slippi events, as the live bots see Dolphin, and counts the seat-frames where the model would have read something else. Every field was equal in every check run so far.
