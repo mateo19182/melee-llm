@@ -222,14 +222,34 @@ LEGEND = [("learned", "learned", "Learned bot"), ("coach", "coach", "LLM or Jev 
           ("jev", "jev", "Jev playing directly"), ("ref", "ref", "Built-in CPU or a player with no model")]
 
 FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif'
+BLOG_FONT = 'Geist, Inter, system-ui, -apple-system, "Segoe UI", sans-serif'
+
+# "site": the web UI's dark navy (melee_llm/web/static/style.css). The blog pair sits on the blog's
+# own surfaces (blog-19182 assets/styles.css) with no background of its own; series steps from the
+# reference palette, validated against #e9e7e1 and #0c0c0c.
+THEMES = {
+    "site": {"bg": "#080b28", "ring": "#080b28", "t1": "#e8ebf7", "t2": "#b5bbdc", "tm": "#8088b4",
+             "grid": "#1b2250", "axis": "#2e3878", "band": "#9198c0", "conn": "#3a4590", "font": FONT,
+             "series": SERIES},
+    "blog-light": {"bg": None, "ring": "#e9e7e1", "t1": "#2b2926", "t2": "#4a4640", "tm": "#7d786e",
+                   "grid": "#d8d5cd", "axis": "#a8a398", "band": "#6a655c", "conn": "#bdb8ad", "font": BLOG_FONT,
+                   "series": {"learned": "#2a78d6", "coach": "#eb6834", "written": "#1baf7a", "llm": "#eda100",
+                              "jev": "#e87ba4", "ref": "#8a8579"}},
+    "blog-dark": {"bg": None, "ring": "#0c0c0c", "t1": "#f5f5f5", "t2": "#c8c8c8", "tm": "#8a8a8a",
+                  "grid": "#232323", "axis": "#4a4a4a", "band": "#b0b0b0", "conn": "#3a3a3a", "font": BLOG_FONT,
+                  "series": SERIES},
+}
+THEME = THEMES["site"]
+OUT = FIGS
 
 
 def style() -> str:
-    """One theme: the site's dark navy (melee_llm/web/static/style.css), since the page is always dark."""
-    series = "".join(f".c-{k}{{fill:{c};stroke:{c}}}" for k, c in SERIES.items())
-    base = (".bg{fill:#080b28}.ring{stroke:#080b28}.t1{fill:#e8ebf7}.t2{fill:#b5bbdc}.tm{fill:#8088b4}"
-            ".grid{stroke:#1b2250}.axis{stroke:#2e3878}.band{fill:#9198c0;fill-opacity:.12}.conn{stroke:#3a4590}")
-    return (f"<style>text{{font-family:{FONT};font-variant-numeric:tabular-nums}}{base}{series}"
+    th = THEME
+    series = "".join(f".c-{k}{{fill:{c};stroke:{c}}}" for k, c in th["series"].items())
+    base = (f".bg{{fill:{th['bg']}}}.ring{{stroke:{th['ring']}}}.t1{{fill:{th['t1']}}}.t2{{fill:{th['t2']}}}"
+            f".tm{{fill:{th['tm']}}}.grid{{stroke:{th['grid']}}}.axis{{stroke:{th['axis']}}}"
+            f".band{{fill:{th['band']};fill-opacity:.12}}.conn{{stroke:{th['conn']}}}")
+    return (f"<style>text{{font-family:{th['font']};font-variant-numeric:tabular-nums}}{base}{series}"
             f".ci{{fill:none;stroke-width:2;stroke-linecap:round}}.hollow{{fill-opacity:0}}</style>")
 
 
@@ -278,7 +298,7 @@ class Chart:
         self.out = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {self.W} {self.H}" '
                     f'width="{self.W}" height="{self.H}" role="img" aria-label="{esc(title)}">',
                     f"<title>{esc(title)}</title>", style(),
-                    f'<rect class="bg" x="0" y="0" width="{self.W}" height="{self.H}" rx="8"/>',
+                    *([f'<rect class="bg" x="0" y="0" width="{self.W}" height="{self.H}" rx="8"/>'] if THEME["bg"] else []),
                     text(16, 26, title, "t1", 15, weight=600), text(16, 45, subtitle, "t2", 12)]
         for r, items in enumerate(rows if legend else []):
             y = 64 + 20 * r
@@ -301,11 +321,11 @@ class Chart:
             self.out.append(text(x, y1 + 16, f"{t:,}", "tm", 11, "middle"))
         self.out.append(text(self.px1, y1 + 32, "Elo (CPU 9 = 1500)", "tm", 11, "end"))
 
-    def ref(self, v, name):
+    def ref(self, v, name, anchor="start"):
         x = self.sx(v)
         self.out.append(f'<line x1="{x:.1f}" x2="{x:.1f}" y1="{self.top - 6}" y2="{self.H - 34}" '
                         f'class="axis" stroke-width="1.5"/>')
-        self.out.append(text(x + 4, self.top + 4, name, "tm", 10.5))
+        self.out.append(text(x + (4 if anchor == "start" else -4), self.top + 4, name, "tm", 10.5, anchor))
 
     def band(self, lo, hi, name):
         a, b = self.sx(lo), self.sx(hi)
@@ -325,10 +345,13 @@ class Chart:
         if right:
             self.out.append(text(self.W - 14, y + 4, right, "tm", 11, "end"))
 
+    def header(self, i, name):
+        self.out.append(text(16, self.ry(i) + 5, name, "t1", 12.5, weight=600))
+
     def save(self, name):
         self.out.append("</svg>")
-        FIGS.mkdir(exist_ok=True)
-        (FIGS / name).write_text("\n".join(self.out) + "\n")
+        OUT.mkdir(parents=True, exist_ok=True)
+        (OUT / name).write_text("\n".join(self.out) + "\n")
 
 
 def kind(p):
@@ -336,14 +359,32 @@ def kind(p):
     return CAT.get(cat, "ref"), SHAPES["scripted" if cat == "scripted" else CAT.get(cat, "ref")]
 
 
-def fig_leaderboard(s, n):
+BLOG_HIDE = {f"cpu:{k}" for k in (2, 3, 4, 6, 7, 8)}
+
+
+def fig_leaderboard(s, n, blog=False):
     # 27 written bots would swamp the chart: keep the best and the weakest, the rest are in their own figure
     written = sorted((p for p in s["boards"]["rt"] if p["id"].startswith("written:")), key=lambda p: p["elo"])
     hide = {p["id"] for p in written[1:-1]}
     names = {written[-1]["id"]: f"Best written bot ({label(written[-1]['id']).split(',')[0]})",
              written[0]["id"]: f"Weakest written bot ({label(written[0]['id']).split(',')[0]})"}
     rows = [p for p in s["boards"]["rt"] if not deepdive(p) and p["id"] not in hide]
-    c = Chart("Melee Bench, everyone who plays in real time",
+    if blog:
+        coaches = sorted((p for p in rows if p["category"] == "coach" and p["id"].startswith("coach:")
+                          and not p["id"].startswith("coach:random")), key=lambda p: -p["elo"])
+        drop = BLOG_HIDE | {written[0]["id"], written[-1]["id"]} | {p["id"] for p in coaches[1:]}
+        names[coaches[0]["id"]] = "Best LLM coach"
+        rows = [p for p in rows if p["id"] not in drop]
+        # written bots: one setting only, the high-effort batch, each model's best run
+        best = {}
+        for p in s["boards"]["rt"]:
+            if (m := re.fullmatch(r"written:(\w+)-[\d.]+-high/run\d", p["id"])) and p["id"] != STARTER:
+                if m[1] not in best or p["elo"] > best[m[1]]["elo"]:
+                    best[m[1]] = p
+        for model, p in best.items():
+            names[p["id"]] = f"{label(p['id']).split(',')[0]} bot, best of 5"
+        rows = sorted(rows + list(best.values()), key=lambda p: -p["elo"])
+    c = Chart("Every bot that plays in real time" if blog else "Melee Bench, everyone who plays in real time",
               f"Fox ditto, BF/FD, full games. Dot: Bradley-Terry Elo; line: 95% interval. Snapshot {n['as_of']}.",
               len(rows), 500, 2700, list(range(500, 2701, 250)), legend=LEGEND)
     c.ref(1500, "CPU 9 anchor")
@@ -391,7 +432,7 @@ def fig_latency(s, n):
               len(pairs), 600, 1900, list(range(600, 1901, 200)), right_w=120,
               legend=[("learned", "learned", "Untimed (game waits)"), ("coach", "learned", "Real time")])
     for v, nm in ((1500, "CPU 9"), (rt["cpu:1"]["elo"], "CPU 1"), (rt["llm_live:none"]["elo"], "no model")):
-        c.ref(v, nm)
+        c.ref(v, nm, "end" if nm == "no model" else "start")
     c.out.append(text(c.W - 14, c.top - 10, "replies too stale", "tm", 10.5, "end"))
     for i, (name, a, b) in enumerate(pairs):
         y = c.ry(i)
@@ -403,6 +444,40 @@ def fig_latency(s, n):
         c.row(i, name, pa["elo"], None, None, "learned", "circle", drop, emph=True)
         c.out.append(marker(c.sx(pb["elo"]), y, "coach", "circle"))
     c.save("latency-tax.svg")
+
+
+BATCHES = [(None, "One try per model"), ("medium", "Three runs each, medium effort"),
+           ("high", "Five runs each, high effort, new starter bot")]
+
+
+def fig_botwriter_blog(s, n):
+    rt = {p["id"]: p for p in s["boards"]["rt"]}
+    bw = s["botwriter"]
+    groups = []
+    for effort, title in BATCHES:
+        ids = [i for i in rt if (m := re.fullmatch(r"written:(\w+)-([\d.]+)(?:-(\w+))?/run(\d)", i)) and m[3] == effort]
+        groups.append((title, sorted(ids, key=lambda i: -rt[i]["elo"])))
+    c = Chart("Bots written by LLMs in 30 minutes",
+              "One row per 30-minute coding session. Right: API-equivalent cost and the bot's length.",
+              sum(len(g) + 1 for _, g in groups), 800, 2200, list(range(800, 2201, 200)), label_w=200, right_w=120)
+    c.ref(1500, "CPU 9")
+    c.ref(rt["mimic"]["elo"], "MIMIC")
+    i = 0
+    for title, ids in groups:
+        c.header(i, title)
+        i += 1
+        for k in ids:
+            p = rt[k]
+            m = re.fullmatch(r"written:(\w+)-([\d.]+)(?:-(\w+))?/run(\d)", k)
+            name = f"{m[1].capitalize()} {m[2]}" + (f", run {m[4]}" if m[3] else "")
+            if k == STARTER:
+                name = "Starter bot, unchanged"
+            meta = bw.get(k.removeprefix("written:"), {})
+            right = f"${meta['cost_usd']:.2f}, {meta['lines']} lines" if meta.get("cost_usd") else ""
+            c.row(i, name, p["elo"], p["lo"], p["hi"], "ref" if k == STARTER else "written",
+                  "circle" if k == STARTER else "square", right)
+            i += 1
+    c.save("bot-writer.svg")
 
 
 def fig_botwriter(s, n):
@@ -437,10 +512,30 @@ def render(s: dict) -> None:
     print(f"rendered {len(list(FIGS.glob('*.svg')))} figures and melee-bench.md, snapshot {n['as_of']}")
 
 
+def render_blog(s: dict, out: Path) -> None:
+    """The four charts in the blog's colours, NAME.svg (light) and NAME-dark.svg, trimmed for the post."""
+    global THEME, OUT
+    n = numbers(s)
+    for theme, suffix in (("blog-light", ""), ("blog-dark", "-dark")):
+        THEME, OUT = THEMES[theme], out / theme
+        fig_leaderboard(s, n, blog=True)
+        fig_coach(s, n)
+        fig_latency(s, n)
+        fig_botwriter_blog(s, n)
+        for f in OUT.glob("*.svg"):
+            f.replace(out / f"{f.stem}{suffix}.svg")
+        OUT.rmdir()
+    THEME, OUT = THEMES["site"], FIGS
+    print(f"rendered blog figures to {out}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--from-snapshot", action="store_true", help="skip extraction, use writeup/snapshot.json")
+    ap.add_argument("--blog", type=Path, metavar="DIR", help="only write the blog's light and dark figures to DIR")
     a = ap.parse_args()
+    if a.blog:
+        return render_blog(json.loads(SNAPSHOT.read_text()), a.blog)
     if not a.from_snapshot:
         SNAPSHOT.write_text(json.dumps(extract(), indent=1) + "\n")
     render(json.loads(SNAPSHOT.read_text()))
