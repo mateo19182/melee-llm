@@ -88,6 +88,23 @@ class Console(melee.Console):
             _kill_matching(home)
 
 
+
+class ExiAIController(melee.Controller):
+    """libmelee sends an analog trigger as (raw + 0.1) / 255 (fix_analog_trigger), for a build that reads 255 v. The
+    ExiAI build reads round(510 v - 255), clipped to Melee's 0..140, as if the trigger were a centred axis: every
+    press below full arrived as 0 and a full press as 25, so analog shields and airdodges never happened. Send the
+    value this build maps to the same raw trigger, round(amount * 140), that libmelee intends and the simulator uses
+    (melee_llm.sim.controller). Measured over the whole range on 2026-11-19 (docs/experiments/E30)."""
+
+    def press_shoulder(self, button, amount):
+        if button == melee.enums.Button.BUTTON_L:
+            self.current.l_shoulder = amount
+        elif button == melee.enums.Button.BUTTON_R:
+            self.current.r_shoulder = amount
+        self._check_pipe()
+        raw = min(140, max(0, round(amount * 140)))
+        self._write(f"SET {button.value} {(raw + 255) / 510 if raw else 0.0}\n")
+
 def _set_qt_geometry(path: str, size: tuple[int, int]) -> None:
     """Write the game window's saved geometry ([renderwidget] in Qt.ini, QWidget::saveGeometry v3.0 format)."""
     w, h = size
@@ -198,7 +215,8 @@ def play(agents: dict[int, Agent], iso: str, stage: melee.Stage = melee.Stage.BA
         emulation_speed=0 if fast else 1.0, blocking_input=blocking, slippi_port=slippi_port,
     )
     ports = sorted(agents)
-    controllers = {p: melee.Controller(console=console, port=p, type=melee.ControllerType.STANDARD) for p in ports}
+    make = ExiAIController if DOLPHIN[mode] == DOLPHIN_HEADLESS else melee.Controller
+    controllers = {p: make(console=console, port=p, type=melee.ControllerType.STANDARD) for p in ports}
     display = os.environ.get("DISPLAY")
     pub = matches.publisher(agents, stage, mode, games, slippi_port, replay_dir, meta)
     error = None
