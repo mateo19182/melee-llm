@@ -79,8 +79,9 @@ function status(s) {
 export default async function brute(root, _params, signal) {
   const [clips, state, R] = await Promise.all(["clips", "status", "road"].map((f) => api(`/static/brute/${f}.json`)));
   if (signal.aborted) return;
+  const site = document.title;
   document.title = "Brute · Melee × LLM";
-  signal.addEventListener("abort", () => { document.title = "Melee × LLM"; });
+  signal.addEventListener("abort", () => { document.title = site; });
   const scene = (id) => clips.scenes.find((s) => s.id === id);
   const player = (id) => {
     const el = h("div", { "data-scene": id });

@@ -101,3 +101,14 @@ def test_public_catalog(client):
     assert "random" in kinds["coach"]["arg"]["options"] and "options" not in kinds["coach"]
     assert cat["limits"]["games"] == specs.PUBLIC_GAMES
     assert "limits" not in client.get("/api/catalog").json()
+
+
+def test_search_engine_pages():
+    c = TestClient(server.app)
+    assert '<link rel="canonical" href="https://melee.m19182.dev/bench">' in c.get("/bench").text
+    assert '<meta property="og:url" content="https://melee.m19182.dev/">' in c.get("/live").text
+    assert "Sitemap: https://melee.m19182.dev/sitemap.xml" in c.get("/robots.txt").text
+    xml = c.get("/sitemap.xml").text
+    for loc in ("/", "/bench", "/writeup/", "/docs/research"):
+        assert f"<loc>https://melee.m19182.dev{loc}</loc>" in xml
+    assert "/live<" not in xml and "/docs<" not in xml

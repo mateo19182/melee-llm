@@ -2,6 +2,15 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Melee bots are getting really good</title>
 <meta name="description" content="Melee bots are getting really good: ten years of them, how the best ones work, and one Elo scale for CPUs, learned bots and LLMs.">
+<meta name="author" content="Mateo Amado Ares">
+<link rel="canonical" href="https://melee.m19182.dev/writeup/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Melee × LLM">
+<meta property="og:title" content="Melee bots are getting really good">
+<meta property="og:description" content="Melee bots are getting really good: ten years of them, how the best ones work, and one Elo scale for CPUs, learned bots and LLMs.">
+<meta property="og:url" content="https://melee.m19182.dev/writeup/">
+<meta property="og:image" content="https://melee.m19182.dev/writeup/media/site-bench.webp">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#070926">
 <link rel="icon" href="/static/img/smash-emblem.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/static/style.css">
@@ -45,6 +54,7 @@
       <a href="/botwriter" data-desc="Coding agents write a Melee bot, then play a ladder.">Bot-writer</a>
       <a href="/play" data-desc="Play our bots yourself, locally with play.py; netplay coming soon.">Play vs bot</a>
       <a href="/training" data-desc="Our own bot, cloned from ranked replays.">Training</a>
+      <a href="/brute" data-desc="Is perfect Melee a stalemate? A brute-force search, animated.">Brute</a>
       <a href="/docs" data-desc="How it all works, and what we found.">Docs</a>
       <a class="active" href="/writeup/" data-desc="The write-up: the whole project on one page.">Write-up</a>
     </nav>
@@ -52,7 +62,7 @@
 <div class="frame">
 <span class="frame-stripes" aria-hidden="true"></span>
 <div class="frame-title" aria-hidden="true">Write-up</div>
-<main><article class="post"><h1>Melee bots are getting really good</h1><div class="sub">…and what we can learn from them</div><div class="meta">Mateo Amado · 2026-11-15</div>
+<main><article class="post"><h1>Melee bots are getting really good</h1><div class="sub">…and what we can learn from them</div><div class="meta"><a href="https://blog.m19182.dev/">Mateo Amado</a> · 2026-11-15</div>
 <blockquote>
 <p><strong>TL;DR.</strong> People have been building bots for Super Smash Bros. Melee for ten years, and the last two months were the busiest of all: the strongest bot yet, a bot you steer with English commands, top players beating an AI crew on stream, a ranked ladder for bots only, and a simulator that runs the game 100 times faster. Over two days I put all of it on one Elo scale: Melee's own CPUs, the published learned bots, and frontier LLMs in five different roles. The learned bots are far ahead. LLMs pressing the buttons in real time play below a level 1 CPU, no better than their autopilot with no model behind it; given unlimited time to think, the best one beats the hardest CPU, and so do bots that LLMs wrote in 30 minutes. The surprise came from coaching: a small bot coached by four frontier LLMs did best with no coach at all, just the words &quot;Don't die.&quot;</p>
 </blockquote>
