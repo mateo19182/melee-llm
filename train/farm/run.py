@@ -1,7 +1,7 @@
 """Many games at once in the simulator between learned bots: Faynt, Phillip and HAL, each batched over its seats.
 
     cd train && PYTHONPATH=. ../vendor/Faynt-Tournament/.venv/bin/python -m farm.run A B --games 64 \\
-        [--lanes 64] [--workers 1] [--out DIR] [--ucf] [--check] [--stages BATTLEFIELD,...]
+        [--lanes 64] [--workers 1] [--out DIR] [--no-ucf] [--check] [--stages BATTLEFIELD,...]
 
 A player is `KIND:ARG[,option=value...]/CHARACTER` (default Yoshi):
 - `faynt:10M-Arena[,temperature=T]` (farm.faynt, in this process, on the GPU)
@@ -9,7 +9,8 @@ A player is `KIND:ARG[,option=value...]/CHARACTER` (default Yoshi):
 - `hal:IDENTITY[,return_target=N][,temperature=T][,delay=N]` (farm.hal, its own process, on the GPU)
 
 The first player takes port 1 on even lanes and port 2 on odd ones; stages cycle over the six legal ones (or
---stages). Rules: 4 stocks, 8 minutes, no items; UCF off unless --ucf (Slippi and our Dolphin have it on). Each seat reads what its live
+--stages). Rules: 4 stocks, 8 minutes, no items, UCF as on current Slippi and our Dolphin (--no-ucf turns off its 1.0
+cardinals, as in some older Slippi games; the simulator's other UCF fixes are always on). Each seat reads what its live
 bot reads on Dolphin (farm.common); --check also rebuilds every frame from Slippi events, as the live bots see
 Dolphin, and reports any seat-frame where a model would have read something else.
 """
@@ -61,7 +62,7 @@ def brain(kind, spec, seats, seed, check, graph):
     return RemoteBrain(kind, spec, seats, seed, check)
 
 
-def play(a, b, games, lanes=64, out=None, seed=0, ucf=False, check=False, first=0, quiet=False, graph=True,
+def play(a, b, games, lanes=64, out=None, seed=0, ucf=True, check=False, first=0, quiet=False, graph=True,
          stages=STAGES):
     """Play `games` games of a against b. Returns the result rows (a's score is 1 for a win, 0.5 for a draw) and, with
     check, each brain's input comparison. Games are numbered from `first` (a game's number picks its stage and seed),
@@ -206,7 +207,7 @@ def _worker(job):
     return play(*args, quiet=True, graph=graph, stages=stages)
 
 
-def play_parallel(a, b, games, lanes=64, out=None, seed=0, ucf=False, check=False, workers=1, graph=True,
+def play_parallel(a, b, games, lanes=64, out=None, seed=0, ucf=True, check=False, workers=1, graph=True,
                   stages=STAGES):
     """`play` split over worker processes, each with its own simulator batch and models."""
     import multiprocessing
@@ -248,7 +249,7 @@ def main():
     ap.add_argument("--lanes", type=int, default=64)
     ap.add_argument("--out", type=Path)
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--ucf", action="store_true")
+    ap.add_argument("--no-ucf", dest="ucf", action="store_false", help="without UCF's 1.0 cardinals")
     ap.add_argument("--check", action="store_true", help="compare every seat's inputs with the live bot's")
     ap.add_argument("--workers", type=int, default=1, help="processes; each runs --lanes games at a time")
     ap.add_argument("--no-graph", action="store_true", help="step Faynt eagerly instead of replaying a CUDA graph")
