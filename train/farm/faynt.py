@@ -101,6 +101,11 @@ class GraphStep:
                 out = model.step(game_state_t=self.state, controller_t=self.state.p0.controller, cache=self.cache,
                                  reset_mask=self.reset, temperature=temperature)
             self.button_logits = out.logits["buttons"]
+            # what RL needs from the actor: the sampled categories and their log-probability
+            buttons, stick = out.labels.buttons.long(), out.labels.main_stick.long()
+            self.labels = torch.stack([buttons, stick], -1)
+            self.logp = (torch.log_softmax(out.logits["buttons"].float(), -1).gather(-1, buttons[:, None])[:, 0]
+                         + torch.log_softmax(out.logits["main_stick"].float(), -1).gather(-1, stick[:, None])[:, 0])
             return out.controller.as_packed_tensor().reshape(batch, -1)
 
         truth, build, answers, constants = torch.Tensor.__bool__, torch.tensor, [], []
@@ -140,8 +145,11 @@ class GraphStep:
     def load(self, games):
         """Copy one frame of inputs (slippi-ai Games, one per seat) into the recorded input tensors."""
 
+        self.load_columns({path: _column(games, path) for path, _ in self.inputs})
+
+    def load_columns(self, columns):
         for path, tensor in self.inputs:
-            tensor.copy_(torch.from_numpy(_column(games, path)).to(tensor.dtype), non_blocking=True)
+            tensor.copy_(torch.from_numpy(columns[path]).to(tensor.dtype), non_blocking=True)
 
     def step(self, reset):
         """Advance every row one frame; rows with `reset` start a new game. Returns the packed controllers on the
@@ -192,8 +200,14 @@ def press(controller, c):
 
 
 
+def weights(variant):
+    """A released variant (`10M-Arena`) or a checkpoint directory (an absolute path)."""
+    return variant if variant.startswith("/") else str(WEIGHTS / f"Faynt-{variant or '10M-Arena'}")
+
+
 class FayntBrain(Brain):
-    """One Faynt checkpoint playing all its seats (spec `faynt:VARIANT[,temperature=T]`)."""
+    """One Faynt checkpoint playing all its seats (spec `faynt:VARIANT[,temperature=T]`, VARIANT a released name
+    such as 10M-Arena or a checkpoint directory)."""
 
     def __init__(self, spec, seats, seed=0, check=False, graph=True):
         from transformers import AutoModel
@@ -201,8 +215,7 @@ class FayntBrain(Brain):
         super().__init__(seats, check)
         variant, *options = spec.partition(":")[2].split(",")
         o = dict(x.split("=", 1) for x in options)
-        self.model = AutoModel.from_pretrained(str(WEIGHTS / f"Faynt-{variant or '10M-Arena'}"),
-                                               trust_remote_code=True).eval().cuda()
+        self.model = AutoModel.from_pretrained(weights(variant), trust_remote_code=True).eval().cuda()
         temperature = float(o.get("temperature", 1.0))
         self.step = (GraphStep if graph else EagerStep)(self.model, len(self.seats), temperature, seed)
         self.parsers = [None] * len(self.seats)

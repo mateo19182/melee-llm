@@ -41,7 +41,9 @@ class Player:
 
     @classmethod
     def parse(cls, name):
-        spec, _, character = name.partition("/")
+        spec, _, character = name.rpartition("/")
+        if not spec or not character.replace("_", "").isalpha() or not character.isupper():
+            spec, character = name, ""  # no character: a checkpoint path's last part is not one
         kind = spec.partition(":")[0]
         if kind not in KINDS:
             raise ValueError(f"{name}: the farm plays {', '.join(KINDS)}")

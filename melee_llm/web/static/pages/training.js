@@ -132,14 +132,81 @@ function rlCard(r) {
         r.replays.map((p) => h("a.chip", { href: `/game/${p.id}` }, p.name)))) : null);
 }
 
+// Faynt-style PPO runs (train/farm/rl.py): checkpoint evaluations, games against the training pool, the KL leash.
+const PALETTE = ["var(--hi)", "var(--warn)", "var(--ok)", "var(--p2)", "var(--p1)", "var(--gold)", "var(--dim)"];
+const short = (spec) => spec.replace(/^phillip:/, "Phillip ").replace(/^faynt:/, "Faynt ").replace(/_/g, " ");
+
+function ppoCard(r) {
+  const a = r.args || {};
+  const t = r.train;
+  const last = t.at(-1) || {};
+  const k = 20;
+  const recent = t.slice(-k);
+  const opp = (r.pool || []).filter((g) => g !== "self");
+  const color = (i) => PALETTE[i % PALETTE.length];
+  const winRate = (g) => (w) => {
+    const n = w.reduce((s, p) => s + ((p.played || {})[g] || 0), 0);
+    return n ? 100 * w.reduce((s, p) => s + ((p.won || {})[g] || 0), 0) / n : null;
+  };
+  const mean = (key, scale = 1) => (w) => {
+    const v = w.map((p) => p[key]).filter((x) => Number.isFinite(x));
+    return v.length ? scale * v.reduce((s, x) => s + x, 0) / v.length : null;
+  };
+  const bySteps = (f) => t.map((p, i) => [p.iter, f(t.slice(Math.max(0, i - k + 1), i + 1))]).filter(([, y]) => y !== null);
+  const evalOpps = [...new Set(r.evals.map((e) => e.opponent))];
+  const evalLast = (o) => r.evals.filter((e) => e.opponent === o).at(-1);
+  const init = (r.init || "").split("/").at(-2) || "?";
+  const pct = r.steps ? Math.min(100, (100 * r.step) / r.steps) : null;
+  const perStep = mean("collect_s")(recent) + (mean("update_s")(recent) || 0);
+  return h("div.card", {},
+    h("h2", {}, r.name, badge(r.state, STATE[r.state]),
+      h("span.dim", {}, [`Yoshi, PPO from ${init}`, `${r.envs} games at once`, `${r.seats} learner seats`, "no delay",
+        `leash ${a.lam_fwd}`, `half-life ${a.half_life} s`].join(" · "))),
+    h("div.row", { style: { gap: "14px", margin: "6px 0 14px", alignItems: "center", flexWrap: "wrap" } },
+      h("span.mono", {}, `step ${fmt.num(r.step)}${r.steps ? ` / ${fmt.num(r.steps)}` : ""}`),
+      pct !== null ? h("div.budget", { style: { flex: "1 1 200px" } }, h("div.bar", { style: { width: `${pct}%` } })) : null,
+      last.phase ? h("span.badge", {}, last.phase) : null,
+      h("span.dim", {}, `${((last.frames || 0) / HOURS).toFixed(1)} h of game time`),
+      r.frames_per_s ? h("span.dim", {}, `${fmt.k(r.frames_per_s)} frames/s`) : null,
+      perStep ? h("span.dim", {}, `${perStep.toFixed(0)} s a step`) : null,
+      h("span.faint", {}, `updated ${fmt.ago(r.updated)}`),
+      r.state === "running" ? h("a.chip", { href: "/matches" }, "Watch training games live →") : null),
+    h("div.stat-row", {},
+      evalOpps.map((o) => {
+        const e = evalLast(o);
+        return h("div.stat", {}, h("b", {}, `${e.wins}/${e.games}`), h("span", {}, `vs ${short(o)} at step ${e.step}`));
+      }),
+      h("div.stat", {}, h("b", {}, (mean("kl_ref")(recent) ?? 0).toFixed(3)), h("span", {}, "KL to Faynt Arena")),
+      h("div.stat", {}, h("b", {}, (mean("entropy")(recent) ?? 0).toFixed(2)), h("span", {}, "policy entropy")),
+      h("div.stat", {}, h("b", {}, (mean("reward_per_min")(recent) ?? 0).toFixed(2)), h("span", {}, "reward / min"))),
+    h("div.grid2", {},
+      h("div", {}, h("h3", {}, "Checkpoint evaluations ", h("span.dim", {}, "(wins per game; x: RL step)")),
+        chart(evalOpps.map((o, i) => ({ label: `vs ${short(o)}`, color: color(i), dots: true,
+          points: r.evals.filter((e) => e.opponent === o).map((e) => [e.step, 100 * e.wins / e.games]) })),
+        { yFmt: (v) => `${v.toFixed(0)}%`, xMax: r.steps })),
+      h("div", {}, h("h3", {}, "Training games ", h("span.dim", {}, `(win rate over the last ${k} steps)`)),
+        chart(opp.map((g, i) => ({ label: `vs ${g}`, color: color(i), points: bySteps(winRate(g)) })),
+          { yFmt: (v) => `${v.toFixed(0)}%`, xMax: r.steps })),
+      h("div", {}, h("h3", {}, "The leash ", h("span.dim", {}, "(KL in nats per decision; entropy ÷ 10)")),
+        chart([{ label: "KL(policy ‖ Arena)", color: "var(--warn)", points: bySteps(mean("kl_ref")) },
+          { label: "KL(Arena ‖ policy)", color: "var(--p2)", points: bySteps(mean("kl_ref_rev")) },
+          { label: "entropy ÷ 10", color: "var(--dim)", points: bySteps(mean("entropy", 0.1)) }], { yFmt: (v) => v.toFixed(3), xMax: r.steps })),
+      h("div", {}, h("h3", {}, "Reward and value ", h("span.dim", {}, "(zero-sum reward per minute; value loss × 100)")),
+        chart([{ label: "reward / min", color: "var(--ok)", points: bySteps(mean("reward_per_min")) },
+          { label: "value loss × 100", color: "var(--hi)", points: bySteps(mean("value_loss", 100)) }], { xMax: r.steps }))),
+    r.replays.length ? h("div", {}, h("h3", {}, "Sample games ", h("span.dim", {}, `(${r.n_replays} recorded)`)),
+      h("div.row", { style: { gap: "8px", flexWrap: "wrap" } },
+        r.replays.map((p) => h("a.chip", { href: `/game/${p.id}` }, p.name)))) : null);
+}
+
 export default async function training(root, _params, signal) {
   const list = h("div.stack");
   mount(root, h("div.pagehead", {}, h("h1", {}, "Training"),
-    h("div.lede", {}, "Own-bot runs under data/train/runs/: behaviour cloning on replays, then self-play RL in the simulator. "
+    h("div.lede", {}, "Own-bot runs under data/train/runs/: behaviour cloning on replays, self-play RL in the simulator, and Faynt-style PPO of a Yoshi in the simulator farm. "
       + "Validation uses held-out games; accuracy is a sanity check, not strength: strength is measured on the Bench.")),
   list);
   every(5000, async () => {
     const { runs } = await api("/api/training");
-    mount(list, runs.length ? runs.map((r) => (r.kind === "rl" ? rlCard(r) : card(r))) : h("div.card", {}, emptyState("No training runs yet", "Start one with python -m meleebot.train.")));
+    mount(list, runs.length ? runs.map((r) => (r.algo === "faynt-ppo" ? ppoCard(r) : r.kind === "rl" ? rlCard(r) : card(r))) : h("div.card", {}, emptyState("No training runs yet", "Start one with python -m meleebot.train.")));
   }, signal);
 }
