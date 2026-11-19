@@ -3,8 +3,8 @@ id: E29
 title: Phillip and HAL in the farm
 date: 2026-11-18
 status: done
-result: Phillip and HAL play in the farm with live-path inputs; 9 of 11 pairings match Dolphin, but Phillip wins more in the simulator than on Dolphin against HAL (HAL 12% vs 30%) and against Faynt's Yoshi as anti-Yoshi Marth (Faynt 11% vs 39%), and single-game simulator mode shows the same gap
-verdict: use the farm for Faynt and HAL; treat results against Phillip as optimistic for Phillip until the simulator-vs-Dolphin gap is explained
+result: Phillip and HAL play in the farm with live-path inputs; 9 of 11 pairings matched Dolphin, and the two Phillip pairings that did not were a Dolphin bug (analog triggers off, E30): with it fixed, Dolphin matches the farm
+verdict: use the farm for Faynt, Phillip and HAL; it reproduces the game better than our Dolphin did before E30
 runs:
 prs:
 follows: E28
@@ -65,6 +65,6 @@ Two fixes on the way:
 
 ## Verdict
 
-Phillip and HAL play in the farm exactly as they play in the simulator. The farm agrees with Dolphin on 9 of 11 pairings, and on every pairing without Phillip. Against Phillip it can overstate Phillip, by up to about 3× in the opponent's win rate here. Phillip's agents were likely trained in a decomp-based simulator (the slippi-ai README thanks Enzyme for one), so some of its play may rely on a difference between that simulator and Dolphin that this simulator shares. Not yet found.
+Phillip and HAL play in the farm exactly as they play in the simulator. The farm agreed with Dolphin on 9 of 11 pairings, and on every pairing without Phillip.
 
-Next: compare a Dolphin replay and a simulator replay of the Marth pairing for where Faynt loses stocks, and replay a Dolphin game's inputs in the simulator from a mid-game state to find the first divergence that matters. Until then, Yoshi RL can use HAL and Faynt opponents in the farm, but its results against Phillip must be checked on Dolphin.
+**Update, E30:** the two gaps were a bug in our Dolphin, not the simulator. The headless build read every analog trigger below full as 0, so analog shields and airdodges never happened on Dolphin. With the trigger fix, Dolphin gives HAL vs Phillip gm 3/24 and Faynt's Yoshi vs the anti-Yoshi Marth 2/24, matching the farm's 8/64 and 7/64. The farm needs no change. Use it for Faynt, Phillip and HAL, and treat Dolphin results from before E30 as played without analog triggers.
