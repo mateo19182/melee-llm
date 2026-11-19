@@ -70,14 +70,22 @@ uv run python -m melee_llm.match --mode sim --p1 baseline:rusher --p2 baseline:l
 - The game's RNG is not Dolphin's, so the same seed and inputs repeat exactly here but play out differently on Dolphin.
 - Timeouts are scored on the state at the timer, by stocks then percent. There is no Sudden Death.
 
-## Faynt farm: many Faynt games at once
+## Farm: many learned-bot games at once
 
-`train/faynt/farm.py` plays Faynt checkpoints against each other in one simulator batch per process, with one batched CUDA-graph model step per checkpoint. Each seat's input takes the live bot's path (simulator row → `StateBuilder` → slippi-ai `Parser`), and `python -m faynt.parity` checks it against libmelee's own parse of the Slippi events. On this machine 8 processes of 64 games run about 6,300 frames a second. Details and checks against Dolphin: [E28](experiments/E28-faynt-farm.md).
+`train/farm/` plays Faynt, Phillip and HAL against each other in one simulator batch per process. Each model steps all of its seats in one batch: Faynt as a CUDA graph on the GPU, Phillip on the CPU, HAL on the GPU. Phillip and HAL run in helper processes in their own venvs (`farm/remote.py`), which receive the raw simulator rows each frame and return one raw controller row per seat.
 
 ```sh
-cd train && PYTHONPATH=. ../vendor/Faynt-Tournament/.venv/bin/python -m faynt.farm \
-    faynt:10M-Arena/YOSHI faynt:10M-Expert/YOSHI --games 512 --lanes 64 --workers 8 --ucf --out DIR
+cd train && PYTHONPATH=. ../vendor/Faynt-Tournament/.venv/bin/python -m farm.run \
+    faynt:10M-Arena/YOSHI phillip:fox_d18_vs_yoshi_v3/FOX --games 256 --lanes 64 --workers 4 --ucf --out DIR
 ```
+
+Each seat reads what its live bot reads:
+- **Faynt and Phillip** get a libmelee `GameState` built from the simulator row (`melee_llm.sim.state`), parsed by slippi-ai's `Parser`. `--check` also rebuilds every frame from its Slippi events, as the live bots see Dolphin, and counts the seat-frames where the model would have read something else. Every field was equal in every check run so far.
+- **HAL** gets its `GameState` from the Slippi events, parsed by its own libmelee fork, because the fork builds HAL's observations from parsed event data.
+
+Phillip's published ONNX exports take one game at a time. `farm/phillip_onnx.py` rewrites a copy to take a batch: the reshapes that bake in the batch of 1, and the squeeze that reads the temperature. Copies live in `/mnt/data/melee/phillip-batched/`, and each is checked row for row against the original before first use.
+
+Faynt's speed and checks against Dolphin: [E28](experiments/E28-faynt-farm.md). Phillip and HAL: [E29](experiments/E29-farm-phillip-hal.md).
 
 ## Next work
 

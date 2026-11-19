@@ -1,7 +1,7 @@
-"""The farm's batched Faynt cache gives the same outputs as Faynt's own per-row cache.
+"""The farm's batched Faynt step gives the same outputs as Faynt's own code.
 
 Runs in the Faynt venv with a GPU and the released weights:
-    cd train && PYTHONPATH=.:<repo> ../vendor/Faynt-Tournament/.venv/bin/python -m pytest tests/test_faynt_farm.py
+    cd train && PYTHONPATH=. ../vendor/Faynt-Tournament/.venv/bin/python -m pytest tests/test_farm.py
 """
 import dataclasses
 
@@ -9,7 +9,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 pytest.importorskip("transformers")
-from faynt import farm  # noqa: E402
+from farm import faynt as farm  # noqa: E402
 
 pytestmark = pytest.mark.skipif(not (torch.cuda.is_available() and (farm.WEIGHTS / "Faynt-10M-Arena").exists()),
                                 reason="needs a GPU and the Faynt weights")
@@ -55,10 +55,8 @@ def test_batched_cache_matches_upstream():
         cls.forward_cached, cls._batched = original, False
     assert ours.shape == upstream.shape
     diff = (ours - upstream).abs().max().item()
-    print("max logit diff", diff)
     assert diff < 0.05, diff
     agree = (ours[..., :728].argmax(-1) == upstream[..., :728].argmax(-1)).float().mean().item()
-    print("argmax agreement", agree)
     assert agree > 0.99, agree
 
 
@@ -81,5 +79,4 @@ def test_graph_step_matches_eager():
             eager = model.step(game_state_t=state, controller_t=state.p0.controller, cache=cache,
                                reset_mask=torch.tensor(reset, device="cuda"), sample=False)
         worst = max(worst, (graph.button_logits.float() - eager.logits["buttons"].float()).abs().max().item())
-    print("max button logit diff", worst)
     assert worst < 0.05, worst
