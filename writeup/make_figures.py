@@ -398,10 +398,11 @@ def fig_leaderboard(s, n, blog=False):
     c.save("leaderboard-realtime.svg")
 
 
-def fig_coach(s, n):
+def fig_coach(s, n, blog=False):
     rt = {p["id"]: p for p in s["boards"]["rt"]}
     coaches = sorted((f"coach:{m}" for m, _ in LLMS if f"coach:{m}" in rt), key=lambda i: rt[i]["elo"])
-    ids = [i for i in ["reyn", "coach:random,fixed", "coach:random", *coaches, "coach_jev", "reyn:stock_protection"]
+    held = [] if blog else ["coach:random,fixed"]  # the post doesn't discuss the held random command
+    ids = [i for i in ["reyn", *held, "coach:random", *coaches, "coach_jev", "reyn:stock_protection"]
            if i in rt]
     c = Chart("Coaching Reyn: what actually helps?",
               "Real-time board. Coaches pick one of Reyn's ~100 commands every 5 s. Shaded: random coach's 95% interval.",
@@ -480,6 +481,33 @@ def fig_botwriter_blog(s, n):
     c.save("bot-writer.svg")
 
 
+def fig_botwriter_simple(s, n):
+    """The high-effort batch only: same starter bot, five runs per model. One row per model,
+    a dot per session, a bar at the mean."""
+    rt = {p["id"]: p for p in s["boards"]["rt"]}
+    runs = {}
+    for k, p in rt.items():
+        if m := re.fullmatch(r"written:(\w+)-([\d.]+)-high/run\d", k):  # the starter run counts: a real session
+            runs.setdefault(f"{m[1].capitalize()} {m[2]}", []).append(p["elo"])
+    models = sorted(runs, key=lambda k: -statistics.mean(runs[k]))
+    c = Chart("Bots written by LLMs in 30 minutes",
+              "Five 30-minute sessions per model at high effort, same starter bot. Dot: one session; bar: the average.",
+              len(models), 1300, 2100, list(range(1300, 2101, 100)), label_w=110, right_w=150, row_h=44)
+    c.ref(1500, "CPU 9")
+    c.ref(rt[STARTER]["elo"], "starter bot")
+    c.ref(rt["mimic"]["elo"], "MIMIC")
+    for i, model in enumerate(models):
+        y = c.ry(i)
+        c.out.append(text(c.lx, y + 4, model, "t1", 13, "end", 600))
+        for j, e in enumerate(sorted(runs[model])):
+            c.out.append(marker(c.sx(e), y + (j % 2 * 2 - 1) * 5, "written", "circle", r=5))
+        avg = statistics.mean(runs[model])
+        c.out.append(f'<line x1="{c.sx(avg):.1f}" x2="{c.sx(avg):.1f}" y1="{y - 14:.1f}" y2="{y + 14:.1f}" '
+                     f'class="c-written" stroke-width="3" stroke-linecap="round"/>')
+        c.out.append(text(c.W - 14, y + 4, f"avg {avg:.0f}, {min(runs[model]):.0f}–{max(runs[model]):.0f}", "tm", 11, "end"))
+    c.save("bot-writer-simple.svg")
+
+
 def fig_botwriter(s, n):
     rt = {p["id"]: p for p in s["boards"]["rt"]}
     ids = [i for i in rt if i.startswith("written:")] + ["cpu:9", "cpu:7", "cpu:1", "mimic", "phillip:silver"]
@@ -519,9 +547,10 @@ def render_blog(s: dict, out: Path) -> None:
     for theme, suffix in (("blog-light", ""), ("blog-dark", "-dark")):
         THEME, OUT = THEMES[theme], out / theme
         fig_leaderboard(s, n, blog=True)
-        fig_coach(s, n)
+        fig_coach(s, n, blog=True)
         fig_latency(s, n)
         fig_botwriter_blog(s, n)
+        fig_botwriter_simple(s, n)
         for f in OUT.glob("*.svg"):
             f.replace(out / f"{f.stem}{suffix}.svg")
         OUT.rmdir()
