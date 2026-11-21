@@ -3,6 +3,10 @@
 Observation path matches Faynt-Tournament's native runtime (src/melee_policy/integration/
 frisson_policy.py): slippi-ai's libmelee Parser (same Game schema as the pinned 577965a) ->
 structured tensors -> one cached step per frame, zero added delay, 256-frame ring cache.
+
+config `own: true` makes the model read its own last pad as its controller instead of the one the game applied, for
+a bot whose pads land late (stomped.dev): Faynt has no delay input, and reading a pad older than its last one breaks
+it (farm.faynt's own=1, E32).
 """
 from __future__ import annotations
 
@@ -10,6 +14,7 @@ import sys
 from pathlib import Path
 
 import melee
+import numpy as np
 import torch
 from slippi_db.parse_libmelee import Parser
 from transformers import AutoModel
@@ -19,6 +24,18 @@ BUTTONS = ("A", "B", "X", "Y", "Z", "L", "R", "D_UP")
 CORE = ("percent", "facing", "x", "y", "action", "invulnerable", "character", "jumps_left", "shield_strength",
         "on_ground")
 NANA = ("exists", *CORE)
+
+
+def controller_of(c):
+    """A packed pad (main x/y, c x/y, shoulder, buttons) as slippi-ai's parsed Controller."""
+    from slippi_ai.types import Buttons, Controller, Stick
+
+    f = np.float32
+    return Controller(main_stick=Stick(f(c[0]), f(c[1])), c_stick=Stick(f(c[2]), f(c[3])), shoulder=f(c[4]),
+                      buttons=Buttons(*(np.bool_(v > 0.5) for v in c[5:])))
+
+
+NEUTRAL = controller_of([0.5, 0.5, 0.5, 0.5, 0.0] + [0.0] * len(BUTTONS))
 
 
 class Bot:
@@ -39,6 +56,7 @@ class Bot:
         self.ports = (init["port"], init["opponent_port"])
         self.steer = {"temperature": 1.0}
         self.parser = self.cache = None
+        self.own, self.last = bool(cfg.get("own")), None
 
     @staticmethod
     def available() -> list[str]:
@@ -88,12 +106,16 @@ class Bot:
         if reset:
             self.parser = Parser(ports=self.ports)
             self.cache = self.model.init_cache(1, device=self.device)
-        state, current = self._tensors(self.parser.get_game(gs))
+        game = self.parser.get_game(gs)
+        if self.own:
+            game = game._replace(p0=game.p0._replace(controller=self.last if self.last and not reset else NEUTRAL))
+        state, current = self._tensors(game)
         out = self.step(game_state_t=state, controller_t=current, cache=self.cache,
                               reset_mask=torch.tensor([reset], device=self.device),
                               temperature=self.steer["temperature"], generator=self.generator)
         self.cache = out.cache
         c = out.controller.as_packed_tensor().reshape(-1).tolist()  # main x/y, c x/y, shoulder, A B X Y Z L R D_UP
+        self.last = controller_of(c)
         B = melee.enums.Button
         controller.tilt_analog(B.BUTTON_MAIN, c[0], c[1])
         controller.tilt_analog(B.BUTTON_C, c[2], c[3])
