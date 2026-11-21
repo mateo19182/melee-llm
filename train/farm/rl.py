@@ -13,6 +13,12 @@ Writes data/train/runs/RUN/: run.json, rl.jsonl (one line per step; the web Trai
 (a Faynt checkpoint directory, playable as `faynt:/abs/path`), last.pt (to resume), replays/ (sample games as .slp).
 Lanes chosen with --publish appear on the web's All matches page while they play.
 
+--delay plays the learner with input delay, as on stomped.dev: the pad chosen after reading frame F lands on frame
+F + 1 + N. `N` is fixed; `STEP:N,STEP:N,...` is a curriculum (from each STEP on, delay N). With delay the model reads
+its own last chosen pad as its controller (as at delay 0) rather than the applied one, which is N frames older;
+--no-own turns that off. Actions keep the credit of the frame they were chosen on: returns are discounted with an
+8-second half-life, so the N frames before an action lands only add a little noise to its advantage.
+
 --check (with a few --steps) only measures: how well the learner reproduces the actor's action probabilities.
 """
 import argparse
@@ -36,6 +42,19 @@ POOL = ("self:32,phillip:fox_d18_vs_yoshi_v3/FOX:8,phillip:marth_d18_vs_yoshi_v3
         "phillip:yoshi_d18_ditto/YOSHI:4")
 HIST = 128  # frames before each rollout the value network reads
 ROLL = 128  # frames per rollout
+
+
+def parse_delay(text):
+    """`10` or `0:1,50:2,...` -> [(from_step, delay)], sorted."""
+    if ":" not in text:
+        return [(0, int(text))]
+    out = sorted((int(a), int(b)) for a, b in (x.split(":") for x in text.split(",")))
+    assert out[0][0] == 0, "a delay curriculum starts at step 0"
+    return out
+
+
+def delay_at(schedule, it):
+    return [d for s, d in schedule if s <= it][-1]
 
 
 def parse_pool(text):
@@ -79,38 +98,50 @@ def shaped(before, after, edge):
 # ---------------------------------------------------------------- the learner's seats
 
 class Seats(Brain):
-    """The learning policy on all its seats: one CUDA-graph step a frame, recording what RL needs."""
+    """The learning policy on all its seats: one CUDA-graph step a frame, recording what RL needs.
 
-    def __init__(self, model, seats, seed):
-        from .faynt import GraphStep
+    `pads` keeps each seat's last max_delay + 1 chosen pads (newest last); the one pressed is `delay` frames old.
+    With `own`, the model reads the newest as its controller instead of the pad the game applied."""
+
+    def __init__(self, model, seats, seed, max_delay=0, own=False):
+        from .faynt import NEUTRAL, GraphStep
 
         super().__init__(seats)
         self.step = GraphStep(model, len(self.seats), 1.0, seed)
         self.paths = [p for p, _ in self.step.inputs]
         self.parsers = [None] * len(self.seats)
+        self.pads = np.tile(NEUTRAL, (len(self.seats), max_delay + 1, 1))
+        self.delay, self.own = 0, own
 
     def read(self, states, fresh):
         """Columns of this frame's inputs for every seat, and which seats start a game."""
+        from melee_llm.bots.bot_faynt import controller_of
         from slippi_db.parse_libmelee import Parser
 
-        from .faynt import _column
+        from .faynt import NEUTRAL, _column
 
         reset = np.zeros(len(self.seats), bool)
         games = []
         for i, (lane, port) in enumerate(self.seats):
             if fresh[lane] or self.parsers[i] is None:
                 self.parsers[i], reset[i] = Parser(ports=(port, 3 - port)).get_game, True
-            games.append(self.parsers[i](states[lane]))
+            game = self.parsers[i](states[lane])
+            if self.own:
+                pad = controller_of(NEUTRAL if reset[i] else self.pads[i, -1])
+                game = game._replace(p0=game.p0._replace(controller=pad))
+            games.append(game)
         return {p: _column(games, p) for p in self.paths}, reset
 
     def act(self, columns, reset):
-        from .faynt import press
+        from .faynt import NEUTRAL, press
 
         self.step.load_columns(columns)
         packed = self.step.step(reset)
         actions = packed.float().cpu().numpy()
         labels, logp = self.step.labels.cpu().numpy(), self.step.logp.cpu().numpy()
-        for i, c in enumerate(actions):
+        self.pads[reset] = NEUTRAL
+        self.pads = np.concatenate([self.pads[:, 1:], actions[:, None]], axis=1)
+        for i, c in enumerate(self.pads[:, -1 - self.delay]):
             press(self.controllers[i], c)
             self.controllers[i].raw_input(self.rows[i])
             self.controllers[i].flush()
@@ -287,9 +318,15 @@ def main():
     ap.add_argument("--replay-minutes", type=float, default=20, help="record one game per pool group this often")
     ap.add_argument("--publish", type=int, default=1, help="lanes per pool group shown on the All matches page")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--delay", default="0", help="input delay in frames, or a curriculum STEP:N,STEP:N,...")
+    ap.add_argument("--own", action=argparse.BooleanOptionalAction, default=None,
+                    help="read its own last chosen pad as its controller (default: on when there is delay)")
     ap.add_argument("--check", action="store_true")
     a = ap.parse_args()
     assert a.frames % ROLL == 0
+    schedule = parse_delay(a.delay)
+    if a.own is None:
+        a.own = any(d for _, d in schedule)
     if a.check:
         a.value_warmup, a.zero_steps = 0, 10**9
 
@@ -337,7 +374,7 @@ def main():
         learner.opt_v.load_state_dict(state["opt_v"])
         it, frames_total = state["it"], state["frames"]
         print(f"resumed at step {it}", flush=True)
-    me = Seats(model, seats, a.seed + it)
+    me = Seats(model, seats, a.seed + it, max(d for _, d in schedule), a.own)
     others = {spec: RemoteBrain(spec.partition(":")[0], spec, s, a.seed + it) for spec, s in opp.items()}
     S = len(seats)
     lane_seats = collections.defaultdict(list)
@@ -346,7 +383,7 @@ def main():
     if not (run / "run.json").exists() or it == 0:
         (run / "run.json").write_text(json.dumps(dict(
             kind="rl", algo="faynt-ppo", args=vars(a), init=weights(a.init) + "/model.safetensors",
-            pool=names, lanes={n: k for n, (_, k) in zip(names, pool)}, seats=S, envs=lanes, delay=0,
+            pool=names, lanes={n: k for n, (_, k) in zip(names, pool)}, seats=S, envs=lanes, delay=a.delay,
             replays=str(run / "replays"), params=sum(p.numel() for p in model.parameters()),
             started_at=time.time()), indent=1))
 
@@ -408,6 +445,7 @@ def main():
     try:
         while it < a.steps:
             t0 = time.monotonic()
+            me.delay = delay_at(schedule, it)
             snaps = []
             ep = collections.defaultdict(float)  # reward sums per group
             for k in range(a.frames + 1):
@@ -510,7 +548,7 @@ def main():
             it += 1
             seat_frames = a.frames * S
             line = dict(iter=it, frames=frames_total, fps=round(a.frames * lanes / collect_s),
-                        collect_s=round(collect_s, 1), update_s=round(update_s, 1), time=time.time(),
+                        collect_s=round(collect_s, 1), update_s=round(update_s, 1), time=time.time(), delay=me.delay,
                         reward_per_min=float(sum(ep.values()) / (seat_frames / 3600)),
                         kl=m.get("kl_ref", m.get("kl_ref_now", 0.0)),
                         played={names[g]: int(s["played"]) for g, s in stats.items()},
