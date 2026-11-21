@@ -1,7 +1,8 @@
 """Play on stomped.dev: a WebSocket server that reads the .slp event stream and answers 12-byte pads.
 
     uv run python -m meleebot.stomped CHECKPOINT --url https://HOST/SECRET [--port 3000]
-    uv run python -m meleebot.stomped hal:AMSA#0,return_target=40 --lead 11 --url ...   (HAL 250M, see HalBrain)
+    uv run python -m meleebot.stomped hal:AMSA#0,return_target=40 --lead 11 --url ...   (HAL 250M, see ServerBrain)
+    uv run python -m meleebot.stomped faynt:yoshi-rl-1-s1000 --lead 11 --url ...         (a Faynt checkpoint)
 
 Spec: https://docs.stomped.dev/llms-full.txt. stomped connects to the registered URL when a match
 starts; `GET <url>/ping` must answer `pong`. Upgrades are checked against stomped's Ed25519
@@ -167,15 +168,18 @@ _HAL_BUTTONS = {"BUTTON_A": "A", "BUTTON_B": "B", "BUTTON_X": "X", "BUTTON_Y": "
 HAL_MAX_LEAD = 11   # melee_llm/bots/bot_hal.py MAX_DELAY + 1
 
 
-class HalBrain:
-    """HAL 250M (vendor/hal) as the model, e.g. `hal:AMSA#0,return_target=40`.
+class ServerBrain:
+    """A bot from melee_llm/bots under its own venv, which this drives through melee_llm/bots/server.py with the raw
+    event stream, as melee_llm.bots.BotAgent does. Such a process is bound to one port and takes too long to load
+    between matches: one process per port stays up. Each answers with the pad for F + lead (a fixed --lead).
 
-    HAL runs under its own venv, so this starts melee_llm/bots/server.py there and hands it the raw event
-    stream, as melee_llm.bots.BotAgent does. A HAL process is bound to one port and one delay, and takes too
-    long to load between matches: one process per port stays up, both at delay = lead - 1. Each answers
-    with the pad for F + lead and conditions on the pads it already sent for F + 1 .. F + lead - 1.
+    - `hal:AMSA#0,return_target=40`: HAL 250M, run at delay = lead - 1, so it conditions on the pads it already
+      sent for F + 1 .. F + lead - 1.
+    - `faynt:VARIANT[,temperature=T]`: a Faynt checkpoint (vendor/Faynt-Tournament/weights/Faynt-VARIANT). Faynt has
+      no delay input: it picks the pad for the frame after the one it read, which this sends for F + lead, and reads
+      its own last pad as its controller (farm.faynt's delay=lead - 1,own=1; E32: a Faynt bot loses everything from
+      4 frames of delay on).
     """
-    device = "cuda"
 
     def __init__(self, spec, lead):
         import subprocess, sys
@@ -184,25 +188,35 @@ class HalBrain:
         sys.path.insert(0, str(repo / "melee_llm/bots"))
         import protocol   # stdlib only
         self.protocol = protocol
-        if not lead or not 2 <= lead <= HAL_MAX_LEAD:
-            raise SystemExit(f"a HAL bot needs a fixed --lead of 2..{HAL_MAX_LEAD}")
+        kind, _, spec = spec.partition(":")
+        if not lead or not 2 <= lead <= (HAL_MAX_LEAD if kind == "hal" else 60):
+            raise SystemExit(f"a {kind} bot needs a fixed --lead of 2..{HAL_MAX_LEAD if kind == 'hal' else 60}")
         self.lead = lead
-        identity, *opts = spec.split(",")
-        steer = {"identity": identity} if identity else {}
-        for k, _, v in (o.partition("=") for o in opts):
-            steer[k] = None if v == "None" else v if v == "p90" else float(v)
+        name, *opts = spec.split(",")
+        steer = {k: None if v == "None" else v if v == "p90" else float(v) for k, _, v in (o.partition("=") for o in opts)}
+        if kind == "hal":
+            self.device, venv = "cuda", repo / "vendor/hal"
+            config = {"delay": lead - 1, "ahead": True}
+            if name:
+                steer["identity"] = name
+        elif kind == "faynt":
+            self.device, venv = "cpu", repo / "vendor/Faynt-Tournament"
+            config = {"model": name or "10M-Arena", "device": "cpu", "threads": 8, "own": True}
+        else:
+            raise SystemExit(f"{kind}: stomped plays meleebot checkpoints, hal: or faynt:")
         self.procs = {}
         for port in (0, 1):  # both load at once
-            proc = subprocess.Popen([str(repo / "vendor/hal/.venv/bin/python"), str(repo / "melee_llm/bots/server.py"), "hal"],
-                                    cwd=repo / "vendor/hal", stdin=subprocess.PIPE, stdout=subprocess.PIPE, bufsize=0)
+            proc = subprocess.Popen([str(venv / ".venv/bin/python"), str(repo / "melee_llm/bots/server.py"), kind],
+                                    cwd=venv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, bufsize=0)
             protocol.send(proc.stdin, {"op": "init", "port": port + 1, "opponent_port": 2 - port, "character": "YOSHI",
-                                       "config": {"delay": lead - 1, "ahead": True}, "steer": steer})
+                                       "config": config, "steer": steer})
             self.procs[port] = proc
         for port, proc in self.procs.items():
             reply = protocol.recv(proc.stdout)
             if not reply["ok"]:
-                raise SystemExit(f"HAL (port {port}) failed to start:\n{reply['error']}")
+                raise SystemExit(f"{kind} (port {port}) failed to start:\n{reply['error']}")
             self.steer = reply["info"]["steer"]
+        self.kind = kind
         self.new_match(0, None, None, None, lead)
 
     def new_match(self, port, me_char, opp_char, stage, lead):
@@ -210,7 +224,7 @@ class HalBrain:
         self.buf, self.sent, self.pads, self.errors = [], {}, {}, 0
 
     def warmup(self, n=0):
-        pass   # the HAL process compiles and warms up while it loads
+        pass   # the bot process compiles and warms up while it loads
 
     def set_lead(self, lead):
         pass   # fixed when the processes start
@@ -230,7 +244,7 @@ class HalBrain:
         if reply["error"]:
             self.errors += 1
             if self.errors <= 3:
-                print(f"hal: {reply['error']}", flush=True)
+                print(f"{self.kind}: {reply['error']}", flush=True)
         for d in (self.sent, self.pads):
             for k in [k for k in d if k < F - 600]:
                 del d[k]
@@ -346,8 +360,8 @@ class Match:
 
 class Bot:
     def __init__(self, a):
-        if a.checkpoint.startswith("hal:"):
-            self.brain = HalBrain(a.checkpoint[4:], a.lead)
+        if a.checkpoint.startswith(("hal:", "faynt:")):
+            self.brain = ServerBrain(a.checkpoint, a.lead)
         else:
             self.brain = Brain(a.checkpoint, a.device, a.rank, temperature=a.temperature, threads=a.threads)
             self.brain.new_match(0, YOSHI, CHARACTERS.index("FOX"), 31, 2)
@@ -423,7 +437,7 @@ async def serve(bot, host, port):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("checkpoint", help="a meleebot checkpoint, or hal:IDENTITY[,return_target=..,temperature=..] with --lead")
+    ap.add_argument("checkpoint", help="a meleebot checkpoint, or with --lead hal:IDENTITY[,return_target=..,temperature=..] or faynt:VARIANT[,temperature=..]")
     ap.add_argument("--url", required=True, help="the registered URL, byte for byte (the handshake is signed over it)")
     ap.add_argument("--host", default="127.0.0.1"); ap.add_argument("--port", type=int, default=3000)
     ap.add_argument("--device"); ap.add_argument("--threads", type=int, default=4)

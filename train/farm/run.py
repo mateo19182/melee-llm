@@ -4,7 +4,7 @@
         [--lanes 64] [--workers 1] [--out DIR] [--no-ucf] [--check] [--stages BATTLEFIELD,...]
 
 A player is `KIND:ARG[,option=value...]/CHARACTER` (default Yoshi):
-- `faynt:10M-Arena[,temperature=T]` (farm.faynt, in this process, on the GPU)
+- `faynt:10M-Arena[,temperature=T][,delay=N]` (farm.faynt, in this process, on the GPU)
 - `phillip:MODEL[,temperature=T]`, a model in vendor/slippi-ai/models (farm.phillip, its own process, on the CPU)
 - `hal:IDENTITY[,return_target=N][,temperature=T][,delay=N]` (farm.hal, its own process, on the GPU)
 

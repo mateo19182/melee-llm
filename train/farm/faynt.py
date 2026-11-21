@@ -10,6 +10,7 @@ import numpy as np
 import torch
 
 from .common import LIVE, Brain
+from melee_llm.bots.bot_faynt import controller_of  # noqa: E402  (after .common puts the repo on sys.path)
 
 WEIGHTS = LIVE / "vendor/Faynt-Tournament/weights"
 BUTTONS = ("A", "B", "X", "Y", "Z", "L", "R", "D_UP")
@@ -205,9 +206,14 @@ def weights(variant):
     return variant if variant.startswith("/") else str(WEIGHTS / f"Faynt-{variant or '10M-Arena'}")
 
 
+NEUTRAL = np.array([0.5, 0.5, 0.5, 0.5, 0.0] + [0.0] * len(BUTTONS), np.float32)
+
+
 class FayntBrain(Brain):
-    """One Faynt checkpoint playing all its seats (spec `faynt:VARIANT[,temperature=T]`, VARIANT a released name
-    such as 10M-Arena or a checkpoint directory)."""
+    """One Faynt checkpoint playing all its seats (spec `faynt:VARIANT[,temperature=T][,delay=N]`, VARIANT a released
+    name such as 10M-Arena or a checkpoint directory). With delay N, the pad chosen after reading frame F is applied
+    on frame F + 1 + N, as on stomped.dev at lead N + 1; the model is unaware of it. With own=1 the model reads its
+    own last pad as its controller instead of the one the game applied (N frames older)."""
 
     def __init__(self, spec, seats, seed=0, check=False, graph=True):
         from transformers import AutoModel
@@ -219,6 +225,9 @@ class FayntBrain(Brain):
         temperature = float(o.get("temperature", 1.0))
         self.step = (GraphStep if graph else EagerStep)(self.model, len(self.seats), temperature, seed)
         self.parsers = [None] * len(self.seats)
+        self.delay = int(o.get("delay", 0))
+        self.queued = np.tile(NEUTRAL, (len(self.seats), self.delay + 1, 1))  # [seat, delay + 1, pad], oldest first
+        self.own = o.get("own") == "1"
 
     def reader(self, port):
         from slippi_db.parse_libmelee import Parser
@@ -232,8 +241,13 @@ class FayntBrain(Brain):
                 continue  # finished: the batch keeps its last frame
             if frame.fresh[lane] or self.parsers[i] is None:
                 self.parsers[i], reset[i] = self.reader(port), True
-            self.last_read[i] = self.parsers[i](states[lane])
+            game = self.parsers[i](states[lane])
+            if self.own:
+                game = game._replace(p0=game.p0._replace(controller=controller_of(NEUTRAL if reset[i] else self.queued[i, -1])))
+            self.last_read[i] = game
         actions = self.step(self.last_read, reset)
+        self.queued[reset] = NEUTRAL
+        self.queued = np.concatenate([self.queued[:, 1:], actions[:, None]], axis=1)
         for i, (lane, _) in enumerate(self.seats):
             if lane in states:
-                press(self.controllers[i], actions[i])
+                press(self.controllers[i], self.queued[i, 0])
