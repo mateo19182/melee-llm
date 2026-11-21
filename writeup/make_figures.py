@@ -530,6 +530,54 @@ def fig_botwriter(s, n):
 
 # ---------------------------------------------------------------- main
 
+RL_EVALS = HERE / "yoshi-rl-1-evals.jsonl"  # copy of /mnt/data/melee/runs/yoshi-rl-1/evals.jsonl (E32)
+RL_SERIES = [("phillip:fox_d18_vs_yoshi_v3/FOX", "learned", "Phillip's anti-Yoshi Fox"),
+             ("phillip:marth_d18_vs_yoshi_v3/MARTH", "coach", "Phillip's anti-Yoshi Marth"),
+             ("phillip:yoshi_d18_ditto/YOSHI", "written", "Phillip's Yoshi"),
+             ("faynt:10M-Arena/YOSHI", "llm", "Faynt's Yoshi (the starting model)")]
+
+
+def fig_yoshi_rl():
+    """E32 win rate per opponent over the RL run, plus the step-1000 results quoted in the post."""
+    runs = {}
+    for line in RL_EVALS.read_text().splitlines():
+        e = json.loads(line)
+        runs.setdefault(e["opponent"], {})[e["step"]] = 100 * e["wins"] / e["games"]
+    W, H, L, R, T, B = 760, 376, 56, 190, 92, 330
+    sx = lambda v: L + v / 1000 * (W - R - L)
+    sy = lambda p: B - p / 100 * (B - T)
+    o = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}" role="img" '
+         f'aria-label="Win rate during RL">', "<title>Win rate during RL</title>", style(),
+         text(16, 26, "Teaching Faynt's Yoshi with RL, in the simulator", "t1", 15, weight=600),
+         text(16, 45, "Share of 48 games won against each opponent, checked every 50 steps. No input delay.", "t2", 12)]
+    x = 16
+    for _, cls, name in RL_SERIES:
+        o.append(f'<line x1="{x}" x2="{x + 16}" y1="64" y2="64" class="ci c-{cls}" stroke-width="2.5"/>')
+        o.append(text(x + 22, 68, name, "t2", 11.5))
+        x += 30 + len(name) * 6.3
+    for p in range(0, 101, 25):
+        o.append(f'<line x1="{L}" x2="{W - R}" y1="{sy(p):.1f}" y2="{sy(p):.1f}" class="grid" stroke-width="1"/>')
+        o.append(text(L - 8, sy(p) + 4, f"{p}%", "tm", 11, "end"))
+    for v in range(0, 1001, 200):
+        o.append(text(sx(v), B + 18, f"{v:,}", "tm", 11, "middle"))
+    o.append(text(W - R, B + 36, "RL steps (1,000 ≈ 25 hours on one RTX 3090)", "tm", 11, "end"))
+    for key, cls, _ in RL_SERIES[::-1]:  # the Fox, the hardest, drawn on top
+        pts = " ".join(f"{sx(v):.1f},{sy(p):.1f}" for v, p in sorted(runs[key].items()))
+        o.append(f'<polyline points="{pts}" class="ci c-{cls}" stroke-width="2.5" stroke-linejoin="round"/>')
+    x1, ax = sx(1000), sx(1000) + 14
+    o.append(f'<line x1="{x1:.1f}" x2="{x1:.1f}" y1="{sy(97):.1f}" y2="{sy(3):.1f}" class="axis" stroke-width="1.5" '
+             f'stroke-dasharray="4 3"/>')
+    o += [marker(x1, sy(100), "learned", "circle"), marker(x1, sy(0), "learned", "circle", hollow=True),
+          text(ax, sy(100) - 2, "Step 1000, no delay", "t1", 12, weight=600),
+          text(ax, sy(100) + 14, "48 of 48 vs the Fox", "t2", 11.5),
+          text(ax, sy(100) + 30, "85 of 88 in real Dolphin", "t2", 11.5),
+          text(ax, sy(0) - 26, "Same bot, 1 frame", "t1", 12, weight=600),
+          text(ax, sy(0) - 10, "of input delay:", "t1", 12, weight=600),
+          text(ax, sy(0) + 6, "0 of 48 vs the Fox", "t2", 11.5), "</svg>"]
+    OUT.mkdir(parents=True, exist_ok=True)
+    (OUT / "yoshi-rl.svg").write_text("\n".join(o) + "\n")
+
+
 def render(s: dict) -> None:
     n = numbers(s)
     for f in (fig_leaderboard, fig_coach, fig_latency, fig_botwriter):
@@ -541,7 +589,7 @@ def render(s: dict) -> None:
 
 
 def render_blog(s: dict, out: Path) -> None:
-    """The four charts in the blog's colours, NAME.svg (light) and NAME-dark.svg, trimmed for the post."""
+    """The charts in the blog's colours, NAME.svg (light) and NAME-dark.svg, trimmed for the post."""
     global THEME, OUT
     n = numbers(s)
     for theme, suffix in (("blog-light", ""), ("blog-dark", "-dark")):
@@ -551,6 +599,7 @@ def render_blog(s: dict, out: Path) -> None:
         fig_latency(s, n)
         fig_botwriter_blog(s, n)
         fig_botwriter_simple(s, n)
+        fig_yoshi_rl()
         for f in OUT.glob("*.svg"):
             f.replace(out / f"{f.stem}{suffix}.svg")
         OUT.rmdir()
