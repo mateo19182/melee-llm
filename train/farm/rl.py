@@ -14,10 +14,13 @@ Writes data/train/runs/RUN/: run.json, rl.jsonl (one line per step; the web Trai
 Lanes chosen with --publish appear on the web's All matches page while they play.
 
 --delay plays the learner with input delay, as on stomped.dev: the pad chosen after reading frame F lands on frame
-F + 1 + N. `N` is fixed; `STEP:N,STEP:N,...` is a curriculum (from each STEP on, delay N). With delay the model reads
-its own last chosen pad as its controller (as at delay 0) rather than the applied one, which is N frames older;
---no-own turns that off. Actions keep the credit of the frame they were chosen on: returns are discounted with an
-8-second half-life, so the N frames before an action lands only add a little noise to its advantage.
+F + 1 + N. `N` is fixed; `STEP:N,STEP:N,...` is a curriculum (from each STEP on, delay N); with --advance W,
+`N1,N2,...` is a ladder: it moves to the next delay once the learner has won at least W of its games against the
+pool's farm players over the last --window steps at the current one (the level is kept in last.pt). With delay
+the model reads its own last chosen pad as its controller (as at delay 0) rather than the applied one, which is N
+frames older; --no-own turns that off. Actions keep the credit of the frame they were chosen on: returns are
+discounted with an 8-second half-life, so the N frames before an action lands only add a little noise to its
+advantage.
 
 --check (with a few --steps) only measures: how well the learner reproduces the actor's action probabilities.
 """
@@ -55,6 +58,32 @@ def parse_delay(text):
 
 def delay_at(schedule, it):
     return [d for s, d in schedule if s <= it][-1]
+
+
+def final_delay(text):
+    """The last delay of any --delay form."""
+    return int(text.replace(":", ",").split(",")[-1])
+
+
+class Ladder:
+    def __init__(self, levels, target, window, level=0):
+        self.levels, self.target, self.window, self.level = levels, target, window, level
+        self.recent = collections.deque(maxlen=window)
+
+    @property
+    def delay(self):
+        return self.levels[self.level]
+
+    def record(self, won, played):
+        """One step's results against the farm players; True when this moves to the next delay."""
+        self.recent.append((won, played))
+        games = sum(p for _, p in self.recent)
+        if (len(self.recent) < self.window or self.level == len(self.levels) - 1 or not games
+                or sum(w for w, _ in self.recent) < self.target * games):
+            return False
+        self.level += 1
+        self.recent.clear()
+        return True
 
 
 def parse_pool(text):
@@ -319,12 +348,18 @@ def main():
     ap.add_argument("--publish", type=int, default=1, help="lanes per pool group shown on the All matches page")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--delay", default="0", help="input delay in frames, or a curriculum STEP:N,STEP:N,...")
+    ap.add_argument("--advance", type=float, help="win rate that moves a --delay ladder N1,N2,... to its next delay")
+    ap.add_argument("--window", type=int, default=20, help="steps at a delay the ladder judges --advance over")
     ap.add_argument("--own", action=argparse.BooleanOptionalAction, default=None,
                     help="read its own last chosen pad as its controller (default: on when there is delay)")
     ap.add_argument("--check", action="store_true")
     a = ap.parse_args()
     assert a.frames % ROLL == 0
-    schedule = parse_delay(a.delay)
+    if a.advance is not None:
+        ladder = Ladder([int(x) for x in a.delay.split(",")], a.advance, a.window)
+        schedule = [(0, d) for d in ladder.levels]
+    else:
+        ladder, schedule = None, parse_delay(a.delay)
     if a.own is None:
         a.own = any(d for _, d in schedule)
     if a.check:
@@ -373,6 +408,8 @@ def main():
         learner.opt_pi.load_state_dict(state["opt_pi"])
         learner.opt_v.load_state_dict(state["opt_v"])
         it, frames_total = state["it"], state["frames"]
+        if ladder:
+            ladder.level = state.get("level", 0)
         print(f"resumed at step {it}", flush=True)
     me = Seats(model, seats, a.seed + it, max(d for _, d in schedule), a.own)
     others = {spec: RemoteBrain(spec.partition(":")[0], spec, s, a.seed + it) for spec, s in opp.items()}
@@ -445,7 +482,7 @@ def main():
     try:
         while it < a.steps:
             t0 = time.monotonic()
-            me.delay = delay_at(schedule, it)
+            me.delay = ladder.delay if ladder else delay_at(schedule, it)
             snaps = []
             ep = collections.defaultdict(float)  # reward sums per group
             for k in range(a.frames + 1):
@@ -555,6 +592,9 @@ def main():
                         won={names[g]: float(s["won"]) for g, s in stats.items()},
                         margin={names[g]: float(s["margin"]) for g, s in stats.items()},
                         **{k: (round(v, 6) if isinstance(v, float) else v) for k, v in m.items()})
+            if ladder and ladder.record(sum(s["won"] for g, s in stats.items() if names[g] != "self"),
+                                        sum(s["played"] for g, s in stats.items() if names[g] != "self")):
+                line["advance"] = ladder.delay
             stats.clear()
             print(json.dumps(line), flush=True)
             log.write(json.dumps(line) + "\n")
@@ -563,7 +603,7 @@ def main():
                 print(f"actor vs learner: mean |log p difference| {m.get('actor_logp_gap', float('nan')):.2e}")
                 continue
             if it % a.save_every == 0 or it == a.steps:
-                save(run, it, frames_total, model, value, learner, a.init)
+                save(run, it, frames_total, model, value, learner, a.init, level=ladder.level if ladder else 0)
     finally:
         for br in others.values():
             br.close()
@@ -573,7 +613,7 @@ def main():
         log.close()
 
 
-def save(run, it, frames, model, value, learner, init):
+def save(run, it, frames, model, value, learner, init, level=0):
     import torch
 
     from .faynt import weights
@@ -584,7 +624,7 @@ def save(run, it, frames, model, value, learner, init):
         shutil.copy2(f, d / f.name)
     tmp = run / "last.pt.tmp"
     torch.save(dict(model=model.state_dict(), value=value.state_dict(), opt_pi=learner.opt_pi.state_dict(),
-                    opt_v=learner.opt_v.state_dict(), it=it, frames=frames), tmp)
+                    opt_v=learner.opt_v.state_dict(), it=it, frames=frames, level=level), tmp)
     os.replace(tmp, run / "last.pt")
 
 
