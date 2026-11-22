@@ -11,7 +11,7 @@ import json
 import time
 
 from .common import LIVE
-from .rl import parse_delay
+from .rl import final_delay
 from .run import Player, play
 
 OPPONENTS = ["phillip:fox_d18_vs_yoshi_v3/FOX", "phillip:yoshi_d18_ditto/YOSHI", "phillip:marth_d18_vs_yoshi_v3/MARTH",
@@ -32,7 +32,7 @@ def main():
     info = json.loads((run / "run.json").read_text())
     start = info["init"].rsplit("/", 1)[0]
     args = info.get("args", {})
-    delay = a.delay if a.delay is not None else parse_delay(str(args.get("delay", 0)))[-1][1]
+    delay = a.delay if a.delay is not None else final_delay(str(args.get("delay", 0)))
     options = f",delay={delay}" + (",own=1" if args.get("own", True) else "") if delay else ""
     while True:
         done = set()
