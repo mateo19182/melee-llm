@@ -64,7 +64,12 @@ def check_batched(original, batched, batch=8, trials=4):
         together = many.run(None, feed)
         alone = [one.run(None, {k: v[r:r + 1] for k, v in feed.items()}) for r in range(batch)]
         for j, out in enumerate(together):
-            if not np.array_equal(out, np.concatenate([a[j] for a in alone])):
+            want = np.concatenate([a[j] for a in alone])
+            # sampled actions must match exactly; float outputs may differ by summation order (multi-threaded
+            # matmuls split a batch differently: super-gm with 4 threads, 4e-6 of its largest value)
+            same = (np.allclose(out, want, rtol=0, atol=1e-5 * max(1.0, float(np.abs(want).max())))
+                    if out.dtype.kind == "f" else np.array_equal(out, want))
+            if not same:
                 raise RuntimeError(f"{batched}: output {j} differs from the original's")
 
 
