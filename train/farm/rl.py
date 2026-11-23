@@ -16,11 +16,11 @@ Lanes chosen with --publish appear on the web's All matches page while they play
 --delay plays the learner with input delay, as on stomped.dev: the pad chosen after reading frame F lands on frame
 F + 1 + N. `N` is fixed; `STEP:N,STEP:N,...` is a curriculum (from each STEP on, delay N); with --advance W,
 `N1,N2,...` is a ladder: it moves to the next delay once the learner has won at least W of its games against the
-pool's farm players over the last --window steps at the current one (the level is kept in last.pt). With delay
-the model reads its own last chosen pad as its controller (as at delay 0) rather than the applied one, which is N
-frames older; --no-own turns that off. Actions keep the credit of the frame they were chosen on: returns are
-discounted with an 8-second half-life, so the N frames before an action lands only add a little noise to its
-advantage.
+pool's farm players (--judge: only those of these kinds) over the last --window steps at the current one (the level
+is kept in last.pt). With delay the model reads its own last chosen pad as its controller (as at delay 0) rather than
+the applied one, which is N frames older; --no-own turns that off. Actions keep the credit of the frame they were
+chosen on: returns are discounted with an 8-second half-life, so the N frames before an action lands only add a
+little noise to its advantage.
 
 --check (with a few --steps) only measures: how well the learner reproduces the actor's action probabilities.
 """
@@ -316,6 +316,27 @@ class Learner:
         return dict(m)
 
 
+class Opponent:
+    """A farm player as the RL loop drives it: submit a frame, then collect its rows. Remote brains overlap their work
+    with the learner's step; in-process ones (Faynt) act on submit."""
+
+    def __init__(self, brain):
+        self.brain, self.rows = brain, None
+
+    def submit(self, frame):
+        if hasattr(self.brain, "submit"):
+            self.brain.submit(frame)
+        else:
+            self.rows = self.brain.act(frame).copy()
+
+    def collect(self):
+        return self.brain.collect() if hasattr(self.brain, "submit") else self.rows
+
+    def close(self):
+        if hasattr(self.brain, "close"):
+            self.brain.close()
+
+
 def _copy_opt(opt):
     import copy
 
@@ -350,6 +371,8 @@ def main():
     ap.add_argument("--delay", default="0", help="input delay in frames, or a curriculum STEP:N,STEP:N,...")
     ap.add_argument("--advance", type=float, help="win rate that moves a --delay ladder N1,N2,... to its next delay")
     ap.add_argument("--window", type=int, default=20, help="steps at a delay the ladder judges --advance over")
+    ap.add_argument("--judge", default="", help="pool kinds whose games the ladder counts (e.g. phillip; default: all "
+                    "but self)")
     ap.add_argument("--own", action=argparse.BooleanOptionalAction, default=None,
                     help="read its own last chosen pad as its controller (default: on when there is delay)")
     ap.add_argument("--check", action="store_true")
@@ -360,6 +383,11 @@ def main():
         schedule = [(0, d) for d in ladder.levels]
     else:
         ladder, schedule = None, parse_delay(a.delay)
+    kinds = set(filter(None, a.judge.split(",")))
+
+    def judges(name):
+        return name != "self" and (not kinds or name.partition(":")[0] in kinds)
+
     if a.own is None:
         a.own = any(d for _, d in schedule)
     if a.check:
@@ -375,7 +403,7 @@ def main():
 
     from . import learner as L
     from .faynt import weights
-    from .remote import RemoteBrain
+    from .run import brain
 
     torch.manual_seed(a.seed)
     run = LIVE / "data/train/runs" / a.run
@@ -416,7 +444,8 @@ def main():
             keep = [x for x in log_path.read_text().splitlines() if json.loads(x)["iter"] <= it]
             log_path.write_text("".join(x + "\n" for x in keep))
     me = Seats(model, seats, a.seed + it, max(d for _, d in schedule), a.own)
-    others = {spec: RemoteBrain(spec.partition(":")[0], spec, s, a.seed + it) for spec, s in opp.items()}
+    others = {spec: Opponent(brain(spec.partition(":")[0], spec, s, a.seed + it, False, True))
+              for spec, s in opp.items()}
     S = len(seats)
     lane_seats = collections.defaultdict(list)
     for i, (lane, port) in enumerate(seats):
@@ -596,8 +625,8 @@ def main():
                         won={names[g]: float(s["won"]) for g, s in stats.items()},
                         margin={names[g]: float(s["margin"]) for g, s in stats.items()},
                         **{k: (round(v, 6) if isinstance(v, float) else v) for k, v in m.items()})
-            if ladder and ladder.record(sum(s["won"] for g, s in stats.items() if names[g] != "self"),
-                                        sum(s["played"] for g, s in stats.items() if names[g] != "self")):
+            judged = [g for g in stats if judges(pool[g][0])]
+            if ladder and ladder.record(sum(stats[g]["won"] for g in judged), sum(stats[g]["played"] for g in judged)):
                 line["advance"] = ladder.delay
             stats.clear()
             print(json.dumps(line), flush=True)
