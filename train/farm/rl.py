@@ -411,6 +411,10 @@ def main():
         if ladder:
             ladder.level = state.get("level", 0)
         print(f"resumed at step {it}", flush=True)
+        log_path = run / "rl.jsonl"
+        if log_path.exists():  # steps after the checkpoint are replayed: drop their lines
+            keep = [x for x in log_path.read_text().splitlines() if json.loads(x)["iter"] <= it]
+            log_path.write_text("".join(x + "\n" for x in keep))
     me = Seats(model, seats, a.seed + it, max(d for _, d in schedule), a.own)
     others = {spec: RemoteBrain(spec.partition(":")[0], spec, s, a.seed + it) for spec, s in opp.items()}
     S = len(seats)
