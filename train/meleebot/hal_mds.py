@@ -11,12 +11,17 @@ least that rank (pro/ folders: the pro's side; ranked dumps: e.g. Master players
 HAL stores less per frame than our .slp builder: no velocities, state age or hitstun. Those fields
 stay 0 here, so models trained on this data must use feature set "v2" (features.py), which ignores them.
 """
-import argparse, gzip, json, os, time
+import argparse
+import gzip
+import json
+import os
+import time
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from itertools import islice
 
 import numpy as np
+from own.mds import read_shard
 
 from .build_dataset import MIN_FRAMES
 from .schema import CHARACTERS, FRAME, RANKS
@@ -31,44 +36,6 @@ STAGE_EXTERNAL = {8: 2, 18: 3, 6: 8, 26: 28, 24: 31, 25: 32}
 
 # hal/wire.py ACTION_CHANNELS[6:] bit order -> our physical button bits (schema.BUTTONS).
 _BUTTON_BITS = np.array([0x0100, 0x0200, 0x0400, 0x0800, 0x0010, 0x0020, 0x0040, 0x0008], np.uint16)
-_SHAPE_BYTES = {0: 1, 1: 2, 2: 4, 3: 8}
-
-
-def read_shard(path, columns):
-    """Yield the rows of one zstd MDS shard, decoding only `columns`."""
-    import zstandard
-    idx = json.load(open(os.path.join(os.path.dirname(path), "index.json")))
-    info = next(s for s in idx["shards"] if s["zip_data"]["basename"] == os.path.basename(path))
-    names, encs, sizes = info["column_names"], info["column_encodings"], info["column_sizes"]
-    with open(path, "rb") as fh:
-        raw = zstandard.ZstdDecompressor().stream_reader(fh).read()
-    n = int(np.frombuffer(raw, np.uint32, 1)[0])
-    offsets = np.frombuffer(raw, np.uint32, n + 1, 4)
-    for i in range(n):
-        data, pos = memoryview(raw)[offsets[i]:offsets[i + 1]], 0
-        lens = []
-        for size in sizes:
-            if size is None:
-                size = int(np.frombuffer(data, np.uint32, 1, pos)[0]); pos += 4
-            lens.append(size)
-        row = {}
-        for name, enc, size in zip(names, encs, lens):
-            if name in columns:
-                row[name] = _decode(enc, data[pos:pos + size])
-            pos += size
-        yield row
-
-
-def _decode(enc, b):
-    if enc == "int":
-        return int(np.frombuffer(b, np.int64)[0])
-    if enc == "str":
-        return bytes(b).decode()
-    assert enc.startswith("ndarray:"), enc  # static dtype, shape stored in front
-    ndim, width = b[0] >> 2, _SHAPE_BYTES[b[0] % 4]
-    shape = np.frombuffer(b, f"u{width}", ndim, 1)
-    return np.frombuffer(b, enc.split(":")[1], offset=1 + ndim * width).reshape(shape)
-
 
 def unpack_state(u):
     """hal/data/policy_schema.py pack_player_state, inverted. Missing values come back as 0."""
