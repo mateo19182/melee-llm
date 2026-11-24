@@ -106,7 +106,8 @@ def main():
     else:
         (run / "run.json").write_text(json.dumps(dict(kind="own-bc", args=vars(a), base=BASE, steps=steps,
                                                       params=sum(p.numel() for p in model.parameters())), indent=1))
-    val = list(data.loader("val", delays, a.batch, 2, seed=1, limit=a.val_games))
+    # cloned: a batch from a worker holds one shared-memory file handle per tensor
+    val = [{k: v.clone() for k, v in b.items()} for b in data.loader("val", delays, a.batch, 2, seed=1, limit=a.val_games)]
     print(f"{steps} steps of {per_step} frames; validation {len(val)} batches", flush=True)
     log = open(run / "train.jsonl", "a")
     seen, t0 = 0.0, time.time()
