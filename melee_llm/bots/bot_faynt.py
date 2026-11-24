@@ -7,6 +7,9 @@ structured tensors -> one cached step per frame, zero added delay, 256-frame rin
 config `own: true` makes the model read its own last pad as its controller instead of the one the game applied, for
 a bot whose pads land late (stomped.dev): Faynt has no delay input, and reading a pad older than its last one breaks
 it (farm.faynt's own=1, E32).
+
+Our own models (train/own) are played with `own: true`, `name: N` (the name code of the delay they are told) and
+`items: 4` (their data keeps the four oldest items of a frame).
 """
 from __future__ import annotations
 
@@ -38,6 +41,15 @@ def controller_of(c):
 NEUTRAL = controller_of([0.5, 0.5, 0.5, 0.5, 0.0] + [0.0] * len(BUTTONS))
 
 
+def oldest_items(game, gs, k):
+    """`game` with only the k oldest items of the frame (lowest spawn ids), as in HAL's dataset, which our own
+    models are trained on (train/own/hal.py). The model sums over items, so their slots do not matter."""
+    from slippi_db.parse_libmelee import _EMPTY_ITEMS, get_item
+
+    keep = sorted(gs.projectiles, key=lambda p: p.spawn_id)[:k]
+    return game._replace(items=_EMPTY_ITEMS._replace(**{f"item_{i}": get_item(p) for i, p in enumerate(keep)}))
+
+
 class Bot:
     def __init__(self, init: dict):
         cfg = init["config"]
@@ -57,6 +69,8 @@ class Bot:
         self.steer = {"temperature": 1.0}
         self.parser = self.cache = None
         self.own, self.last = bool(cfg.get("own")), None
+        # our own models (train/own): the name code they are told (their delay) and the item limit of their data
+        self.code, self.items = cfg.get("name"), cfg.get("items")
 
     @staticmethod
     def available() -> list[str]:
@@ -109,9 +123,12 @@ class Bot:
         game = self.parser.get_game(gs)
         if self.own:
             game = game._replace(p0=game.p0._replace(controller=self.last if self.last and not reset else NEUTRAL))
+        if self.items:
+            game = oldest_items(game, gs, self.items)
         state, current = self._tensors(game)
+        name = None if self.code is None else torch.tensor([self.code], device=self.device)
         out = self.step(game_state_t=state, controller_t=current, cache=self.cache,
-                              reset_mask=torch.tensor([reset], device=self.device),
+                              reset_mask=torch.tensor([reset], device=self.device), player_name=name,
                               temperature=self.steer["temperature"], generator=self.generator)
         self.cache = out.cache
         c = out.controller.as_packed_tensor().reshape(-1).tolist()  # main x/y, c x/y, shoulder, A B X Y Z L R D_UP

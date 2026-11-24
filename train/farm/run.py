@@ -168,6 +168,9 @@ def play(a, b, games, lanes=64, out=None, seed=0, ucf=True, check=False, first=0
                 env.reset_matches(restart)
                 fresh[restart], has_input[restart] = True, False
         reports = {spec: br.report() for ((kind, spec), _), (_, br) in zip(groups.items(), brains)}
+        for ((_, spec), _), (_, br) in zip(groups.items(), brains):
+            if not quiet and getattr(br, "pressed", 0):
+                print(f"{spec}: main stick changed on {br.moved / br.pressed:.1%} of frames", flush=True)
     finally:
         for _, br in brains:
             if hasattr(br, "close"):

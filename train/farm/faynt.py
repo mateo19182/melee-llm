@@ -9,8 +9,9 @@ import dataclasses
 import numpy as np
 import torch
 
+from melee_llm.bots.bot_faynt import controller_of, oldest_items  # noqa: E402  (after .common puts the repo on sys.path)
+
 from .common import LIVE, Brain
-from melee_llm.bots.bot_faynt import controller_of  # noqa: E402  (after .common puts the repo on sys.path)
 
 WEIGHTS = LIVE / "vendor/Faynt-Tournament/weights"
 BUTTONS = ("A", "B", "X", "Y", "Z", "L", "R", "D_UP")
@@ -77,9 +78,10 @@ class GraphStep:
     model's arithmetic alone. The constant tables the codec builds with `torch.tensor` each step are likewise
     the warm-up's, kept alive for the graph. Sampling draws from the default CUDA generator, which graphs support."""
 
-    def __init__(self, model, batch, temperature, seed=0):
+    def __init__(self, model, batch, temperature, seed=0, name=None):
 
         batched_cache(model)
+        code = None if name is None else torch.full((batch,), name, device="cuda")
         kv = type(model.init_cache(1, device="cuda"))
         if not getattr(kv, "_masked_reset", False):
             def reset_slots(self, reset_mask):
@@ -100,7 +102,7 @@ class GraphStep:
         def run():
             with torch.inference_mode():
                 out = model.step(game_state_t=self.state, controller_t=self.state.p0.controller, cache=self.cache,
-                                 reset_mask=self.reset, temperature=temperature)
+                                 reset_mask=self.reset, temperature=temperature, player_name=code)
             self.button_logits = out.logits["buttons"]
             # what RL needs from the actor: the sampled categories and their log-probability
             buttons, stick = out.labels.buttons.long(), out.labels.main_stick.long()
@@ -169,10 +171,11 @@ class GraphStep:
 class EagerStep:
     """The same step without a graph: for checking GraphStep, and a fallback if capture fails."""
 
-    def __init__(self, model, batch, temperature, seed=0):
+    def __init__(self, model, batch, temperature, seed=0, name=None):
 
         batched_cache(model)
         self.model, self.temperature = model, temperature
+        self.code = None if name is None else torch.full((batch,), name, device="cuda")
         self.state = model.example_inputs(batch, None, device="cuda")["game_state_t"]
         self.inputs = list(_leaves(self.state))
         self.cache = model.init_cache(batch, device="cuda")
@@ -185,7 +188,7 @@ class EagerStep:
         with torch.inference_mode():
             out = self.model.step(game_state_t=self.state, controller_t=self.state.p0.controller, cache=self.cache,
                                   reset_mask=torch.as_tensor(np.asarray(reset, dtype=bool)).cuda(),
-                                  temperature=self.temperature, generator=self.generator)
+                                  temperature=self.temperature, generator=self.generator, player_name=self.code)
         return out.controller.as_packed_tensor().reshape(len(reset), -1).float().cpu().numpy()
 
 
@@ -213,7 +216,8 @@ class FayntBrain(Brain):
     """One Faynt checkpoint playing all its seats (spec `faynt:VARIANT[,temperature=T][,delay=N]`, VARIANT a released
     name such as 10M-Arena or a checkpoint directory). With delay N, the pad chosen after reading frame F is applied
     on frame F + 1 + N, as on stomped.dev at lead N + 1; the model is unaware of it. With own=1 the model reads its
-    own last pad as its controller instead of the one the game applied (N frames older)."""
+    own last pad as its controller instead of the one the game applied (N frames older). Our own models (train/own)
+    also take name=CODE, the name code of the delay they are told, and items=4, the item limit of their data."""
 
     def __init__(self, spec, seats, seed=0, check=False, graph=True):
         from transformers import AutoModel
@@ -223,7 +227,10 @@ class FayntBrain(Brain):
         o = dict(x.split("=", 1) for x in options)
         self.model = AutoModel.from_pretrained(weights(variant), trust_remote_code=True).eval().cuda()
         temperature = float(o.get("temperature", 1.0))
-        self.step = (GraphStep if graph else EagerStep)(self.model, len(self.seats), temperature, seed)
+        name = int(o["name"]) if "name" in o else None
+        self.step = (GraphStep if graph else EagerStep)(self.model, len(self.seats), temperature, seed, name)
+        self.items = int(o.get("items", 0))
+        self.held, self.moved, self.pressed = np.tile(NEUTRAL[:2], (len(self.seats), 1)), 0, 0  # main stick changes
         self.parsers = [None] * len(self.seats)
         self.delay = int(o.get("delay", 0))
         self.queued = np.tile(NEUTRAL, (len(self.seats), self.delay + 1, 1))  # [seat, delay + 1, pad], oldest first
@@ -244,6 +251,8 @@ class FayntBrain(Brain):
             game = self.parsers[i](states[lane])
             if self.own:
                 game = game._replace(p0=game.p0._replace(controller=controller_of(NEUTRAL if reset[i] else self.queued[i, -1])))
+            if self.items:
+                game = oldest_items(game, states[lane], self.items)
             self.last_read[i] = game
         actions = self.step(self.last_read, reset)
         self.queued[reset] = NEUTRAL
@@ -251,3 +260,6 @@ class FayntBrain(Brain):
         for i, (lane, _) in enumerate(self.seats):
             if lane in states:
                 press(self.controllers[i], self.queued[i, 0])
+                self.pressed += 1
+                self.moved += bool((self.queued[i, 0, :2] != self.held[i]).any())
+                self.held[i] = self.queued[i, 0, :2]
