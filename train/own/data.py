@@ -3,6 +3,9 @@
 At delay D the model, reading the game at frame t, is given the pad it last committed (the one the game applies at
 t + D) and must produce the pad for t + D + 1: slippi-ai's alignment, and what `farm.faynt` does in play with
 `delay=D,own=1`. D = 0 is Faynt's own setup.
+
+The model is told three things about the player it imitates through one name code (`code`): the delay, the rank and
+whether they won the game. In play we pick the code: `python -m own.data 0,12` prints the table.
 """
 import json
 import random
@@ -19,6 +22,13 @@ ARCHIVE = Path("/mnt/archive/melee/hal-mds")  # holds the shards of the pro fold
 WINDOW = 256
 # slippi-ai's opt-out list (slippi_ai/nametags.py): never imitated, still seen as opponents.
 OPTED_OUT = {"mang0", "m2k"}
+RANKS = ("unknown", "platinum", "diamond", "master", "pro")
+CODES = 32  # the model's name vocabulary: room for 3 delays
+
+
+def code(delays, delay, rank, won):
+    """The name code of a player of `rank` (index into RANKS) who won or lost, read at `delay` frames."""
+    return delays.index(delay) + len(delays) * (int(won) + 2 * min(int(rank), len(RANKS) - 1))
 
 
 def sources(root=ROOT):
@@ -43,12 +53,11 @@ def windows(frames, labels, delays, rng):
     n, top = len(frames), max(delays)
     start = rng.randrange(WINDOW)
     for s in range(start, n - WINDOW - top - 1, WINDOW):
-        code = rng.randrange(len(delays))
-        d = delays[code]
+        d = rng.choice(delays)
         yield dict(frames=frames[s:s + WINDOW], pad=frames["pad"][s + d:s + d + WINDOW],
                    target=frames["pad"][s + d + 1:s + d + 1 + WINDOW],
-                   meta=np.array([labels["character"], labels["opponent"], labels["stage"], hal.FIRST_FRAME + s, code],
-                                 np.int32))
+                   meta=np.array([labels["character"], labels["opponent"], labels["stage"], hal.FIRST_FRAME + s,
+                                  code(delays, d, labels["rank"], labels["won"]), delays.index(d)], np.int32))
 
 
 class Windows(torch.utils.data.IterableDataset):
@@ -157,3 +166,11 @@ def tensors(batch, device="cuda"):
     pad_in = controller(_fields(b["pad"], hal.PAD, shape))
     target = controller(_fields(b["target"], hal.PAD, shape))
     return game, pad_in, target, whole(meta[:, 4]), torch.ones(shape, dtype=torch.bool, device=device)
+
+
+if __name__ == "__main__":
+    import sys
+
+    ds = tuple(int(x) for x in sys.argv[1].split(","))
+    for r, rank in enumerate(RANKS):
+        print(rank.ljust(9), *(f"delay {d} {'won' if w else 'lost'}: {code(ds, d, r, w):2d}  " for d in ds for w in (1, 0)))

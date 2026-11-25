@@ -3,8 +3,8 @@
     PYTHONPATH=. <Faynt venv>/python -m own.train RUN [--delays 0,12] [--frames 1e9] [--batch 64]
 
 RUN is a folder under data/train/runs. Checkpoints are Faynt weight folders (`ckpt/step-N`), so `farm` and the live
-bot load them as `faynt:<folder>`; `last.pt` resumes the run. The name code the model is told is the index of the
-window's delay in --delays.
+bot load them as `faynt:<folder>`; `last.pt` resumes the run. The name code the model is told carries the window's
+delay and the player's rank and result (`own.data.code`).
 """
 import argparse
 import json
@@ -22,10 +22,9 @@ from . import data
 
 RUNS = LIVE / "data/train/runs"
 BASE = "10M-Base"  # the released folder whose architecture and code files we start from
-NAMES = 8
 
 
-def build(base=BASE, names=NAMES):
+def build(base=BASE, names=data.CODES):
     """A randomly initialised model of a released Faynt size, without the FoD platform input (not in the dataset)
     and with a name code input."""
     from transformers import AutoConfig, AutoModel
@@ -48,9 +47,9 @@ def validate(model, batches):
     model.eval()
     sums = {}
     for batch in batches:
-        code = batch["meta"][:, 4]
-        for c in code.unique().tolist():
-            rows = (code == c).nonzero()[:, 0]
+        delay = batch["meta"][:, 5]
+        for c in delay.unique().tolist():
+            rows = (delay == c).nonzero()[:, 0]
             _, m = loss_of(model, {k: v[rows] for k, v in batch.items()})
             s = sums.setdefault(c, [0.0, 0.0, 0.0, 0.0])
             n = float(m["valid_positions"])
@@ -61,12 +60,13 @@ def validate(model, batches):
     return {c: [round(v / s[3], 4) for v in s[:3]] for c, s in sorted(sums.items())}
 
 
-def save(run, model, opt, step, frames):
-    d = run / "ckpt" / f"step-{step:07d}"
-    model.config.checkpoint_step = step
-    model.save_pretrained(d)
-    for f in Path(weights(BASE)).glob("*.py"):
-        shutil.copy2(f, d / f.name)
+def save(run, model, opt, step, frames, folder):
+    if folder:
+        d = run / "ckpt" / f"step-{step:07d}"
+        model.config.checkpoint_step = step
+        model.save_pretrained(d)
+        for f in Path(weights(BASE)).glob("*.py"):
+            shutil.copy2(f, d / f.name)
     tmp = run / "last.pt.tmp"
     torch.save(dict(model=model.state_dict(), opt=opt.state_dict(), step=step, frames=frames), tmp)
     os.replace(tmp, run / "last.pt")
@@ -83,7 +83,8 @@ def main():
     ap.add_argument("--workers", type=int, default=6)
     ap.add_argument("--val-every", type=int, default=2000)
     ap.add_argument("--val-games", type=int, default=240)
-    ap.add_argument("--save-every", type=int, default=2000)
+    ap.add_argument("--save-every", type=int, default=2000, help="steps between writes of last.pt")
+    ap.add_argument("--ckpt-every", type=int, default=2000, help="steps between weight folders")
     ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args()
     delays = [int(x) for x in a.delays.split(",")]
@@ -131,8 +132,8 @@ def main():
             log.write(json.dumps(line) + "\n"); log.flush()
             print(line, flush=True)
             seen, t0 = 0.0, time.time()
-        if step % a.save_every == 0 or step == steps:
-            save(run, model, opt, step, frames)
+        if step % a.save_every == 0 or step % a.ckpt_every == 0 or step == steps:
+            save(run, model, opt, step, frames, step % a.ckpt_every == 0 or step == steps)
 
 
 if __name__ == "__main__":
