@@ -6,7 +6,7 @@ status: running
 result: running
 verdict: pending
 runs: own-pre-10m
-prs:
+prs: 121
 follows: E34
 ---
 
@@ -25,14 +25,14 @@ The winner is the player with more stocks on the game's last frame, then less pe
 
 ## Judged by
 
-All at 64 games in the farm unless said, then the Dolphin league for the final checkpoint.
+All at 64 games in the farm unless said (`train/own/eval.sh`), then the Dolphin league for the final checkpoint.
 
 - Validation loss per delay on the same 240 held-out games as E34 (0.784 at no delay, 0.796 at 12 frames).
 - **Which code plays best:** pro winner, Master winner and Master loser, as Fox against Faynt's 10M Base at no delay. If winner and loser codes play the same, the labels carry nothing.
 - **Against the gate model,** both at no delay and both at 12 frames, as Fox and as Yoshi.
 - **Against Faynt's 10M Base** at no delay, as Fox and as Yoshi (the gate model won 27 and 35 of 64).
 - **At 12 frames** as Yoshi against `yoshi-rl-3-ladder` step 1795 at the same delay (the gate model won 7 of 64) and Phillip's Yoshi (0 of 64).
-- **Dolphin league:** Fox at no delay against CPU 9 and the Fox roster, 12 games each.
+- **Dolphin league:** Fox at no delay against CPU 9, 24 games (the gate model won 14 of 24, Faynt's 10M Base 10 of 12), then the Fox roster at 12 games each. A clear win over CPU 9 is the bar E34 left open.
 
 ## Result
 

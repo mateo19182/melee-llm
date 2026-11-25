@@ -2,11 +2,11 @@
 id: E34
 title: Our own model: the gate
 date: 2026-11-24
-status: running
-result: running
-verdict: pending
+status: done
+result: after 1 billion frames both models play normally (stick changes on 17 to 20% of frames) and are about level with Faynt's 10M Base in the farm at no delay (Fox 27 and 23 of 64, Yoshi 35 and 43 of 64). The mixed-delay model beat the delay-0 one 38 of 64, so the delay input costs nothing. On Dolphin the mixed model's Fox won 14 of 24 against CPU 9 where Faynt Base won 10 of 12. At 12 frames it won 7 of 64 against E33's RL Yoshi and 0 of 64 against Phillip's Yoshi
+verdict: the pipeline works and one model can serve both delays, so the full pretrain (E35) is mixed-delay. The CPU 9 bar (a clear win on Dolphin) is not met at 1 billion frames; E35 has to meet it. Imitation alone at 12 frames is far behind RL-trained bots
 runs: own-gate-d0, own-gate-mix
-prs:
+prs: 118, 119, 120, 121
 follows: E13, E33
 ---
 
@@ -36,4 +36,39 @@ Two runs of 1 billion frames, differing only in the delays:
 
 ## Result
 
+Both runs finished their 122,070 steps on 11-25 at about 28,000 frames a second each (58,000 for one run alone).
+
+**Validation loss** (nats per frame): delay-0 model 0.790; mixed model 0.784 at no delay and 0.796 at 12 frames.
+
+**Farm, last checkpoint, 64 games each** (`train/own/gate-eval.sh`, log `/mnt/data/melee/runs/own-gate-eval.log`). Stick changes are the share of frames on which the main stick moved, ours then the opponent's.
+
+| Player | Opponent | Delay | Wins | Stocks a game | Stick changes |
+|---|---|---|---|---|---|
+| Mixed, Fox | Faynt 10M Base, Fox | 0 | 27 | −0.38 | 19.1% / 17.8% |
+| Delay-0, Fox | Faynt 10M Base, Fox | 0 | 23 | −0.45 | 17.5% / 17.6% |
+| Mixed, Fox | Delay-0, Fox | 0 | 38 | +0.31 | 19.6% / 17.4% |
+| Mixed, Yoshi | Faynt 10M Base, Yoshi | 0 | 35 | +0.28 | 18.5% / 17.9% |
+| Delay-0, Yoshi | Faynt 10M Base, Yoshi | 0 | 43 | +0.97 | 16.9% / 17.6% |
+| Mixed, Fox | Faynt 10M Base, Fox, also delayed | 12 | 61.5 | +2.56 | 19.8% / 16.7% |
+| Mixed, Yoshi | `yoshi-rl-3-ladder` step 1795, also delayed | 12 | 7 | −1.70 | 17.6% / 17.0% |
+| Mixed, Yoshi | Phillip's Yoshi (`yoshi_d18_ditto`) | 12 | 0 | −3.77 | 16.8% |
+
+During training the mixed model went from 0 of 16 against Faynt Base at step 2,000 to 6 of 32 at step 22,000.
+
+**Dolphin league, mixed model as Fox at no delay** (`train/own/gate-dolphin.sh`):
+
+| Player | Opponent | Wins |
+|---|---|---|
+| Mixed, reading its own last pad | CPU 9 | 14 of 24 |
+| Mixed, reading the pad the game reports | CPU 9 | 7 of 12 |
+| Faynt 10M Base | CPU 9 | 10 of 12 |
+| Mixed, reading its own last pad | Faynt 10M Base | 2 of 7 |
+
+Only 7 of the 20 games against Faynt Base finished: one run hit its time limit and games with two Faynt-size bots on the CPU beside the training run take over 20 minutes.
+
 ## Verdict
+
+- **The pipeline works.** The input holding of E11 to E13 is gone: the stick moves as often as Faynt's, and the model is level with Faynt's 10M Base in the farm after 1 billion frames.
+- **One model for both delays.** The mixed model is no worse at no delay than the model trained only there.
+- **The CPU 9 bar is not met.** 58% on Dolphin is not the clear win we asked for, and Faynt Base did better against CPU 9 than our model although the farm puts them level. Reading its own pad or the game's makes no difference, so this is not that input. More training is the first answer (E35 sees 8 times the frames); if E35 is also only even with CPU 9, the difference between our Dolphin and farm play paths needs a direct check.
+- **At 12 frames imitation is not enough.** It beats a no-delay model handicapped with the delay but loses to both RL-trained bots. The RL stage is where the 12-frame model gets made.
