@@ -84,7 +84,7 @@ So before any scale:
 
 - **Architecture:** Faynt's (transformer, 256-frame context, slippi-ai's 728-way buttons and 85-way stick head). The farm, the RL code and the released Faynt weights stay usable as tools and yardsticks.
 - **Delay as an input:** each sequence gets a delay D of 0 or 12. At frame t the model sees the game at t and the input it last committed (the one for t + D), and predicts the input for t + D + 1. This is slippi-ai's alignment with D told to the model, as in ExPhil. D = 0 is Faynt's setup.
-- **Other inputs:** character, rank, winner, source (human or which bot).
+- **Other inputs:** character, rank and winner, packed with the delay into one name code (`own.data.code`). A source label (human or which bot) waits until there are bot games in the data.
 - **Size:** 10M first. Faynt's 10M is the strongest bot in our league (1193 Elo), and HAL found larger models lost more to slower reactions than they gained. 75M only if the 10M result says size is the limit.
 
 ### Stage 2: Yoshi
@@ -102,17 +102,24 @@ PPO in the farm from the stage 2 model, once at 0 and once at 12:
 - **Against overfitting:** some bots are held out of training and only used for evaluation. A win rate that rises against training opponents and not against those is overfitting.
 - Humans are the real test. Slippi ranked and unranked ban bots, so that means direct-connect games.
 
-## 4. Cost [estimate]
+## 4. Cost [measured]
 
-From the RL updates of the running job, the 10M model does roughly 25,000 frames a second forward and backward on the 3090 while sharing it. On that figure:
+Benchmarked on the 3090 on 2026-11-24 and 25, with about 10 GB of the card held by another service:
+
+| Model | Frames a second, forward and backward | Memory |
+|---|---|---|
+| 10M, batch 32 | 58,000 alone (28,000 each for two runs side by side) | 4.2 GB |
+| 10M, batch 64 | 52,000 | 8.2 GB |
+| 75M, batch 8 | 8,100 | 7.7 GB |
 
 | Job | Frames | Time on the 3090 |
 |---|---|---|
-| Stage 0, one gate run | 1B | about half a day |
-| Stage 1, one pass over everything, 10M model | 26B perspective-frames | about 12 days |
-| Stage 1, 75M model | 26B | several times longer; rental territory |
+| Stage 0, one gate run | 1B | 5 hours alone |
+| Stage 1 as launched ([E35](experiments/E35-own-pretrain.md)), 10M model | 8B | 38 hours |
+| One pass over everything, 10M model | 26B | 5.2 days |
+| One pass, 75M model | 26B | 37 days; rental territory |
 
-These decide whether stage 1 runs here or on a rented GPU, so the benchmark in stage 0 comes before any spend. HAL trained its 247M model in 16 hours on one B200.
+HAL trained its 247M model in 16 hours on one B200.
 
 ## 5. What the current run teaches
 

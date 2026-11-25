@@ -53,7 +53,7 @@ def oldest_items(game, gs, k):
 class Bot:
     def __init__(self, init: dict):
         cfg = init["config"]
-        path = WEIGHTS / f"Faynt-{cfg['model']}"
+        path = Path(cfg["model"]) if cfg["model"].startswith("/") else WEIGHTS / f"Faynt-{cfg['model']}"
         if not path.exists():
             raise ValueError(f"no Faynt weights at {path}; have {self.available()}")
         self.name = cfg["model"]

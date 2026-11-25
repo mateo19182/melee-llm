@@ -59,7 +59,8 @@ def _pad(row, prefix):
 
 def game(row):
     """Both sides of one dataset row: [(frames as FRAME, labels), (the other side)]. Labels: the two characters
-    (libmelee ids), the stage (libmelee id) and the player's rank (1 Platinum .. 3 Master, 4 the folder's pro)."""
+    (libmelee ids), the stage (libmelee id), the player's rank (1 Platinum .. 3 Master, 4 the folder's pro, 0 unknown)
+    and whether they won (more stocks on the last frame, then less percent)."""
     players = [_player(row, p) for p in ("p1", "p2")]
     nanas = [_player(row, f"{p}_nana") for p in ("p1", "p2")]
     pads = [_pad(row, p) for p in ("p1", "p2")]
@@ -74,6 +75,8 @@ def game(row):
         items["item_state"][:, i] = np.where(present & (state != 256), state, 0)
         items["item_x"][:, i] = np.where(present, np.nan_to_num(row[f"item{i}_pos_x"]), 0)
         items["item_y"][:, i] = np.where(present, np.nan_to_num(row[f"item{i}_pos_y"]), 0)
+    stocks = [int((row[f"{p}_state"][-1].astype(np.uint32) >> 17) & 7) for p in ("p1", "p2")]
+    score = [(stocks[i], -float(players[i]["percent"][-1])) for i in (0, 1)]
     out = []
     for me in (0, 1):
         f = np.zeros(n, FRAME)
@@ -81,5 +84,5 @@ def game(row):
         for k in items.dtype.names:
             f[k] = items[k]
         out.append((f, dict(character=row[f"p{me + 1}_character"], opponent=row[f"p{2 - me}_character"],
-                            stage=row["stage"], rank=row[f"p{me + 1}_rank"])))
+                            stage=row["stage"], rank=row[f"p{me + 1}_rank"], won=score[me] > score[1 - me])))
     return out

@@ -17,10 +17,11 @@ def _frames(n):
 
 def test_window_alignment():
     f = _frames(2000)
-    labels = dict(character=14, opponent=1, stage=25, rank=3)
+    labels = dict(character=14, opponent=1, stage=25, rank=3, won=True)
     seen = set()
     for w in data.windows(f, labels, (0, 12), random.Random(0)):
-        d = (0, 12)[w["meta"][4]]
+        d = (0, 12)[w["meta"][5]]
+        assert w["meta"][4] == data.code((0, 12), d, 3, True) == w["meta"][5] + 2 * 7
         seen.add(d)
         s = int(w["frames"]["p0"]["x"][0])
         assert len(w["frames"]) == data.WINDOW and w["meta"][3] == hal.FIRST_FRAME + s
@@ -31,7 +32,7 @@ def test_window_alignment():
 
 def test_tensors_round_trip():
     f = _frames(2000)
-    labels = dict(character=14, opponent=1, stage=25, rank=3)
+    labels = dict(character=14, opponent=1, stage=25, rank=3, won=True)
     ws = list(data.windows(f, labels, (0,), random.Random(1)))[:3]
     game, pad, target, name, valid = data.tensors(data.collate(ws), device="cpu")
     for i, w in enumerate(ws):

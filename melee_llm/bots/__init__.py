@@ -57,14 +57,18 @@ class MIMIC(BotAgent):
 
 
 class Faynt(BotAgent):
-    """frisson-labs Faynt, one checkpoint for 26 characters. arg: variant (default: 10M-Arena).
+    """frisson-labs Faynt, one checkpoint for 26 characters. arg: variant (default: 10M-Arena) or a checkpoint
+    folder, optionally followed by bot config, e.g. `/abs/ckpt/step-N,own=1,name=18,items=4` for our own models
+    (bot_faynt.py).
 
     steer: temperature.
     """
     bot, python, cwd = "faynt", VENDOR / "Faynt-Tournament/.venv/bin/python", VENDOR / "Faynt-Tournament"
 
     def init_config(self):
-        return {"model": self.arg or "10M-Arena", **self.config}
+        model, *opts = (self.arg or "").split(",")
+        return {"model": model or "10M-Arena", **{k: int(v) if v.isdigit() else v for k, _, v in (o.partition("=") for o in opts)},
+                **self.config}
 
 
 class ReynBot(BotAgent):
