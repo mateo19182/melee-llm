@@ -63,19 +63,35 @@ def windows(frames, labels, delays, rng):
 class Windows(torch.utils.data.IterableDataset):
     """Shuffled batches, endlessly (train) or one fixed pass over `limit` games (validation)."""
 
-    def __init__(self, split, delays, batch, seed=0, buffer=4096, limit=None, character=None):
+    def __init__(self, split, delays, batch, seed=0, buffer=8192, limit=None, character=None, mix=4):
         self.files, self.delays, self.batch, self.seed = shards(split), tuple(delays), batch, seed
-        self.buffer, self.limit, self.character = buffer, limit, character
+        self.buffer, self.limit, self.character, self.mix = buffer, limit, character, mix
 
-    def games(self, files):
-        for path, opted_out in files:
-            for row in read_shard(path, hal.COLUMNS):
-                for frames, labels in hal.game(row):
-                    if opted_out and labels["rank"] == 4:
-                        continue
-                    if self.character is not None and labels["character"] != self.character:
-                        continue
-                    yield frames, labels
+    def shard(self, path, opted_out):
+        for row in read_shard(path, hal.COLUMNS):
+            for frames, labels in hal.game(row):
+                if opted_out and labels["rank"] == 4:
+                    continue
+                if self.character is not None and labels["character"] != self.character:
+                    continue
+                yield frames, labels
+
+    def games(self, files, mix=1, rng=None):
+        """The games of `files`, reading `mix` shards at once and taking the next game from a random one. A shard
+        holds about 170 games of one source, often one player's, so shard after shard makes batches of very few
+        sources (E35's validation loss swung with whatever the last shards held)."""
+        files, open_ = iter(files), []
+        while True:
+            while len(open_) < mix and (f := next(files, None)) is not None:
+                open_.append(self.shard(*f))
+            if not open_:
+                return
+            i = rng.randrange(len(open_)) if rng else 0
+            game = next(open_[i], None)
+            if game is None:
+                open_.pop(i)
+            else:
+                yield game
 
     def __iter__(self):
         info = torch.utils.data.get_worker_info()
@@ -97,7 +113,7 @@ class Windows(torch.utils.data.IterableDataset):
         while True:
             files = list(self.files)
             rng.shuffle(files)
-            for frames, labels in self.games(files[worker::workers]):
+            for frames, labels in self.games(files[worker::workers], self.mix, rng):
                 pool += list(windows(frames, labels, self.delays, rng))
                 while len(pool) >= self.buffer:
                     rng.shuffle(pool)
