@@ -18,9 +18,12 @@ F + 1 + N. `N` is fixed; `STEP:N,STEP:N,...` is a curriculum (from each STEP on,
 `N1,N2,...` is a ladder: it moves to the next delay once the learner has won at least W of its games against the
 pool's farm players (--judge: only those of these kinds) over the last --window steps at the current one (the level
 is kept in last.pt). With delay the model reads its own last chosen pad as its controller (as at delay 0) rather than
-the applied one, which is N frames older; --no-own turns that off. Actions keep the credit of the frame they were
-chosen on: returns are discounted with an 8-second half-life, so the N frames before an action lands only add a
-little noise to its advantage.
+the applied one, which is N frames older; --no-own turns that off. An action's advantage is the one measured on
+the frame it lands on (`learner.shift`); --no-shift keeps the credit of the frame it was chosen on, as the runs
+before E36 did.
+
+Our own models (train/own) need --name CODE (`python -m own.data 0,12`: 18 at no delay, 19 at 12 frames for a pro
+winner) and --items 4, for the learner and the reference alike.
 
 --check (with a few --steps) only measures: how well the learner reproduces the actor's action probabilities.
 """
@@ -132,11 +135,12 @@ class Seats(Brain):
     `pads` keeps each seat's last max_delay + 1 chosen pads (newest last); the one pressed is `delay` frames old.
     With `own`, the model reads the newest as its controller instead of the pad the game applied."""
 
-    def __init__(self, model, seats, seed, max_delay=0, own=False):
+    def __init__(self, model, seats, seed, max_delay=0, own=False, name=None, items=0):
         from .faynt import NEUTRAL, GraphStep
 
         super().__init__(seats)
-        self.step = GraphStep(model, len(self.seats), 1.0, seed)
+        self.step = GraphStep(model, len(self.seats), 1.0, seed, name)
+        self.items = items
         self.paths = [p for p, _ in self.step.inputs]
         self.parsers = [None] * len(self.seats)
         self.pads = np.tile(NEUTRAL, (len(self.seats), max_delay + 1, 1))
@@ -144,7 +148,7 @@ class Seats(Brain):
 
     def read(self, states, fresh):
         """Columns of this frame's inputs for every seat, and which seats start a game."""
-        from melee_llm.bots.bot_faynt import controller_of
+        from melee_llm.bots.bot_faynt import controller_of, oldest_items
         from slippi_db.parse_libmelee import Parser
 
         from .faynt import NEUTRAL, _column
@@ -158,6 +162,8 @@ class Seats(Brain):
             if self.own:
                 pad = controller_of(NEUTRAL if reset[i] else self.pads[i, -1])
                 game = game._replace(p0=game.p0._replace(controller=pad))
+            if self.items:
+                game = oldest_items(game, states[lane], self.items)
             games.append(game)
         return {p: _column(games, p) for p in self.paths}, reset
 
@@ -245,10 +251,10 @@ class Learner:
         lab = self.gpu(buf.labels, a, b)
         with self.torch.set_grad_enabled(grad):
             out = L.score(net.policy, g, g.p0.controller, ControllerLabels(lab[..., 0], lab[..., 1]),
-                          self.gpu(buf.reset, a, b), snap)
+                          self.gpu(buf.reset, a, b), snap, name=self.a.name)
         return L.log_probs(out), lab
 
-    def update(self, buf, snaps, it):
+    def update(self, buf, snaps, it, delay=0):
         from farm import learner as L
 
         torch, a = self.torch, self.a
@@ -271,6 +277,9 @@ class Learner:
             loss.backward()
             self.opt_v.step()
             m["value_loss"] += loss.item() / n
+        if a.shift and delay:
+            moved = L.shift(torch.cat(A, 1), self.gpu(buf.done, HIST, HIST + n * ROLL), delay)
+            A = list(moved.split(ROLL, 1))
         m["advantage_abs"] = float(torch.cat(A).abs().mean())
         m["return_mean"] = float(torch.cat(G).mean())
         if it < a.value_warmup:
@@ -375,6 +384,10 @@ def main():
                     "but self)")
     ap.add_argument("--own", action=argparse.BooleanOptionalAction, default=None,
                     help="read its own last chosen pad as its controller (default: on when there is delay)")
+    ap.add_argument("--shift", action=argparse.BooleanOptionalAction, default=True,
+                    help="credit an action with the advantage of the frame it lands on")
+    ap.add_argument("--name", type=int, help="name code told to the learner and the reference (our own models)")
+    ap.add_argument("--items", type=int, default=0, help="item limit of the model's data (our own models: 4)")
     ap.add_argument("--check", action="store_true")
     a = ap.parse_args()
     assert a.frames % ROLL == 0
@@ -443,7 +456,7 @@ def main():
         if log_path.exists():  # steps after the checkpoint are replayed: drop their lines
             keep = [x for x in log_path.read_text().splitlines() if json.loads(x)["iter"] <= it]
             log_path.write_text("".join(x + "\n" for x in keep))
-    me = Seats(model, seats, a.seed + it, max(d for _, d in schedule), a.own)
+    me = Seats(model, seats, a.seed + it, max(d for _, d in schedule), a.own, a.name, a.items)
     others = {spec: Opponent(brain(spec.partition(":")[0], spec, s, a.seed + it, False, True))
               for spec, s in opp.items()}
     S = len(seats)
@@ -612,7 +625,7 @@ def main():
                             record[x] = (nm, enc, [enc.frame(env.current_frame[x], None)])
             collect_s = time.monotonic() - t0
             t1 = time.monotonic()
-            m = learner.update(buf, snaps, it)
+            m = learner.update(buf, snaps, it, me.delay)
             update_s = time.monotonic() - t1
             buf.roll()
             it += 1

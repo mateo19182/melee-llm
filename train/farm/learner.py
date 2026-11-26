@@ -51,15 +51,17 @@ def _attention(layer, normed, positions, prefix_k, prefix_v, mask):
     return att._apply_output_gate(out, normed)
 
 
-def score(policy, game, prev, target, reset, snap, valid=None):
+def score(policy, game, prev, target, reset, snap, valid=None, name=None):
     """Teacher-forced controller logits for a rollout. `game`: tensor_batch game states [S, T]; `prev`: the
     controller labels the model reads at each frame (p0's current controller); `target`: the sampled labels;
-    `reset[s, t]`: a game starts at frame t; `snap`: the actor's cache at frame 0. Returns {buttons, main_stick}."""
+    `reset[s, t]`: a game starts at frame t; `snap`: the actor's cache at frame 0; `name`: the name code our own models are told.
+    Returns {buttons, main_stick}."""
     backbone, head = policy.backbone, policy.controller_head
     S, T = reset.shape
     dev = reset.device
     labels = native(policy)._controller_labels(policy.codec, prev)
-    encoded = policy.encoder(game, labels)
+    code = None if name is None else torch.full((S, T), name, device=dev)
+    encoded = policy.encoder(game, labels, player_name=code)
     projected = backbone.input_projection(encoded)
 
     t = torch.arange(T, device=dev)
@@ -111,7 +113,7 @@ class Value(torch.nn.Module):
     def __init__(self, model):
         super().__init__()
         cfg = dataclasses.replace(model.config.to_native_config(), n_layers=2, d_model=128, d_ff=256, n_heads=2,
-                                  n_kv_heads=1, head_dim=64)
+                                  n_kv_heads=1, head_dim=64, compute_dtype="float32")
         net = native(model.policy).MeleePolicy(cfg)
         self.encoder, self.backbone, self.codec = net.encoder, net.backbone, net.codec
         self.head = torch.nn.Linear(128, 1)
@@ -121,7 +123,7 @@ class Value(torch.nn.Module):
     def forward(self, game, prev, reset, valid):
         encoded = self.encoder(game, native(self.backbone)._controller_labels(self.codec, prev))
         hidden, _ = self.backbone(encoded, reset_mask=reset, padding_mask=valid)
-        return self.head(hidden)[..., 0].float()
+        return self.head(hidden.float())[..., 0]
 
 
 def returns(reward, done, value, bootstrap, gamma):
@@ -133,6 +135,21 @@ def returns(reward, done, value, bootstrap, gamma):
         g = reward[:, t] + gamma * torch.where(done[:, t], 0.0, g)
         G[:, t] = g
     return G
+
+
+def shift(adv, done, delay):
+    """Advantages moved to the decisions that caused them. adv/done: [S, T] in game time; with input delay the pad
+    chosen at frame t lands at t + delay, so its advantage is the one measured there (slippi-ai's alignment: the
+    value network then judges the state the action meets, not the one it was chosen in). Zero where the action
+    never lands: the game ends first, or the step does."""
+    if not delay:
+        return adv
+    T = adv.shape[1]
+    out = torch.zeros_like(adv)
+    ends = torch.nn.functional.pad(done.long().cumsum(1), (1, 0))  # ends[:, t]: games ended before frame t
+    lands = ends[:, delay:T] == ends[:, :T - delay]
+    out[:, :T - delay] = torch.where(lands, adv[:, delay:], 0.0)
+    return out
 
 
 def policy_loss(new, old, ref, buttons, stick, adv, *, eps, w_pg, beta, lam_fwd, lam_rev):

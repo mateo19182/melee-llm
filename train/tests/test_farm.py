@@ -80,3 +80,25 @@ def test_graph_step_matches_eager():
                                reset_mask=torch.tensor(reset, device="cuda"), sample=False)
         worst = max(worst, (graph.button_logits.float() - eager.logits["buttons"].float()).abs().max().item())
     assert worst < 0.05, worst
+
+
+def test_graph_step_keeps_the_name_code():
+    """Our own models are told a name code. The graph once read it from freed memory, so farm games played with
+    whatever tensor took its place (every farm result of our models before E36)."""
+    from own.train import build
+
+    torch.manual_seed(0)
+    model = build().eval().cuda()
+    batch, name = 5, 19
+    graph = farm.GraphStep(model, batch, temperature=1.0, name=name)
+    cache, worst = model.init_cache(batch, device="cuda"), 0.0
+    code = torch.full((batch,), name, device="cuda")
+    for t, (state, controller) in enumerate(_frames(model, batch, 40)):
+        for (_, ours), (_, theirs) in zip(graph.inputs, farm._leaves(state)):
+            ours.copy_(theirs)
+        graph.step([t == 0] * batch)
+        with torch.inference_mode():
+            eager = model.step(game_state_t=state, controller_t=state.p0.controller, cache=cache, sample=False,
+                               reset_mask=torch.full((batch,), t == 0, device="cuda"), player_name=code)
+        worst = max(worst, (graph.button_logits.float() - eager.logits["buttons"].float()).abs().max().item())
+    assert worst < 1e-3, worst
