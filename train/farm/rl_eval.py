@@ -34,6 +34,8 @@ def main():
     args = info.get("args", {})
     delay = a.delay if a.delay is not None else final_delay(str(args.get("delay", 0)))
     options = f",delay={delay}" + (",own=1" if args.get("own", True) else "") if delay else ""
+    if args.get("name") is not None:  # one of our own models
+        options += f",name={args['name']},items={args.get('items', 0)}" + ("" if delay else ",own=1")
     while True:
         done = set()
         if out.exists():

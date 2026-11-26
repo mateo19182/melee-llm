@@ -81,7 +81,8 @@ class GraphStep:
     def __init__(self, model, batch, temperature, seed=0, name=None):
 
         batched_cache(model)
-        code = None if name is None else torch.full((batch,), name, device="cuda")
+        # on self: the graph reads this memory on every replay, and a local would be freed with `run`
+        self.code = code = None if name is None else torch.full((batch,), name, device="cuda")
         kv = type(model.init_cache(1, device="cuda"))
         if not getattr(kv, "_masked_reset", False):
             def reset_slots(self, reset_mask):
