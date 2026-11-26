@@ -63,12 +63,16 @@ def windows(frames, labels, delays, rng):
 class Windows(torch.utils.data.IterableDataset):
     """Shuffled batches, endlessly (train) or one fixed pass over `limit` games (validation)."""
 
-    def __init__(self, split, delays, batch, seed=0, buffer=8192, limit=None, character=None, mix=4):
+    def __init__(self, split, delays, batch, seed=0, buffer=8192, limit=None, character=None, mix=4, boost=1):
+        """`character` (a libmelee id) keeps only that character's sides; `boost` repeats, at other phases, the
+        training windows of games won by a Master or a pro."""
         self.files, self.delays, self.batch, self.seed = shards(split), tuple(delays), batch, seed
-        self.buffer, self.limit, self.character, self.mix = buffer, limit, character, mix
+        self.buffer, self.limit, self.character, self.mix, self.boost = buffer, limit, character, mix, boost
 
     def shard(self, path, opted_out):
         for row in read_shard(path, hal.COLUMNS):
+            if self.character is not None and self.character not in (row["p1_character"], row["p2_character"]):
+                continue
             for frames, labels in hal.game(row):
                 if opted_out and labels["rank"] == 4:
                     continue
@@ -114,7 +118,8 @@ class Windows(torch.utils.data.IterableDataset):
             files = list(self.files)
             rng.shuffle(files)
             for frames, labels in self.games(files[worker::workers], self.mix, rng):
-                pool += list(windows(frames, labels, self.delays, rng))
+                for _ in range(self.boost if labels["won"] and labels["rank"] >= 3 else 1):
+                    pool += list(windows(frames, labels, self.delays, rng))
                 while len(pool) >= self.buffer:
                     rng.shuffle(pool)
                     take, pool = pool[:self.buffer // 4], pool[self.buffer // 4:]

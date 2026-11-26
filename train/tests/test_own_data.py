@@ -54,3 +54,15 @@ def test_games_mix_shards():
     assert sorted(mixed) == sorted(plain) and len({n for n, _ in mixed[:6]}) > 1
     for n in "abcdef":  # each shard's games stay in order
         assert [i for m, i in mixed if m == n] == list(range(5))
+
+
+def test_character_filter(monkeypatch):
+    rows = [dict(p1_character=17, p2_character=1), dict(p1_character=2, p2_character=1)]
+    monkeypatch.setattr(data, "read_shard", lambda path, columns: iter(rows))
+    monkeypatch.setattr(hal, "game", lambda row: [(None, dict(character=row[f"p{i}_character"], rank=4)) for i in (1, 2)])
+    w = data.Windows.__new__(data.Windows)
+    w.character = 17
+    assert [l["character"] for _, l in w.shard("x", False)] == [17]
+    assert list(w.shard("x", True)) == []  # an opted-out folder's own player is never imitated
+    w.character = None
+    assert len(list(w.shard("x", False))) == 4

@@ -1,6 +1,7 @@
 """Behaviour cloning of a Faynt-architecture policy on HAL's dataset, with the input delay as a model input.
 
     PYTHONPATH=. <Faynt venv>/python -m own.train RUN [--delays 0,12] [--frames 1e9] [--batch 64]
+    ... -m own.train RUN --init <weight folder> --character YOSHI [--boost 2]     fine-tune on one character
 
 RUN is a folder under data/train/runs. Checkpoints are Faynt weight folders (`ckpt/step-N`), so `farm` and the live
 bot load them as `faynt:<folder>`; `last.pt` resumes the run. The name code the model is told carries the window's
@@ -112,6 +113,8 @@ def main():
     ap.add_argument("--ckpt-every", type=int, default=2000, help="steps between weight folders")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--init", help="a weight folder to start from (new optimizer, step 0)")
+    ap.add_argument("--character", help="train and validate on this character's sides only (e.g. YOSHI)")
+    ap.add_argument("--boost", type=int, default=1, help="times a game won by a Master or pro is used per pass")
     ap.add_argument("--compute", default="float32", choices=["float32", "bfloat16"],
                     help="bfloat16 is faster and was what E35's diverged run used")
     ap.add_argument("--guard", type=float, default=1.08, help="validation loss over the best that triggers a rollback")
@@ -119,6 +122,11 @@ def main():
     ap.add_argument("--rollbacks", type=int, default=4, help="rollbacks before the run gives up")
     a = ap.parse_args()
     delays = [int(x) for x in a.delays.split(",")]
+    character = None
+    if a.character:
+        import melee
+
+        character = melee.Character[a.character].value
     run = RUNS / a.run
     run.mkdir(parents=True, exist_ok=True)
     torch.manual_seed(a.seed)
@@ -148,7 +156,8 @@ def main():
         (run / "run.json").write_text(json.dumps(dict(kind="own-bc", args=vars(a), base=BASE, steps=steps,
                                                       params=sum(p.numel() for p in model.parameters())), indent=1))
     # cloned: a batch from a worker holds one shared-memory file handle per tensor
-    val = [{k: v.clone() for k, v in b.items()} for b in data.loader("val", delays, a.batch, 2, seed=1, limit=a.val_games)]
+    val = [{k: v.clone() for k, v in b.items()} for b in data.loader("val", delays, a.batch, 2, seed=1, limit=a.val_games,
+                                                                      character=character)]
     print(f"{steps} steps of {per_step} frames; validation {len(val)} batches", flush=True)
     log = open(run / "train.jsonl", "a")
     seen, t0, norms, high = 0.0, time.time(), [], 0
@@ -172,7 +181,8 @@ def main():
         print(line, flush=True)
         write(dict(state, guard=dict(guard)), run / "last.pt")
 
-    for batch in data.loader("train", delays, a.batch, a.workers, seed=a.seed + step):
+    for batch in data.loader("train", delays, a.batch, a.workers, seed=a.seed + step, character=character,
+                             boost=a.boost):
         if step >= steps:
             break
         lr = a.lr * guard["scale"] * min(1.0, (step + 1) / a.warmup) * (0.1 + 0.9 * 0.5 * (1 + math.cos(math.pi * step / steps)))
