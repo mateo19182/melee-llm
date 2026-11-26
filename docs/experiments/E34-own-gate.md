@@ -44,14 +44,16 @@ Both runs finished their 122,070 steps on 11-25 at about 28,000 frames a second 
 
 | Player | Opponent | Delay | Wins | Stocks a game | Stick changes |
 |---|---|---|---|---|---|
-| Mixed, Fox | Faynt 10M Base, Fox | 0 | 27 | −0.38 | 19.1% / 17.8% |
-| Delay-0, Fox | Faynt 10M Base, Fox | 0 | 23 | −0.45 | 17.5% / 17.6% |
-| Mixed, Fox | Delay-0, Fox | 0 | 38 | +0.31 | 19.6% / 17.4% |
-| Mixed, Yoshi | Faynt 10M Base, Yoshi | 0 | 35 | +0.28 | 18.5% / 17.9% |
-| Delay-0, Yoshi | Faynt 10M Base, Yoshi | 0 | 43 | +0.97 | 16.9% / 17.6% |
-| Mixed, Fox | Faynt 10M Base, Fox, also delayed | 12 | 61.5 | +2.56 | 19.8% / 16.7% |
-| Mixed, Yoshi | `yoshi-rl-3-ladder` step 1795, also delayed | 12 | 7 | −1.70 | 17.6% / 17.0% |
+| Mixed, Fox | Faynt 10M Base, Fox | 0 | 25 | −0.34 | 19.0% / 18.1% |
+| Delay-0, Fox | Faynt 10M Base, Fox | 0 | 22 | −0.45 | 17.5% / 17.6% |
+| Mixed, Fox | Delay-0, Fox | 0 | 39 | +0.33 | 19.1% / 17.2% |
+| Mixed, Yoshi | Faynt 10M Base, Yoshi | 0 | 35 | +0.25 | 18.3% / 17.9% |
+| Delay-0, Yoshi | Faynt 10M Base, Yoshi | 0 | 44 | +0.89 | 17.0% / 17.7% |
+| Mixed, Fox | Faynt 10M Base, Fox, also delayed | 12 | 61 | +2.50 | 19.9% / 16.6% |
+| Mixed, Yoshi | `yoshi-rl-3-ladder` step 1795, also delayed | 12 | 9 | −1.66 | 17.8% / 17.1% |
 | Mixed, Yoshi | Phillip's Yoshi (`yoshi_d18_ditto`) | 12 | 0 | −3.77 | 16.8% |
+
+These are the reruns of 11-26 (log `/mnt/data/melee/runs/own-rerun-fixed.log`). The first runs were played with a wrong name code: the farm's recorded step read it from freed memory (fixed in PR #128; Dolphin play was not affected). They gave 27, 23, 38, 35, 43, 61.5, 7 and 0 wins in the same order, so nothing changed beyond noise and the verdict stands. It also means these two models barely use the code: with a wrong one they played the same, at 12 frames too.
 
 During training the mixed model went from 0 of 16 against Faynt Base at step 2,000 to 6 of 32 at step 22,000.
 
