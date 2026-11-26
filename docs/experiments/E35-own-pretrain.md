@@ -6,7 +6,7 @@ status: running
 result: running
 verdict: pending
 runs: own-pre-10m, own-pre-10m-b, own-diverge-bf16, own-diverge-f32
-prs: 121, 124
+prs: 121, 124, 125, 126
 follows: E34
 ---
 
@@ -29,13 +29,26 @@ The winner is the player with more stocks on the game's last frame, then less pe
 
 What the checkpoints show: the button logits have no fixed level and drifted down at a steady rate, the mean top logit going from -14 at step 60,000 to -27, -40 and -49 at steps 140,000, 180,000 and 200,000, then to -955 at 220,000 with their spread up from 8.5 to 221. The run computed in bfloat16, whose steps are 0.25 between 32 and 64 and 0.5 above 64. Faynt's released models are float32.
 
-Two side runs test whether the precision is the cause: `own-diverge-bf16` and `own-diverge-f32`, both from the step-200,000 weights at the learning rate of that step (2.7e-4), differing only in the compute precision, guard off.
+**Cause: bfloat16.** Two side runs from the step-200,000 weights at that step's learning rate (2.7e-4), same seed, guard off, differing only in the compute precision:
+
+| Step | `own-diverge-bf16`: validation loss, top logit, spread | `own-diverge-f32`: the same |
+|---|---|---|
+| 4,000 | 0.801, -52, 8.8 | 0.800, -45, 7.5 |
+| 12,000 | 0.816, -58, 11.1 | 0.814, -40, 7.3 |
+| 16,000 | 0.822, -72, 14.8 | 0.818, -41, 7.7 |
+| 19,000 | 0.835, -89, 18.9 | |
+| 20,000 | 1.011, -630, 144 | 0.823, -40, 7.6 |
+| 22,000 | stopped | 0.819, -40, 7.3 |
+
+In bfloat16 the failure repeats on schedule (the first run broke 16,000 steps after the same weights), and the logits speed up as they pass -64, where bfloat16's step doubles. In float32 the logits do not drift at all, so the drift itself comes from the rounding, not from the optimizer. The learning rate is not the trigger: the float32 run holds 2.7e-4 without trouble. It is still too high for the loss: both side runs sit at 0.80 to 0.83 while the restart at 1e-4 reached 0.78.
 
 ### The restart: own-pre-10m-b
 
 From the step-180,000 weights of the first run (validation 0.804), a new optimizer, float32 (the same speed here: 56,000 frames a second), peak learning rate 1e-4 with 2,000 warm-up steps and a cosine decay over 6.5 billion frames (793,457 steps, about 33 hours). Final weight folder: `step-0793457`.
 
 `own.train` now guards itself: the state at the last healthy validation is kept, and a validation loss 8% over the best, or a gradient norm 6 times its recent median for 300 steps, sends the run back to it at half the learning rate; after 4 of these it stops. Validation also logs the level and spread of the button logits, and every weight folder holds the optimizer state, so a run can be resumed from any of them.
+
+At step 20,000 the restart was stopped and resumed with a new loader: each worker interleaves four shards (a shard is about 170 games of one source, and reading them one after another made batches of about five sources). Its validation loss had moved between 0.782 and 0.812 without any change in the logits.
 
 ## Judged by
 
