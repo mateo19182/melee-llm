@@ -61,6 +61,20 @@ All at 64 games in the farm unless said (`train/own/eval.sh`), then the Dolphin 
 - **At 12 frames** as Yoshi against `yoshi-rl-3-ladder` step 1795 at the same delay (the gate model won 7 of 64) and Phillip's Yoshi (0 of 64).
 - **Dolphin league:** Fox at no delay against CPU 9, 24 games (the gate model won 14 of 24, Faynt's 10M Base 10 of 12), then the Fox roster at 12 games each. A clear win over CPU 9 is the bar E34 left open.
 
+## Interim check at step 100,000 of the restart (11-26)
+
+About 2.3 billion frames seen in total. Farm, 64 games each, after the name-code fix of PR #128 (log `/mnt/data/melee/runs/own-rerun-fixed.log`):
+
+| Player (name code) | Opponent | Delay | Wins | Stocks a game |
+|---|---|---|---|---|
+| Fox (18, pro winner) | Faynt 10M Base, Fox | 0 | 31 | −0.14 |
+| Fox (12, Master loser) | Faynt 10M Base, Fox | 0 | 39 | +0.36 |
+| Yoshi (18) | Faynt 10M Base, Yoshi | 0 | 52.5 | +1.58 |
+| Fox (18) | E34's mixed model, Fox | 0 | 34 | +0.20 |
+| Yoshi (19) | `yoshi-rl-3-ladder` step 1795, also delayed | 12 | 19 | −0.92 |
+
+E34's mixed model at 1 billion frames had 25, 35 and 9 in the first, third and fifth matchups. Yoshi is clearly ahead, Fox is level within noise, and the pro-winner code is not better than the Master-loser one here.
+
 ## Result
 
 ## Verdict
