@@ -2,11 +2,11 @@
 id: E35
 title: Our own model: all-character pretrain
 date: 2026-11-25
-status: running
-result: running
-verdict: pending
+status: done
+result: 6.5 billion frames in float32, no rollbacks; validation 0.760 at no delay and 0.769 at 12 frames (gate model 0.784 and 0.796). At no delay Fox with a Master code beat CPU 9 on Dolphin 24 of 24 and Faynt's 10M Base 19 of 24 (farm 50 of 64); Yoshi beat Base 58 of 64 in the farm. League rating 245 Elo (Base 145), with 4 wins in 120 games against the Fox roster. At 12 frames Yoshi won 25 of 64 against E33's RL Yoshi and 0 of 64 against Phillip's Yoshi
+verdict: the CPU 9 bar is met and the no-delay base is stronger than Faynt's 10M Base, so stage 2 (Yoshi fine-tune) starts from step-0793457. Play with a Master code (14 or 15), not the pro-winner one, which is weaker and unstable for Fox. Imitation does not make a 12-frame player; that is RL's job (stage 3). The button logits still drift in float32, so the next long run should pin their level
 runs: own-pre-10m, own-pre-10m-b, own-diverge-bf16, own-diverge-f32
-prs: 121, 124, 125, 126
+prs: 121, 124, 125, 126, 127, 128, 129
 follows: E34
 ---
 
@@ -40,7 +40,7 @@ What the checkpoints show: the button logits have no fixed level and drifted dow
 | 20,000 | 1.011, -630, 144 | 0.823, -40, 7.6 |
 | 22,000 | stopped | 0.819, -40, 7.3 |
 
-In bfloat16 the failure repeats on schedule (the first run broke 16,000 steps after the same weights), and the logits speed up as they pass -64, where bfloat16's step doubles. In float32 the logits do not drift at all, so the drift itself comes from the rounding, not from the optimizer. The learning rate is not the trigger: the float32 run holds 2.7e-4 without trouble. It is still too high for the loss: both side runs sit at 0.80 to 0.83 while the restart at 1e-4 reached 0.78.
+In bfloat16 the failure repeats on schedule (the first run broke 16,000 steps after the same weights), and the logits speed up as they pass -64, where bfloat16's step doubles. In float32 the logits hold still over these 22,000 steps. Over the full restart they drift too, only far slower and without a collapse (see Result), so bfloat16 turns the drift into a failure but is not its only source. The learning rate is not the trigger: the float32 run holds 2.7e-4 without trouble. It is still too high for the loss: both side runs sit at 0.80 to 0.83 while the restart at 1e-4 reached 0.78.
 
 ### The restart: own-pre-10m-b
 
@@ -75,6 +75,65 @@ About 2.3 billion frames seen in total. Farm, 64 games each, after the name-code
 
 E34's mixed model at 1 billion frames had 25, 35 and 9 in the first, third and fifth matchups. Yoshi is clearly ahead, Fox is level within noise, and the pro-winner code is not better than the Master-loser one here.
 
+## Interim check at step 500,000 (11-27)
+
+Farm, 64 games each (log `/mnt/data/melee/runs/own-interim-500k.log`): Fox (18) 45 and Yoshi (18) 59 against Faynt's 10M Base at no delay; Yoshi (19) 16 against `yoshi-rl-3-ladder` at 12 frames.
+
 ## Result
 
+**The run.** `own-pre-10m-b` reached step 793,457 on 11-27 at 21:25 with no rollbacks. systemd restarted it twice (killed for memory on 11-26 at 17:06; exit code 1 with no traceback in the journal on 11-27 at 11:19) and it resumed from its last save both times. Validation over the last four checks was 0.749 to 0.769 at no delay and 0.757 to 0.779 at 12 frames; the last, at step 790,000, 0.760 and 0.769. The 240 validation games are few enough that it moves by 0.01 between checks.
+
+**The logits drift in float32 too.** The mean top button logit went from -42 at the start of the restart to -110 by step 600,000 and -127 at the end, its spread from 6 to 30, and the gradient norm from 0.23 to between 3 and 5 (clipped to 1 on every step). The loss kept improving throughout. Nothing fixes the level of these logits, so the next long run should pin it.
+
+**Farm, final checkpoint, 64 games each** (`train/own/eval.sh own-pre-10m-b 0793457`, log `/mnt/data/melee/runs/own-pre-10m-b-eval.log`):
+
+| Player (name code) | Opponent | Delay | Wins | Stocks a game | Gate model in the same match |
+|---|---|---|---|---|---|
+| Fox (18, pro winner) | Faynt 10M Base | 0 | 32 | −0.09 | 25 |
+| Fox (14, Master winner) | Faynt 10M Base | 0 | 50 | +1.05 | |
+| Fox (12, Master loser) | Faynt 10M Base | 0 | 47 | +1.00 | |
+| Yoshi (18) | Faynt 10M Base | 0 | 58 | +1.83 | 35 |
+| Fox (18) | Gate model | 0 | 37 | +0.25 | |
+| Fox (19) | Gate model | 12 | 46 | +0.83 | |
+| Yoshi (18) | Gate model | 0 | 60 | +1.64 | |
+| Yoshi (19) | Gate model | 12 | 54 | +1.42 | |
+| Yoshi (19) | `yoshi-rl-3-ladder` step 1795 | 12 | 25 | −0.31 | 9 |
+| Yoshi (19) | Phillip's Yoshi (18 frames) | 12 | 0 | −3.48 | 0 |
+
+- **Name code.** For Fox the pro-winner code is the weak one: 32 against 47 and 50 for the Master codes, and it gave 31, 45 and 32 at steps 100,000, 500,000 and the end. Master winner and Master loser play the same, so the win label carries little; the rank part does.
+- **12 frames.** 25 of 64 against the RL Yoshi is up from 9 for the gate model, and still 0 against Phillip.
+
+**Dolphin league, Fox at no delay, 24 games each** (`train/own/pre-dolphin.sh`, log `/mnt/data/melee/runs/own-pre-dolphin.log`):
+
+| Name code | Opponent | Wins |
+|---|---|---|
+| 14 (Master winner) | CPU 9 | 24 of 24 |
+| 18 (pro winner) | CPU 9 | 23 of 24 |
+| 14 | Faynt 10M Base | 19 of 24 |
+
+The gate model won 14 of 24 against CPU 9 and Faynt's 10M Base 27 of 36. Against Faynt Base, Dolphin (79%) and the farm (78%) agree.
+
+**Fox roster, same Fox with code 14, 12 games each** (`train/own/pre-dolphin.sh roster`, log `/mnt/data/melee/runs/own-pre-roster.log`):
+
+| Opponent (Fox) | Wins of 12 | Stocks a game |
+|---|---|---|
+| Phillip Platinum | 1 | −1.92 |
+| Phillip Diamond | 3 | −1.17 |
+| Phillip Master | 0 | −2.08 |
+| Phillip Grandmaster | 0 | −3.08 |
+| Phillip super-GM | 0 | −2.75 |
+| Phillip Fox v6.2 | 0 | −3.00 |
+| Mimic Fox | 0 | −2.33 |
+| HAL Master | 0 | −2.08 |
+| Faynt 10M Arena | 0 | −3.92 |
+| Faynt 75M Arena | 0 | −3.25 |
+
+League rating over these 168 games: 245 Elo (CPU 9 = 0), against 145 for Faynt's 10M Base, 58 to 102 for the gate model, 349 for Phillip Platinum and 1,086 for Faynt 10M Arena. The base is one step above Faynt's own base and below every other bot of the roster.
+
 ## Verdict
+
+The bar E34 left open is met: a clear win over CPU 9 on Dolphin, and at no delay the model is ahead of Faynt's 10M Base as Fox and as Yoshi. It is also far below the roster's trained bots (245 Elo, 4 wins in 120 roster games), as Faynt's base is: the strength has to come from RL. `step-0793457` is the base for stage 2 (Yoshi fine-tune) and stage 3 (RL).
+
+- Play with a Master code. Which code is best should be checked again after each later stage.
+- More imitation will not make the 12-frame model: it gained against the RL Yoshi and nothing against Phillip. RL at 12 frames comes first in stage 3.
+- For the next long run: pin the level of the button logits, and use a larger validation set.
