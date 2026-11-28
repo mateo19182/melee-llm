@@ -5,7 +5,7 @@ date: 2026-11-28
 status: running
 result: running
 verdict: pending
-runs: own-rl-12
+runs: own-rl-12, own-rl-12b
 prs: 128
 follows: E36, E33
 ---
@@ -25,6 +25,12 @@ Stage 3 of the [plan](../own-model.md), the 12-frame branch first: does RL in th
 - Everything else at the defaults of E32 (Faynt's 10M "leash" settings): 2,048 frames a lane per step, learning rate 1e-4, two PPO epochs.
 
 Checked before launch (`--check`, 2 steps): the learner reproduces the actor's action probabilities to 3e-6.
+
+### The first run did nothing (11-28)
+
+`own-rl-12` ran 119 steps in 3 hours without changing the model. Each of its 96 policy updates moved the policy by a KL of 0.02 to 0.04, the guard undoes any step over 0.005, and so every one was undone: the weight folders at steps 25 to 100 are byte for byte the start model, and the step-100 evaluation repeated step 0 exactly. With Faynt's models the same learning rate (1e-4) moves the policy by about 0.0001 a step (E33); ours reacts some 200 times more strongly. Stopped and kept.
+
+**`own-rl-12b`** is the same run with `--lr 1e-5`. Its first policy steps move the policy by 0.00001 to 0.00014 and are kept; the KL to the start model was 0.0005 after seven of them.
 
 ## Judged by
 
